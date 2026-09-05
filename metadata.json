@@ -1,0 +1,6 @@
+{
+  "name": "Gestão de Frota",
+  "description": "Aplicativo para gerenciar carros alugados, monitorar despesas, manutenção, combustível e quilometragem.",
+  "requestFramePermissions": ["microphone", "camera"],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
