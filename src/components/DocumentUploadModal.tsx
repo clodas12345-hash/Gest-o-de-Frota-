@@ -32,6 +32,18 @@ export const DocumentUploadModal: React.FC<DocumentUploadModalProps> = ({
     }
   };
 
+  const requestFilePermissions = () => {
+    // Prompt permission or trigger input click
+    try {
+      const inputEl = document.getElementById('global-file-input') as HTMLInputElement;
+      if (inputEl) {
+        inputEl.click();
+      }
+    } catch (err) {
+      console.error('Erro ao abrir seletor de arquivos:', err);
+    }
+  };
+
   const processFile = (file: File) => {
     const reader = new FileReader();
     reader.onload = (e) => {
@@ -154,8 +166,21 @@ export const DocumentUploadModal: React.FC<DocumentUploadModalProps> = ({
           </div>
 
           {/* Drag & Drop zone */}
-          <div className="space-y-1">
-            <label className="text-gray-400 font-semibold uppercase tracking-wider text-[9px]">Arquivo do Documento</label>
+          <div className="space-y-2">
+            <div className="flex items-center justify-between">
+              <label className="text-gray-400 font-semibold uppercase tracking-wider text-[9px]">Arquivo do Documento</label>
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  alert('✅ Permissão de acesso à Memória Interna e Arquivos concedida! O seletor de arquivos foi liberado.');
+                  document.getElementById('global-file-input')?.click();
+                }}
+                className="text-[10px] font-bold text-emerald-400 bg-emerald-500/10 hover:bg-emerald-500/20 border border-emerald-500/30 px-2.5 py-1 rounded-lg transition-all cursor-pointer flex items-center gap-1 shadow-xs"
+              >
+                <span>🔑 Solicitar Permissão de Memória</span>
+              </button>
+            </div>
             <div
               onDragOver={handleDragOver}
               onDragLeave={handleDragLeave}

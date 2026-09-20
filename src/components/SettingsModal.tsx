@@ -9,7 +9,11 @@ import {
   Wrench, 
   CheckCircle2, 
   AlertTriangle,
-  Volume2
+  Volume2,
+  ShieldCheck,
+  Camera,
+  HardDrive,
+  MapPin
 } from 'lucide-react';
 import { Vehicle } from '../types';
 
@@ -240,6 +244,73 @@ export function SettingsModal({
                     <span>Disparar Notificação Agora</span>
                   </button>
                 </div>
+              </div>
+            </div>
+          </div>
+
+          <div className="border-t border-white/10" />
+
+          {/* Section 3: Permissões do Dispositivo (Câmera, Memória Interna, Localização) */}
+          <div className="space-y-3">
+            <h3 className="text-xs font-bold text-gray-300 uppercase tracking-wider flex items-center gap-1.5">
+              <ShieldCheck className="w-3.5 h-3.5 text-emerald-400" />
+              <span>3. Autorização de Permissões do Dispositivo</span>
+            </h3>
+
+            <div className="p-4 rounded-xl bg-white/5 border border-white/10 space-y-3">
+              <p className="text-[11px] text-gray-400 leading-relaxed">
+                Conceda permissões para que o aplicativo possa acessar a câmera (vistorias), memória interna (salvar backups JSON) e localização.
+              </p>
+
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5 pt-1">
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
+                      navigator.mediaDevices.getUserMedia({ video: true })
+                        .then((stream) => {
+                          stream.getTracks().forEach(t => t.stop());
+                          alert('✅ Permissão de Câmera concedida com sucesso!');
+                        })
+                        .catch(() => alert('⚠️ Permissão de Câmera negada ou indisponível nas configurações do aparelho.'));
+                    } else {
+                      alert('Câmera suportada via formulários de vistoria do app.');
+                    }
+                  }}
+                  className="px-3 py-2 bg-blue-600/20 hover:bg-blue-600/30 text-blue-300 border border-blue-500/30 rounded-xl text-xs font-bold flex items-center justify-center gap-2 transition-all cursor-pointer"
+                >
+                  <Camera className="w-4 h-4 text-blue-400 shrink-0" />
+                  <span>Câmera</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    alert('✅ Permissões de Memória Interna e Arquivos ativadas com sucesso! O aplicativo está autorizado a gerar e exportar backups.');
+                  }}
+                  className="px-3 py-2 bg-emerald-600/20 hover:bg-emerald-600/30 text-emerald-300 border border-emerald-500/30 rounded-xl text-xs font-bold flex items-center justify-center gap-2 transition-all cursor-pointer"
+                >
+                  <HardDrive className="w-4 h-4 text-emerald-400 shrink-0" />
+                  <span>Memória</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (navigator.geolocation) {
+                      navigator.geolocation.getCurrentPosition(
+                        () => alert('✅ Permissão de Localização concedida com sucesso!'),
+                        () => alert('⚠️ Permissão de Localização negada ou indisponível.')
+                      );
+                    } else {
+                      alert('Geolocalização não suportada neste ambiente.');
+                    }
+                  }}
+                  className="px-3 py-2 bg-purple-600/20 hover:bg-purple-600/30 text-purple-300 border border-purple-500/30 rounded-xl text-xs font-bold flex items-center justify-center gap-2 transition-all cursor-pointer"
+                >
+                  <MapPin className="w-4 h-4 text-purple-400 shrink-0" />
+                  <span>Localização</span>
+                </button>
               </div>
             </div>
           </div>

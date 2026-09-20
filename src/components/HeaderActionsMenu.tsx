@@ -73,24 +73,25 @@ export function HeaderActionsMenu({
       <button
         type="button"
         onClick={() => setIsOpen(!isOpen)}
-        className={`px-3.5 py-2 text-xs font-bold rounded-xl flex items-center gap-2 transition-all cursor-pointer border shadow-lg ${
+        className={`px-3 py-2 text-xs font-bold rounded-xl flex items-center gap-1.5 sm:gap-2 transition-all cursor-pointer border shadow-lg ${
           isOpen
             ? 'bg-blue-600 border-blue-400 text-white shadow-blue-500/20'
             : 'bg-white/10 hover:bg-white/15 text-white border-white/10 hover:border-white/20'
         }`}
         id="btn-main-actions-menu"
       >
-        <Menu className="w-4 h-4 text-blue-400" />
-        <span>Menu de Opções</span>
+        <Menu className="w-4 h-4 text-blue-400 shrink-0" />
+        <span className="hidden sm:inline">Menu de Opções</span>
+        <span className="sm:hidden">Menu</span>
         {unviewedContractsCount > 0 && (
           <span className="w-2 h-2 rounded-full bg-amber-400 animate-ping" />
         )}
-        <ChevronDown className={`w-3.5 h-3.5 text-gray-400 transition-transform duration-200 ${isOpen ? 'rotate-180' : ''}`} />
+        <ChevronDown className={`w-3.5 h-3.5 text-gray-400 transition-transform duration-200 shrink-0 ${isOpen ? 'rotate-180' : ''}`} />
       </button>
 
       {/* Expanded Dropdown Menu Overlay */}
       {isOpen && (
-        <div className="fixed inset-0 z-[999] flex items-start justify-end p-4 sm:p-6 pt-16 sm:pt-20 bg-black/50 backdrop-blur-xs animate-in fade-in duration-150">
+        <div className="fixed inset-0 z-[999] flex items-start justify-end p-2 sm:p-6 pt-16 sm:pt-20 bg-black/50 backdrop-blur-xs animate-in fade-in duration-150">
           {/* Backdrop click to close */}
           <div 
             className="absolute inset-0" 
@@ -98,7 +99,7 @@ export function HeaderActionsMenu({
           />
 
           {/* Modal Content Card */}
-          <div className="relative w-full sm:w-80 max-w-[95vw] max-h-[85vh] overflow-y-auto bg-[#141414] border border-white/20 rounded-2xl shadow-2xl z-[1000] p-3 space-y-2 animate-in zoom-in-95 duration-150 scrollbar-thin scrollbar-thumb-white/20">
+          <div className="relative w-full sm:w-80 max-w-[calc(100vw-1rem)] max-h-[85vh] overflow-y-auto bg-[#141414] border border-white/20 rounded-2xl shadow-2xl z-[1000] p-3 space-y-2 animate-in zoom-in-95 duration-150 scrollbar-thin scrollbar-thumb-white/20">
             <div className="px-3 py-2 border-b border-white/10 flex items-center justify-between sticky top-0 bg-[#141414] z-10">
               <div className="flex items-center gap-2">
                 <Menu className="w-4 h-4 text-blue-400" />

@@ -10,6 +10,9 @@ import {
 } from './mockData';
 import { db } from './firebase';
 import { doc, getDoc, setDoc, onSnapshot } from 'firebase/firestore';
+import { Filesystem, Directory, Encoding } from '@capacitor/filesystem';
+import { Share } from '@capacitor/share';
+import { Capacitor } from '@capacitor/core';
 
 // Component Imports
 import { DashboardStats } from './components/DashboardStats';
@@ -1029,7 +1032,7 @@ export default function App() {
   };
 
   // Backup data functions
-  const handleDownloadBackup = () => {
+  const handleDownloadBackup = async () => {
     const backupData = {
       vehicles,
       fuelLogs,
@@ -1042,21 +1045,50 @@ export default function App() {
       checklistConfig,
       exportDate: new Date().toISOString()
     };
-    const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(backupData, null, 2));
-    const downloadAnchor = document.createElement('a');
-    downloadAnchor.setAttribute("href", dataStr);
     
+    const jsonString = JSON.stringify(backupData, null, 2);
     const now = new Date();
     const day = String(now.getDate()).padStart(2, '0');
     const month = String(now.getMonth() + 1).padStart(2, '0');
     const year = now.getFullYear();
-    downloadAnchor.setAttribute("download", `backup_controle_frota_${day}_${month}_${year}.json`);
+    const fileName = `backup_controle_frota_${day}_${month}_${year}.json`;
 
+    if (Capacitor.isNativePlatform()) {
+      try {
+        const result = await Filesystem.writeFile({
+          path: fileName,
+          data: jsonString,
+          directory: Directory.Documents,
+          encoding: Encoding.UTF8
+        });
+        
+        await Share.share({
+          title: 'Backup Gestão de Frota',
+          text: 'Arquivo de backup do sistema Gestão de Frota',
+          url: result.uri,
+          dialogTitle: 'Salvar ou Compartilhar Backup'
+        });
+
+        setDeleteToastMsg('Backup gerado e salvo na memória interna com sucesso!');
+        setTimeout(() => setDeleteToastMsg(null), 4000);
+        return;
+      } catch (err) {
+        console.error('Erro ao salvar backup nativo:', err);
+      }
+    }
+
+    // Fallback for Web / Blob download
+    const blob = new Blob([jsonString], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const downloadAnchor = document.createElement('a');
+    downloadAnchor.href = url;
+    downloadAnchor.download = fileName;
     document.body.appendChild(downloadAnchor);
     downloadAnchor.click();
     downloadAnchor.remove();
+    URL.revokeObjectURL(url);
 
-    setDeleteToastMsg('Backup gerado e salvo com sucesso na memória interna!');
+    setDeleteToastMsg('Backup gerado e baixado com sucesso!');
     setTimeout(() => setDeleteToastMsg(null), 4000);
   };
 
@@ -1191,7 +1223,7 @@ export default function App() {
   }
 
   return (
-    <div className="min-h-screen bg-[#0a0a0a] text-white flex flex-col font-sans" id="app-root-container">
+    <div className="min-h-screen bg-[#0a0a0a] text-white flex flex-col font-sans w-full max-w-full overflow-x-hidden" id="app-root-container">
       
       {/* Header Panel */}
       <header className="bg-[#0d0d0d] text-white border-b border-white/10 shrink-0" id="app-header">
