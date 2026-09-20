@@ -68,6 +68,8 @@ export function HistoryLogs({
   const [editMaintShop, setEditMaintShop] = useState('');
   const [editMaintNextKm, setEditMaintNextKm] = useState(0);
   const [editMaintCost, setEditMaintCost] = useState(0);
+  const [editMaintBoNumber, setEditMaintBoNumber] = useState('');
+  const [editMaintPartsReplaced, setEditMaintPartsReplaced] = useState('');
 
   // Inline editing states for fuel
   const [editingFuelId, setEditingFuelId] = useState<string | null>(null);
@@ -110,6 +112,8 @@ export function HistoryLogs({
     setEditMaintShop(log.shopName || '');
     setEditMaintNextKm(log.nextKm || 0);
     setEditMaintCost(log.cost);
+    setEditMaintBoNumber(log.boNumber || '');
+    setEditMaintPartsReplaced(log.partsReplaced || '');
   };
 
   const handleStartEditFuel = (log: FuelLog) => {
@@ -171,6 +175,8 @@ export function HistoryLogs({
         shopName: editMaintShop.trim() || undefined,
         nextKm: editMaintNextKm > 0 ? editMaintNextKm : undefined,
         cost: editMaintCost,
+        boNumber: editMaintBoNumber.trim() || undefined,
+        partsReplaced: editMaintPartsReplaced.trim() || undefined,
       });
     }
     setEditingMaintId(null);
@@ -485,7 +491,10 @@ export function HistoryLogs({
                             <option value="Revisão">Revisão</option>
                             <option value="Preventiva">Preventiva</option>
                             <option value="Corretiva">Corretiva</option>
+                            <option value="Batida/Acidente">Batida/Acidente</option>
                             <option value="Pneus">Pneus</option>
+                            <option value="Palhetas">Palhetas</option>
+                            <option value="Pastilhas">Pastilhas</option>
                             <option value="Outro">Outro</option>
                           </select>
                         ) : (
@@ -496,26 +505,56 @@ export function HistoryLogs({
                       </td>
                       <td className="py-3.5 max-w-xs">
                         {isEditing ? (
-                          <div className="flex flex-col gap-1">
+                          <div className="flex flex-col gap-1.5 py-1">
                             <input
                               type="text"
                               value={editMaintDesc}
                               onChange={(e) => setEditMaintDesc(e.target.value)}
                               placeholder="Descrição"
-                              className="bg-neutral-900 border border-white/10 text-white rounded px-2 py-1 text-xs focus:outline-hidden w-full max-w-[200px]"
+                              className="bg-neutral-900 border border-white/10 text-white rounded px-2 py-1 text-xs focus:outline-hidden w-full max-w-[220px]"
                             />
                             <input
                               type="text"
                               value={editMaintShop}
                               onChange={(e) => setEditMaintShop(e.target.value)}
                               placeholder="Oficina"
-                              className="bg-neutral-900 border border-white/10 text-white rounded px-2 py-1 text-xs focus:outline-hidden w-full max-w-[200px]"
+                              className="bg-neutral-900 border border-white/10 text-white rounded px-2 py-1 text-xs focus:outline-hidden w-full max-w-[220px]"
                             />
+                            <div className="grid grid-cols-2 gap-1 max-w-[220px]">
+                              <input
+                                type="text"
+                                value={editMaintBoNumber}
+                                onChange={(e) => setEditMaintBoNumber(e.target.value)}
+                                placeholder="Nº B.O."
+                                className="bg-neutral-900 border border-white/10 text-white rounded px-2 py-1 text-[11px] focus:outline-hidden"
+                              />
+                              <input
+                                type="text"
+                                value={editMaintPartsReplaced}
+                                onChange={(e) => setEditMaintPartsReplaced(e.target.value)}
+                                placeholder="Peças"
+                                className="bg-neutral-900 border border-white/10 text-white rounded px-2 py-1 text-[11px] focus:outline-hidden"
+                              />
+                            </div>
                           </div>
                         ) : (
-                          <div className="flex flex-col">
+                          <div className="flex flex-col gap-0.5">
                             <span className="font-semibold text-white line-clamp-1">{log.description}</span>
-                            <span className="text-[10px] text-gray-500">{log.shopName || 'Oficina não especificada'}</span>
+                            <span className="text-[10px] text-gray-400">{log.shopName || 'Oficina não especificada'}</span>
+                            {(log.boNumber || log.partsReplaced) && (
+                              <div className="flex flex-wrap gap-1 mt-0.5">
+                                {log.boNumber && (
+                                  <span className="px-1.5 py-0.5 bg-rose-500/10 text-rose-400 border border-rose-500/20 text-[9px] font-mono rounded">
+                                    B.O.: {log.boNumber}
+                                  </span>
+                                )}
+                                {log.partsReplaced && (
+                                  <span className="px-1.5 py-0.5 bg-blue-500/10 text-blue-400 border border-blue-500/20 text-[9px] rounded">
+                                    Peças: {log.partsReplaced}
+                                  </span>
+                                )}
+                              </div>
+                            )}
                           </div>
                         )}
                       </td>

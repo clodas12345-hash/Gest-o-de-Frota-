@@ -1045,12 +1045,18 @@ export default function App() {
     const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(backupData, null, 2));
     const downloadAnchor = document.createElement('a');
     downloadAnchor.setAttribute("href", dataStr);
-    downloadAnchor.setAttribute("download", `backup_gestao_frota_${new Date().toISOString().split('T')[0]}.json`);
+    
+    const now = new Date();
+    const day = String(now.getDate()).padStart(2, '0');
+    const month = String(now.getMonth() + 1).padStart(2, '0');
+    const year = now.getFullYear();
+    downloadAnchor.setAttribute("download", `backup_controle_frota_${day}_${month}_${year}.json`);
+
     document.body.appendChild(downloadAnchor);
     downloadAnchor.click();
     downloadAnchor.remove();
 
-    setDeleteToastMsg('Backup gerado e salvo com sucesso! Guarde o arquivo em local seguro.');
+    setDeleteToastMsg('Backup gerado e salvo com sucesso na memória interna!');
     setTimeout(() => setDeleteToastMsg(null), 4000);
   };
 

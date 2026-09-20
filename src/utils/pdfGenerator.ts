@@ -264,8 +264,11 @@ export async function generateVehiclePDF(
     doc.setFont('helvetica', 'normal');
     vehMaint.forEach((m) => {
       if (y > 270) { doc.addPage(); y = 15; }
-      doc.text(`• ${m.date ? new Date(m.date + 'T12:00:00').toLocaleDateString('pt-BR') : 'S/D'} - ${m.description || m.type} (R$ ${(m.cost || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })})`, 22, y);
-      y += 4.5;
+      let extraInfo = '';
+      if (m.boNumber) extraInfo += ` [B.O.: ${m.boNumber}]`;
+      if (m.partsReplaced) extraInfo += ` [Peças: ${m.partsReplaced}]`;
+      doc.text(`• ${m.date ? new Date(m.date + 'T12:00:00').toLocaleDateString('pt-BR') : 'S/D'} - [${m.type}] ${m.description}${extraInfo} (R$ ${(m.cost || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })})`, 22, y);
+      y += 5.5;
     });
     y += 4;
   }

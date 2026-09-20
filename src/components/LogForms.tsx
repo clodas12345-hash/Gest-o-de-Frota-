@@ -121,6 +121,8 @@ export function LogForms({
   const [maintCost, setMaintCost] = useState(0);
   const [maintShop, setMaintShop] = useState('');
   const [maintNextKm, setMaintNextKm] = useState<number | undefined>(undefined);
+  const [maintBoNumber, setMaintBoNumber] = useState('');
+  const [maintPartsReplaced, setMaintPartsReplaced] = useState('');
 
   // 4. Trip Form State
   const [tripDate, setTripDate] = useState('2026-08-01');
@@ -651,7 +653,9 @@ export function LogForms({
         description: maintDescription,
         cost: Number(maintCost),
         shopName: maintShop,
-        nextKm: maintNextKm ? Number(maintNextKm) : undefined
+        nextKm: maintNextKm ? Number(maintNextKm) : undefined,
+        boNumber: maintBoNumber.trim() || undefined,
+        partsReplaced: maintPartsReplaced.trim() || undefined
       });
       onClose();
     }
@@ -1314,9 +1318,35 @@ export function LogForms({
                     <option value="Revisão" className="bg-[#111111] text-white font-sans">Revisão Periódica</option>
                     <option value="Preventiva" className="bg-[#111111] text-white font-sans">Manutenção Preventiva</option>
                     <option value="Corretiva" className="bg-[#111111] text-white font-sans">Manutenção Corretiva (Defeito)</option>
-                    <option value="Pneus" className="bg-[#111111] text-white font-sans">Pneus / Rodízio / Alinhamento</option>
+                    <option value="Batida/Acidente" className="bg-[#111111] text-white font-sans">Batida / Acidente / B.O.</option>
+                    <option value="Pneus" className="bg-[#111111] text-white font-sans">Troca de Pneus / Rodízio</option>
+                    <option value="Palhetas" className="bg-[#111111] text-white font-sans">Troca de Palhetas</option>
+                    <option value="Pastilhas" className="bg-[#111111] text-white font-sans">Troca de Pastilhas de Freio</option>
                     <option value="Outro" className="bg-[#111111] text-white font-sans">Outros Serviços</option>
                   </select>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-1">
+                  <label className="font-semibold text-gray-400">Nº do B.O. / Sinistro (Opcional)</label>
+                  <input 
+                    type="text" 
+                    value={maintBoNumber} 
+                    onChange={e => setMaintBoNumber(e.target.value)}
+                    placeholder="Ex: BO 123456/2026"
+                    className="w-full text-xs bg-white/[0.03] border border-white/10 rounded-xl px-3 py-2 text-white placeholder-gray-500 focus:outline-hidden focus:border-blue-500/50 focus:bg-[#1a1a1a]"
+                  />
+                </div>
+                <div className="space-y-1">
+                  <label className="font-semibold text-gray-400">Peças / Componentes Trocados</label>
+                  <input 
+                    type="text" 
+                    value={maintPartsReplaced} 
+                    onChange={e => setMaintPartsReplaced(e.target.value)}
+                    placeholder="Ex: Pneus, Palhetas, Pastilhas..."
+                    className="w-full text-xs bg-white/[0.03] border border-white/10 rounded-xl px-3 py-2 text-white placeholder-gray-500 focus:outline-hidden focus:border-blue-500/50 focus:bg-[#1a1a1a]"
+                  />
                 </div>
               </div>
 
@@ -1347,7 +1377,7 @@ export function LogForms({
                 <textarea 
                   value={maintDescription} 
                   onChange={e => setMaintDescription(e.target.value ? e.target.value.charAt(0).toUpperCase() + e.target.value.slice(1) : '')}
-                  placeholder="Descreva as peças trocadas e reparos efetuados..."
+                  placeholder="Descreva detalhadamente o serviço efetuado..."
                   className="w-full text-xs bg-white/[0.03] border border-white/10 rounded-xl px-3 py-2 text-white placeholder-gray-500 focus:outline-hidden focus:border-blue-500/50 focus:bg-[#1a1a1a] h-20 resize-none"
                 />
               </div>

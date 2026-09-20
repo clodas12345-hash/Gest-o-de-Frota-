@@ -83,11 +83,13 @@ export interface MaintenanceLog {
   id: string;
   vehicleId: string;
   date: string;
-  type: 'Preventiva' | 'Corretiva' | 'Revisão' | 'Pneus' | 'Outro';
+  type: 'Preventiva' | 'Corretiva' | 'Revisão' | 'Pneus' | 'Batida/Acidente' | 'Palhetas' | 'Pastilhas' | 'Outro';
   description: string;
   cost: number;
   shopName?: string;
   nextKm?: number;
+  boNumber?: string;
+  partsReplaced?: string;
 }
 
 export interface TripLog {
