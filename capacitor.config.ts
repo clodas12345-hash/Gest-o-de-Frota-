@@ -2,7 +2,7 @@ import { CapacitorConfig } from '@capacitor/cli';
 
 const config: CapacitorConfig = {
   appId: 'com.controle.frota',
-  appName: 'GKD Mobility',
+  appName: 'Gestão de Frota',
   webDir: 'dist'
 };
 

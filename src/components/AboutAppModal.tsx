@@ -65,11 +65,11 @@ export const AboutAppModal: React.FC<AboutAppModalProps> = ({
               </div>
             </button>
 
-            <div className="text-center sm:text-left space-y-1">
+             <div className="text-center sm:text-left space-y-1">
               <div className="flex flex-wrap items-center justify-center sm:justify-start gap-2">
-                <h2 className="text-xl font-bold text-white tracking-tight">GKD Mobility</h2>
+                <h2 className="text-xl font-bold text-white tracking-tight">Gestão de Frota</h2>
                 <span className="text-xs font-semibold px-2.5 py-0.5 rounded-full bg-blue-500/20 text-blue-400 border border-blue-500/30">
-                  Gestão de Frota
+                  GKD Mobility
                 </span>
               </div>
               <p className="text-xs text-blue-300/90 font-medium">
@@ -85,10 +85,10 @@ export const AboutAppModal: React.FC<AboutAppModalProps> = ({
           <div className="space-y-3">
             <h3 className="text-sm font-bold uppercase tracking-wider text-white flex items-center gap-2">
               <Shield className="w-4 h-4 text-blue-400" />
-              O que é o GKD Mobility?
+              O que é o Gestão de Frota?
             </h3>
             <p className="leading-relaxed text-gray-300 text-sm">
-              O <strong className="text-white">GKD Mobility</strong> é um sistema inteligente e integrado desenvolvido especialmente para proprietários e gestores de frotas de locação de veículos (motoristas de app, aluguéis semanais e frotas comerciais). Ele centraliza toda a operação do seu negócio em um único lugar, eliminando planilhas desorganizadas e garantindo total segurança jurídica e financeira.
+              O <strong className="text-white">Gestão de Frota</strong> é um sistema inteligente e integrado desenvolvido especialmente para proprietários e gestores de frotas de locação de veículos (motoristas de app, aluguéis semanais e frotas comerciais). Ele centraliza toda a operação do seu negócio em um único lugar, eliminando planilhas desorganizadas e garantindo total segurança jurídica e financeira.
             </p>
           </div>
 

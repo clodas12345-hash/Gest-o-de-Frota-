@@ -1,7 +1,7 @@
 {
   "id": "/",
-  "name": "GKD Mobility - Gestão de Frota",
-  "short_name": "GKD Mobility",
+  "name": "Gestão de Frota",
+  "short_name": "Gestão de Frota",
   "description": "Sistema completo para gestão de frotas, motoristas e controle de veículos alugados.",
   "start_url": "/",
   "scope": "/",
