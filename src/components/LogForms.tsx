@@ -3,6 +3,14 @@ import { Vehicle, FuelLog, MaintenanceLog, TripLog, ExpenseLog, AgendaContact } 
 import { X, Save, AlertCircle, Users, BookOpen, Sparkles, Mic, MicOff, Calculator, Plus, Trash2, User, Phone, Search, Smartphone, Check, Upload, ExternalLink, AlertTriangle } from 'lucide-react';
 import { generateNextContractNumber } from '../utils/contractHelper';
 
+const getTodayStr = (): string => {
+  const d = new Date();
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
+};
+
 const toTitleCase = (str: string): string => {
   if (!str) return '';
   return str
@@ -117,7 +125,7 @@ export function LogForms({
   const [expenseNumParcelas, setExpenseNumParcelas] = useState<number>(10);
 
   // 2. Fuel Form State
-  const [fuelDate, setFuelDate] = useState('2026-08-01');
+  const [fuelDate, setFuelDate] = useState(getTodayStr);
   const [fuelKm, setFuelKm] = useState(0);
   const [fuelLiters, setFuelLiters] = useState(0);
   const [fuelPricePerLiter, setFuelPricePerLiter] = useState(0);
@@ -126,7 +134,7 @@ export function LogForms({
   const [fuelStation, setFuelStation] = useState('');
 
   // 3. Maintenance Form State
-  const [maintDate, setMaintDate] = useState('2026-08-01');
+  const [maintDate, setMaintDate] = useState(getTodayStr);
   const [maintType, setMaintType] = useState<MaintenanceLog['type']>('Revisão');
   const [maintDescription, setMaintDescription] = useState('');
   const [maintCost, setMaintCost] = useState(0);
@@ -136,14 +144,14 @@ export function LogForms({
   const [maintPartsReplaced, setMaintPartsReplaced] = useState('');
 
   // 4. Trip Form State
-  const [tripDate, setTripDate] = useState('2026-08-01');
+  const [tripDate, setTripDate] = useState(getTodayStr);
   const [tripDriver, setTripDriver] = useState('');
   const [tripStartKm, setTripStartKm] = useState(0);
   const [tripEndKm, setTripEndKm] = useState(0);
   const [tripPurpose, setTripPurpose] = useState('');
 
   // 5. Expense Form State
-  const [expDate, setExpDate] = useState('2026-08-01');
+  const [expDate, setExpDate] = useState(getTodayStr);
   const [expCategory, setExpCategory] = useState<ExpenseLog['category']>('Lavagem');
   const [expDescription, setExpDescription] = useState('');
   const [expCost, setExpCost] = useState(0);
@@ -638,22 +646,22 @@ export function LogForms({
       setFuelTotalCost(204.75);
       setFuelType('Gasolina');
       setFuelStation('');
-      setFuelDate('2026-08-01');
+      setFuelDate(getTodayStr());
     } else if (formType === 'maintenance' && currentSelectedCar) {
-      setMaintDate('2026-08-01');
+      setMaintDate(getTodayStr());
       setMaintType('Revisão');
       setMaintDescription('');
       setMaintCost(0);
       setMaintShop('');
       setMaintNextKm(currentSelectedCar.currentKm + 10000);
     } else if (formType === 'trip' && currentSelectedCar) {
-      setTripDate('2026-08-01');
+      setTripDate(getTodayStr());
       setTripDriver(currentSelectedCar.driver || '');
       setTripStartKm(currentSelectedCar.currentKm);
       setTripEndKm(currentSelectedCar.currentKm + 50);
       setTripPurpose('');
     } else if (formType === 'expense') {
-      setExpDate('2026-08-01');
+      setExpDate(getTodayStr());
       setExpCategory('Lavagem');
       setExpDescription('');
       setExpCost(0);
@@ -764,14 +772,14 @@ export function LogForms({
         driver: driver || '',
         driverPhone: driverPhone || '',
         caucaoValor: Number(caucaoValor) || 0,
-        caucaoData: caucaoData || '2026-08-01',
+        caucaoData: caucaoData || getTodayStr(),
         caucaoObservacoes: caucaoObservacoes || '',
         weeklyPayments: vehicleToEdit ? (vehicleToEdit.weeklyPayments || []) : [],
         custoExtra: Number(custoExtra) || 0,
         custoExtraLabel: custoExtraLabel || 'Outras Despesas',
         preventiveMaintCurrentKm: vehicleToEdit ? (vehicleToEdit.preventiveMaintCurrentKm ?? (Number(currentKm) || 0)) : (Number(currentKm) || 0),
         preventiveMaintNextKm: vehicleToEdit ? (vehicleToEdit.preventiveMaintNextKm ?? ((Number(currentKm) || 0) + 10000)) : ((Number(currentKm) || 0) + 10000),
-        preventiveMaintDate: vehicleToEdit ? (vehicleToEdit.preventiveMaintDate || '2026-08-01') : '2026-08-01',
+        preventiveMaintDate: vehicleToEdit ? (vehicleToEdit.preventiveMaintDate || getTodayStr()) : getTodayStr(),
         nextVistoriaDate: nextVistoriaDate || '',
         documents: vehicleToEdit?.documents || []
       };

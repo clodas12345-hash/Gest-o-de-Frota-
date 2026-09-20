@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { AgendaContact, Vehicle } from '../types';
-import { X, Plus, Trash2, Search, MapPin, Phone, User, Save, Edit2, MessageCircle, Send, Car, Upload } from 'lucide-react';
+import { X, Plus, Trash2, Search, MapPin, Phone, User, Save, Edit2, MessageCircle, Send, Car, Upload, CheckCircle2 } from 'lucide-react';
+import { ImportContactsModal } from './ImportContactsModal';
 
 export const toTitleCase = (str: string): string => {
   if (!str) return '';
@@ -19,6 +20,7 @@ interface AgendaModalProps {
   contacts: AgendaContact[];
   vehicles: Vehicle[];
   onSaveContact: (contact: AgendaContact) => void;
+  onSaveMultipleContacts?: (contacts: AgendaContact[]) => void;
   onDeleteContact: (id: string) => void;
   preFill?: { name: string; phone: string } | null;
 }
@@ -29,12 +31,15 @@ export const AgendaModal: React.FC<AgendaModalProps> = ({
   contacts,
   vehicles,
   onSaveContact,
+  onSaveMultipleContacts,
   onDeleteContact,
   preFill,
 }) => {
   const [searchTerm, setSearchTerm] = useState('');
   const [isAdding, setIsAdding] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
+  const [isImportModalOpen, setIsImportModalOpen] = useState(false);
+  const [successToast, setSuccessToast] = useState<string | null>(null);
 
   // Form states
   const [name, setName] = useState('');
@@ -226,39 +231,14 @@ export const AgendaModal: React.FC<AgendaModalProps> = ({
     setCustomMessage('');
   };
 
-  const handleImportDeviceContacts = async () => {
-    if ('contacts' in navigator && 'select' in (navigator as any).contacts) {
-      try {
-        const props = ['name', 'tel'];
-        const opts = { multiple: true };
-        const selectedContacts = await (navigator as any).contacts.select(props, opts);
-        
-        if (selectedContacts && selectedContacts.length > 0) {
-          let count = 0;
-          selectedContacts.forEach((c: any) => {
-            const name = c.name?.[0] || 'Contato';
-            const phoneRaw = c.tel?.[0] || '';
-            let cleanPhone = phoneRaw.replace(/\D/g, '');
-            if (cleanPhone.length > 0) {
-              if (!cleanPhone.startsWith('55')) cleanPhone = '55' + cleanPhone;
-              onSaveContact({
-                id: `contact-${Date.now()}-${Math.random().toString(36).substr(2, 4)}`,
-                name: toTitleCase(name),
-                phone: cleanPhone,
-                region: 'Geral',
-              });
-              count++;
-            }
-          });
-          alert(`✅ ${count} contato(s) importados da agenda nativa com sucesso!`);
-          return;
-        }
-      } catch (err) {
-        console.warn('Contacts select permission cancelled or not supported:', err);
-      }
+  const handleImportBatch = (newContacts: AgendaContact[]) => {
+    if (onSaveMultipleContacts) {
+      onSaveMultipleContacts(newContacts);
     } else {
-      alert('A seleção direta de contatos da agenda nativa requer um dispositivo ou navegador compatível com a API Contacts (ex: Chrome no Android ou PWA instalado).');
+      newContacts.forEach((c) => onSaveContact(c));
     }
+    setSuccessToast(`✅ ${newContacts.length} contato(s) importado(s) com sucesso para a agenda!`);
+    setTimeout(() => setSuccessToast(null), 4500);
   };
 
   const filteredContacts = contacts
@@ -294,6 +274,23 @@ export const AgendaModal: React.FC<AgendaModalProps> = ({
             <X className="w-5 h-5" />
           </button>
         </div>
+
+        {/* Success Toast */}
+        {successToast && (
+          <div className="mx-4 mt-3 p-3 bg-emerald-500/10 border border-emerald-500/20 rounded-xl flex items-center justify-between text-xs text-emerald-300 animate-in fade-in duration-150">
+            <div className="flex items-center gap-2">
+              <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
+              <span>{successToast}</span>
+            </div>
+            <button
+              type="button"
+              onClick={() => setSuccessToast(null)}
+              className="p-1 hover:bg-emerald-500/20 rounded-lg text-emerald-400 transition-colors"
+            >
+              <X className="w-3.5 h-3.5" />
+            </button>
+          </div>
+        )}
 
         {/* Form to Add/Edit Contact */}
         {isAdding && (
@@ -397,9 +394,9 @@ export const AgendaModal: React.FC<AgendaModalProps> = ({
               <div className="flex items-center gap-1.5 shrink-0">
                 <button
                   type="button"
-                  onClick={handleImportDeviceContacts}
+                  onClick={() => setIsImportModalOpen(true)}
                   className="px-3 py-2 bg-blue-600/20 hover:bg-blue-600/30 text-blue-300 border border-blue-500/30 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer"
-                  title="Importar contatos da agenda telefônica ou arquivos VCF/JSON"
+                  title="Importar contatos por arquivo VCF/CSV/JSON, colar texto ou agenda"
                 >
                   <Upload className="w-4 h-4 text-blue-400" />
                   <span className="hidden sm:inline">Importar</span>
@@ -566,6 +563,13 @@ export const AgendaModal: React.FC<AgendaModalProps> = ({
         </div>
 
       </div>
+
+      {/* Import Contacts Modal Dialog */}
+      <ImportContactsModal
+        isOpen={isImportModalOpen}
+        onClose={() => setIsImportModalOpen(false)}
+        onImport={handleImportBatch}
+      />
     </div>
   );
 };

@@ -33,8 +33,11 @@ import { ChecklistConfigModal } from './components/ChecklistConfigModal';
 import { RentalContractModal } from './components/RentalContractModal';
 import { ConfirmDeleteModal } from './components/ConfirmDeleteModal';
 import { ConfirmFinalizeContractModal } from './components/ConfirmFinalizeContractModal';
+import { AboutAppModal } from './components/AboutAppModal';
+import { LogoViewerModal } from './components/LogoViewerModal';
 import { GlobalVoiceAssistant } from './components/GlobalVoiceAssistant';
 import { generateVehiclePDF, generateVistoriaPDF } from './utils/pdfGenerator';
+import logoImg from './assets/logo.png';
 
 // Icons
 import { 
@@ -57,7 +60,8 @@ import {
   CheckCircle2,
   FolderArchive,
   BarChart3,
-  MessageCircle
+  MessageCircle,
+  ZoomIn
 } from 'lucide-react';
 
 function ensureFuturePaymentsForVehicles(vehicles: Vehicle[]): Vehicle[] {
@@ -231,8 +235,8 @@ export default function App() {
     return INITIAL_VISTORIAS;
   });
 
-  const [selectedMonth, setSelectedMonth] = useState<number>(7); // August (7)
-  const [selectedYear, setSelectedYear] = useState<number>(2026); // 2026
+  const [selectedMonth, setSelectedMonth] = useState<number>(() => new Date().getMonth());
+  const [selectedYear, setSelectedYear] = useState<number>(() => new Date().getFullYear());
   
   // Friday Vistoria check, toggle and completion state
   const isTodayFriday = new Date().getDay() === 5;
@@ -262,6 +266,8 @@ export default function App() {
   const [isChecklistConfigOpen, setIsChecklistConfigOpen] = useState<boolean>(false);
   const [isRentalContractOpen, setIsRentalContractOpen] = useState<boolean>(false);
   const [isReportsModalOpen, setIsReportsModalOpen] = useState<boolean>(false);
+  const [isAboutModalOpen, setIsAboutModalOpen] = useState<boolean>(false);
+  const [isLogoViewerOpen, setIsLogoViewerOpen] = useState<boolean>(false);
   const [selectedContractVehicle, setSelectedContractVehicle] = useState<Vehicle | null>(null);
   const [vehiclePendingFinalize, setVehiclePendingFinalize] = useState<Vehicle | null>(null);
 
@@ -1087,6 +1093,21 @@ export default function App() {
     });
   };
 
+  const handleSaveMultipleContacts = (newContacts: AgendaContact[]) => {
+    setContacts((prev) => {
+      const existingPhones = new Set(prev.map((c) => c.phone.replace(/\D/g, '')));
+      const uniqueNew: AgendaContact[] = [];
+      newContacts.forEach((c) => {
+        const cleanP = c.phone.replace(/\D/g, '');
+        if (!existingPhones.has(cleanP)) {
+          existingPhones.add(cleanP);
+          uniqueNew.push(c);
+        }
+      });
+      return [...prev, ...uniqueNew];
+    });
+  };
+
   const handleDeleteContact = (id: string) => {
     setContacts((prev) => prev.filter((c) => c.id !== id));
   };
@@ -1389,13 +1410,35 @@ export default function App() {
       <header className="bg-[#0d0d0d] text-white border-b border-white/10 shrink-0" id="app-header">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-2.5 min-h-16 flex flex-wrap lg:flex-nowrap items-center justify-between gap-3">
           <div className="flex items-center gap-3">
-            <div className="p-2.5 bg-blue-600 rounded-xl shadow-md shadow-blue-500/15">
-              <Car className="w-5 h-5 text-white" />
-            </div>
-            <div>
-              <h1 className="text-sm font-bold tracking-tight text-white">Gestão de Frota</h1>
+            <button
+              type="button"
+              onClick={() => setIsLogoViewerOpen(true)}
+              className="relative group cursor-pointer focus:outline-none focus:ring-2 focus:ring-blue-500/50 rounded-xl p-0.5 transition-all shrink-0"
+              title="Clique para ver o logotipo em tamanho grande"
+            >
+              <img 
+                src={logoImg} 
+                alt="GKD Mobility" 
+                className="w-12 h-12 object-contain rounded-xl bg-white p-0.5 border border-white/20 shadow-lg shadow-blue-500/10 group-hover:border-blue-400 group-hover:scale-105 transition-all" 
+                referrerPolicy="no-referrer" 
+              />
+              <div className="absolute inset-0 rounded-xl bg-black/40 opacity-0 group-hover:opacity-100 flex items-center justify-center transition-opacity">
+                <ZoomIn className="w-4 h-4 text-white drop-shadow-md" />
+              </div>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setIsAboutModalOpen(true)}
+              className="text-left group cursor-pointer focus:outline-none focus:ring-2 focus:ring-blue-500/50 rounded-lg py-1 px-1.5 -ml-1 transition-all"
+              title="Clique para ver sobre o aplicativo GKD Mobility"
+            >
+              <h1 className="text-sm font-bold tracking-tight text-white flex items-center gap-1.5">
+                <span className="group-hover:text-blue-300 transition-colors">GKD Mobility</span>
+                <span className="text-[10px] font-normal text-blue-400 bg-blue-500/10 px-1.5 py-0.5 rounded border border-blue-500/20">Gestão de Frota</span>
+              </h1>
               <p className="text-[10px] text-gray-400">Controle para seus {vehicles.length} carros alugados</p>
-            </div>
+            </button>
           </div>
 
           {/* Action Header Buttons */}
@@ -1648,6 +1691,7 @@ export default function App() {
         contacts={contacts}
         vehicles={vehicles}
         onSaveContact={handleSaveContact}
+        onSaveMultipleContacts={handleSaveMultipleContacts}
         onDeleteContact={handleDeleteContact}
         preFill={agendaPreFill}
       />
@@ -1781,6 +1825,20 @@ export default function App() {
           </button>
         </div>
       )}
+
+      {/* About GKD Mobility App Modal */}
+      <AboutAppModal
+        isOpen={isAboutModalOpen}
+        onClose={() => setIsAboutModalOpen(false)}
+        onOpenLogoViewer={() => setIsLogoViewerOpen(true)}
+        totalVehicles={vehicles.length}
+      />
+
+      {/* Large Fullscreen Logo Viewer Modal */}
+      <LogoViewerModal
+        isOpen={isLogoViewerOpen}
+        onClose={() => setIsLogoViewerOpen(false)}
+      />
 
       {/* Global Voice Assistant Floating Button */}
       <GlobalVoiceAssistant onDataExtracted={handleGlobalDataExtracted} />

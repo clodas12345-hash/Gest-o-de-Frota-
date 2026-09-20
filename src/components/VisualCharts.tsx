@@ -23,8 +23,8 @@ export function VisualCharts({
   const [isComparisonExpanded, setIsComparisonExpanded] = useState(defaultExpanded);
   const [isDistributionExpanded, setIsDistributionExpanded] = useState(defaultExpanded);
 
-  const currentMonth = selectedMonth !== undefined ? selectedMonth : 7; // 7 (0-indexed, August)
-  const currentYear = selectedYear !== undefined ? selectedYear : 2026;
+  const currentMonth = selectedMonth !== undefined ? selectedMonth : new Date().getMonth();
+  const currentYear = selectedYear !== undefined ? selectedYear : new Date().getFullYear();
 
   const isCurrentMonth = (dateStr: string) => {
     if (!dateStr) return false;

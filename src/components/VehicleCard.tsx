@@ -363,7 +363,7 @@ export const VehicleCard: React.FC<VehicleCardProps> = ({
   onFinalizeContract,
 }) => {
   const [isExpanded, setIsExpanded] = useState(false); // Default to collapsed/closed as requested by user
-  const [isCaucaoExpanded, setIsCaucaoExpanded] = useState(true); // Visible by default
+  const [isCaucaoExpanded, setIsCaucaoExpanded] = useState(false); // Hidden by default (retraído)
   const [isContractExpanded, setIsContractExpanded] = useState(false); // Hidden by default
   const [isAgendaExpanded, setIsAgendaExpanded] = useState(false); // Hidden by default when expanding vehicle
   const [isVistoriaExpanded, setIsVistoriaExpanded] = useState(false); // Hidden by default when expanding vehicle
@@ -739,8 +739,8 @@ export const VehicleCard: React.FC<VehicleCardProps> = ({
   };
 
   // Helper to check if a date string belongs to current month and year
-  const currentMonth = selectedMonth !== undefined ? selectedMonth : 7; // 7 (0-indexed, August)
-  const currentYear = selectedYear !== undefined ? selectedYear : 2026; // 2026
+  const currentMonth = selectedMonth !== undefined ? selectedMonth : new Date().getMonth();
+  const currentYear = selectedYear !== undefined ? selectedYear : new Date().getFullYear();
 
   const isCurrentMonth = (dateStr: string) => {
     if (!dateStr) return false;

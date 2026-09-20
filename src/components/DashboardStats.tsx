@@ -20,9 +20,9 @@ export function DashboardStats({
   selectedMonth,
   selectedYear,
 }: DashboardStatsProps) {
-  // Compute selected month/year (defaults to August 2026)
-  const currentMonth = selectedMonth !== undefined ? selectedMonth : 7; // 7 (0-indexed, August)
-  const currentYear = selectedYear !== undefined ? selectedYear : 2026; // 2026
+  // Compute selected month/year (defaults to current month and year)
+  const currentMonth = selectedMonth !== undefined ? selectedMonth : new Date().getMonth();
+  const currentYear = selectedYear !== undefined ? selectedYear : new Date().getFullYear();
 
   // Helper to check if a date string belongs to current month and year
   const isCurrentMonth = (dateStr: string) => {
