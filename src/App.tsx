@@ -123,17 +123,55 @@ function ensureFuturePaymentsForVehicles(vehicles: Vehicle[]): Vehicle[] {
   });
 }
 
+function sanitizeForCloud<T>(data: T): T {
+  if (data === undefined) return null as any;
+  try {
+    return JSON.parse(JSON.stringify(data));
+  } catch (err) {
+    console.warn('Error sanitizing data for cloud:', err);
+    return data;
+  }
+}
+
+function cleanVehiclesForCloud(vehiclesList: Vehicle[]): Vehicle[] {
+  if (!Array.isArray(vehiclesList)) return [];
+  return vehiclesList.map(v => {
+    const rawDocs = v.documents || [];
+    const cleanDocs = rawDocs.map(d => {
+      // Truncate excessively large base64 data URLs to prevent Firestore 1MB rejection
+      if (d.contentUrl && d.contentUrl.length > 250000) {
+        return {
+          ...d,
+          contentUrl: '' // keep metadata like name, uploadDate, fileSize, fileType
+        };
+      }
+      return d;
+    });
+    return {
+      ...v,
+      documents: cleanDocs
+    };
+  });
+}
+
 export default function App() {
-  // State for vehicles, initialized clean with zero values
+  // State for vehicles, initialized clean with zero values and resilient recovery
   const [vehicles, setVehicles] = useState<Vehicle[]>(() => {
     const saved = localStorage.getItem('fleet_vehicles');
     if (saved) {
       try {
         const parsed = JSON.parse(saved);
-        if (Array.isArray(parsed)) return ensureFuturePaymentsForVehicles(parsed);
+        if (Array.isArray(parsed) && parsed.length > 0) return ensureFuturePaymentsForVehicles(parsed);
       } catch (e) {
         console.error('Error parsing fleet_vehicles', e);
       }
+    }
+    const backup = localStorage.getItem('fleet_vehicles_last_known');
+    if (backup) {
+      try {
+        const parsedBackup = JSON.parse(backup);
+        if (Array.isArray(parsedBackup) && parsedBackup.length > 0) return ensureFuturePaymentsForVehicles(parsedBackup);
+      } catch (e) {}
     }
     return ensureFuturePaymentsForVehicles(INITIAL_VEHICLES);
   });
@@ -334,15 +372,36 @@ export default function App() {
 
   const isCloudLoadedRef = useRef(false);
   const isRemoteUpdateRef = useRef(false);
+  const pendingCloudSyncRef = useRef<Record<string, any>>({});
   const cloudSyncTimerRef = useRef<NodeJS.Timeout | null>(null);
 
   const saveToCloud = (field: string, data: any) => {
     if (!isCloudLoadedRef.current || isRemoteUpdateRef.current) return;
-    if (cloudSyncTimerRef.current) clearTimeout(cloudSyncTimerRef.current);
-    cloudSyncTimerRef.current = setTimeout(() => {
-      setDoc(doc(db, 'fleetData', 'main'), { [field]: data, updatedAt: new Date().toISOString() }, { merge: true })
-        .catch(err => console.error(`Error syncing ${field} to cloud:`, err));
-    }, 600);
+    
+    try {
+      // Clean data if field is vehicles to prevent Firestore 1MB document limit rejection
+      const cleanData = (field === 'vehicles' && Array.isArray(data))
+        ? cleanVehiclesForCloud(data)
+        : data;
+
+      pendingCloudSyncRef.current[field] = sanitizeForCloud(cleanData);
+
+      if (cloudSyncTimerRef.current) clearTimeout(cloudSyncTimerRef.current);
+      cloudSyncTimerRef.current = setTimeout(async () => {
+        try {
+          const payload = sanitizeForCloud({
+            ...pendingCloudSyncRef.current,
+            updatedAt: new Date().toISOString()
+          });
+          pendingCloudSyncRef.current = {};
+          await setDoc(doc(db, 'fleetData', 'main'), payload, { merge: true });
+        } catch (err) {
+          console.warn('Error syncing fleetData to cloud:', err);
+        }
+      }, 600);
+    } catch (err) {
+      console.warn('Error preparing saveToCloud:', err);
+    }
   };
 
   // Load initial data from Firestore and setup real-time listener for instant cloud saving & sync
@@ -353,18 +412,36 @@ export default function App() {
       if (snap.exists()) {
         const d = snap.data();
         if (d.vehicles && Array.isArray(d.vehicles) && d.vehicles.length > 0) {
-          setVehicles(ensureFuturePaymentsForVehicles(d.vehicles));
+          setVehicles(prevVehicles => {
+            const cloudIds = new Set(d.vehicles.map((v: any) => v.id));
+            const localOnly = prevVehicles.filter(v => !cloudIds.has(v.id));
+            return [...ensureFuturePaymentsForVehicles(d.vehicles), ...localOnly];
+          });
+        } else {
+          // Cloud has no vehicles, but local might have vehicles: sync local to cloud!
+          setVehicles(prevVehicles => {
+            if (prevVehicles && prevVehicles.length > 0) {
+              setTimeout(() => {
+                const payload = sanitizeForCloud({
+                  vehicles: cleanVehiclesForCloud(prevVehicles),
+                  updatedAt: new Date().toISOString()
+                });
+                setDoc(docRef, payload, { merge: true }).catch(err => console.warn('Error syncing local vehicles to empty cloud:', err));
+              }, 100);
+            }
+            return prevVehicles;
+          });
         }
-        if (d.contacts && Array.isArray(d.contacts)) setContacts(d.contacts);
-        if (d.fuelLogs && Array.isArray(d.fuelLogs)) setFuelLogs(d.fuelLogs);
-        if (d.maintenanceLogs && Array.isArray(d.maintenanceLogs)) setMaintenanceLogs(d.maintenanceLogs);
-        if (d.tripLogs && Array.isArray(d.tripLogs)) setTripLogs(d.tripLogs);
-        if (d.expenseLogs && Array.isArray(d.expenseLogs)) setExpenseLogs(d.expenseLogs);
-        if (d.vistorias && Array.isArray(d.vistorias)) setVistorias(d.vistorias);
-        if (d.finalizedContracts && Array.isArray(d.finalizedContracts)) setFinalizedContracts(d.finalizedContracts);
+        if (d.contacts && Array.isArray(d.contacts) && d.contacts.length > 0) setContacts(d.contacts);
+        if (d.fuelLogs && Array.isArray(d.fuelLogs) && d.fuelLogs.length > 0) setFuelLogs(d.fuelLogs);
+        if (d.maintenanceLogs && Array.isArray(d.maintenanceLogs) && d.maintenanceLogs.length > 0) setMaintenanceLogs(d.maintenanceLogs);
+        if (d.tripLogs && Array.isArray(d.tripLogs) && d.tripLogs.length > 0) setTripLogs(d.tripLogs);
+        if (d.expenseLogs && Array.isArray(d.expenseLogs) && d.expenseLogs.length > 0) setExpenseLogs(d.expenseLogs);
+        if (d.vistorias && Array.isArray(d.vistorias) && d.vistorias.length > 0) setVistorias(d.vistorias);
+        if (d.finalizedContracts && Array.isArray(d.finalizedContracts) && d.finalizedContracts.length > 0) setFinalizedContracts(d.finalizedContracts);
       } else {
-        setDoc(docRef, {
-          vehicles,
+        const initialPayload = sanitizeForCloud({
+          vehicles: cleanVehiclesForCloud(vehicles),
           contacts,
           fuelLogs,
           maintenanceLogs,
@@ -373,11 +450,12 @@ export default function App() {
           vistorias,
           finalizedContracts,
           updatedAt: new Date().toISOString()
-        }, { merge: true }).catch(err => console.error('Error initializing fleetData in cloud:', err));
+        });
+        setDoc(docRef, initialPayload, { merge: true }).catch(err => console.warn('Error initializing fleetData in cloud:', err));
       }
       isCloudLoadedRef.current = true;
     }).catch(err => {
-      console.error('Error fetching fleetData from cloud:', err);
+      console.warn('Error fetching fleetData from cloud:', err);
       isCloudLoadedRef.current = true;
     });
 
@@ -386,18 +464,38 @@ export default function App() {
         const d = snap.data();
         isRemoteUpdateRef.current = true;
         if (d.vehicles && Array.isArray(d.vehicles)) {
-          setVehicles(ensureFuturePaymentsForVehicles(d.vehicles));
+          if (d.vehicles.length > 0) {
+            setVehicles(prevVehicles => {
+              const cloudIds = new Set(d.vehicles.map((v: any) => v.id));
+              const localOnly = prevVehicles.filter(v => !cloudIds.has(v.id));
+              return [...ensureFuturePaymentsForVehicles(d.vehicles), ...localOnly];
+            });
+          } else {
+            // Cloud has 0 vehicles! DO NOT wipe local vehicles!
+            setVehicles(prevVehicles => {
+              if (prevVehicles && prevVehicles.length > 0) {
+                setTimeout(() => {
+                  const payload = sanitizeForCloud({
+                    vehicles: cleanVehiclesForCloud(prevVehicles),
+                    updatedAt: new Date().toISOString()
+                  });
+                  setDoc(docRef, payload, { merge: true }).catch(err => console.warn('Error resyncing local vehicles to cloud:', err));
+                }, 100);
+              }
+              return prevVehicles;
+            });
+          }
         }
-        if (d.contacts && Array.isArray(d.contacts)) setContacts(d.contacts);
-        if (d.fuelLogs && Array.isArray(d.fuelLogs)) setFuelLogs(d.fuelLogs);
-        if (d.maintenanceLogs && Array.isArray(d.maintenanceLogs)) setMaintenanceLogs(d.maintenanceLogs);
-        if (d.tripLogs && Array.isArray(d.tripLogs)) setTripLogs(d.tripLogs);
-        if (d.expenseLogs && Array.isArray(d.expenseLogs)) setExpenseLogs(d.expenseLogs);
-        if (d.vistorias && Array.isArray(d.vistorias)) setVistorias(d.vistorias);
-        if (d.finalizedContracts && Array.isArray(d.finalizedContracts)) setFinalizedContracts(d.finalizedContracts);
+        if (d.contacts && Array.isArray(d.contacts) && d.contacts.length > 0) setContacts(d.contacts);
+        if (d.fuelLogs && Array.isArray(d.fuelLogs) && d.fuelLogs.length > 0) setFuelLogs(d.fuelLogs);
+        if (d.maintenanceLogs && Array.isArray(d.maintenanceLogs) && d.maintenanceLogs.length > 0) setMaintenanceLogs(d.maintenanceLogs);
+        if (d.tripLogs && Array.isArray(d.tripLogs) && d.tripLogs.length > 0) setTripLogs(d.tripLogs);
+        if (d.expenseLogs && Array.isArray(d.expenseLogs) && d.expenseLogs.length > 0) setExpenseLogs(d.expenseLogs);
+        if (d.vistorias && Array.isArray(d.vistorias) && d.vistorias.length > 0) setVistorias(d.vistorias);
+        if (d.finalizedContracts && Array.isArray(d.finalizedContracts) && d.finalizedContracts.length > 0) setFinalizedContracts(d.finalizedContracts);
         setTimeout(() => {
           isRemoteUpdateRef.current = false;
-        }, 100);
+        }, 150);
       }
     });
 
@@ -416,7 +514,27 @@ export default function App() {
   useEffect(() => {
     try {
       localStorage.setItem('fleet_vehicles', JSON.stringify(vehicles));
-    } catch (e) { console.warn('Storage quota exceeded', e); }
+      if (vehicles.length > 0) {
+        localStorage.setItem('fleet_vehicles_last_known', JSON.stringify(vehicles.map(v => ({
+          ...v,
+          documents: (v.documents || []).map(d => ({ ...d, contentUrl: '' }))
+        }))));
+      }
+    } catch (e) {
+      console.warn('Storage quota exceeded, storing lean vehicles in localStorage', e);
+      try {
+        const leanVehicles = vehicles.map(v => ({
+          ...v,
+          documents: (v.documents || []).map(d => ({
+            ...d,
+            contentUrl: (d.contentUrl && d.contentUrl.length > 100000) ? '' : d.contentUrl
+          }))
+        }));
+        localStorage.setItem('fleet_vehicles', JSON.stringify(leanVehicles));
+      } catch (err2) {
+        console.error('Critical storage quota failure', err2);
+      }
+    }
 
     saveToCloud('vehicles', vehicles);
   }, [vehicles]);
@@ -498,6 +616,48 @@ export default function App() {
   const [activeFormType, setActiveFormType] = useState< 'vehicle' | 'fuel' | 'maintenance' | 'trip' | 'expense' | null>(null);
   const [selectedVehicleId, setSelectedVehicleId] = useState<string>('');
   const [vehicleToEdit, setVehicleToEdit] = useState<Vehicle | null>(null);
+
+  // Prevent background page scrolling when any modal is open
+  useEffect(() => {
+    const isAnyModalOpen =
+      isFormOpen ||
+      isAgendaOpen ||
+      isFinalizedContractsOpen ||
+      isUploadDocOpen ||
+      isHelpOpen ||
+      isSettingsOpen ||
+      isChecklistConfigOpen ||
+      isRentalContractOpen ||
+      isReportsModalOpen ||
+      Boolean(vehiclePendingDelete) ||
+      isResetConfirmOpen ||
+      Boolean(vehiclePendingFinalize);
+
+    if (isAnyModalOpen) {
+      document.documentElement.classList.add('modal-open');
+      document.body.classList.add('modal-open');
+    } else {
+      document.documentElement.classList.remove('modal-open');
+      document.body.classList.remove('modal-open');
+    }
+    return () => {
+      document.documentElement.classList.remove('modal-open');
+      document.body.classList.remove('modal-open');
+    };
+  }, [
+    isFormOpen,
+    isAgendaOpen,
+    isFinalizedContractsOpen,
+    isUploadDocOpen,
+    isHelpOpen,
+    isSettingsOpen,
+    isChecklistConfigOpen,
+    isRentalContractOpen,
+    isReportsModalOpen,
+    vehiclePendingDelete,
+    isResetConfirmOpen,
+    vehiclePendingFinalize,
+  ]);
 
   // Trigger Form Handlers
   const handleOpenForm = (type: 'vehicle' | 'fuel' | 'maintenance' | 'trip' | 'expense', vId: string = '') => {
@@ -1262,23 +1422,6 @@ export default function App() {
               <span className="sm:hidden">Agenda</span>
             </button>
 
-            <button
-              type="button"
-              onClick={() => {
-                const phone = '5511953292570';
-                const text = 'Olá! Gostaria de enviar uma sugestão para o aplicativo Gestão de Frota: ';
-                const url = `https://wa.me/${phone}?text=${encodeURIComponent(text)}`;
-                window.open(url, '_blank');
-              }}
-              className="px-3 py-2 bg-emerald-600/20 hover:bg-emerald-600/30 text-emerald-300 border border-emerald-500/30 rounded-xl flex items-center gap-1.5 text-xs font-bold transition-all shadow-md shadow-emerald-500/10 cursor-pointer"
-              title="Fale Conosco - Enviar sugestão via WhatsApp"
-              id="btn-fale-conosco"
-            >
-              <MessageCircle className="w-4 h-4 text-emerald-400" />
-              <span className="hidden sm:inline">Fale Conosco</span>
-              <span className="sm:hidden">Suporte</span>
-            </button>
-
             <HeaderActionsMenu
               onAddVehicle={() => handleOpenForm('vehicle')}
               onOpenRentalContract={() => {
@@ -1480,7 +1623,7 @@ export default function App() {
       {/* Interactive Log Entry Dialog Modal Form */}
       <LogForms 
         isOpen={isFormOpen}
-        onClose={() => { setIsFormOpen(false); setGlobalPrefilledData(null); }}
+        onClose={() => { setIsFormOpen(false); setActiveFormType(null); setGlobalPrefilledData(null); }}
         formType={activeFormType}
         vehicles={vehicles}
         selectedVehicleId={selectedVehicleId}
@@ -1492,6 +1635,7 @@ export default function App() {
         onSaveMaintenance={handleSaveMaintenance}
         onSaveTrip={handleSaveTrip}
         onSaveExpense={handleSaveExpense}
+        onSaveContact={handleSaveContact}
       />
 
       {/* Agenda Modal */}
@@ -1565,6 +1709,8 @@ export default function App() {
         onUpdateVehicle={handleUpdateVehicle}
         checklistConfig={checklistConfig}
         onSaveVistoria={handleSaveVistoria}
+        contacts={contacts}
+        onSaveContact={handleSaveContact}
       />
 
       <ReportsAndHistoryModal

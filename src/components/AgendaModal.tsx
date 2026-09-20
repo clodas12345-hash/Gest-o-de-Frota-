@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { AgendaContact, Vehicle } from '../types';
-import { X, Plus, Trash2, Search, MapPin, Phone, User, Save, Edit2, MessageCircle, Send, Car } from 'lucide-react';
+import { X, Plus, Trash2, Search, MapPin, Phone, User, Save, Edit2, MessageCircle, Send, Car, Upload } from 'lucide-react';
 
 export const toTitleCase = (str: string): string => {
   if (!str) return '';
@@ -226,6 +226,41 @@ export const AgendaModal: React.FC<AgendaModalProps> = ({
     setCustomMessage('');
   };
 
+  const handleImportDeviceContacts = async () => {
+    if ('contacts' in navigator && 'select' in (navigator as any).contacts) {
+      try {
+        const props = ['name', 'tel'];
+        const opts = { multiple: true };
+        const selectedContacts = await (navigator as any).contacts.select(props, opts);
+        
+        if (selectedContacts && selectedContacts.length > 0) {
+          let count = 0;
+          selectedContacts.forEach((c: any) => {
+            const name = c.name?.[0] || 'Contato';
+            const phoneRaw = c.tel?.[0] || '';
+            let cleanPhone = phoneRaw.replace(/\D/g, '');
+            if (cleanPhone.length > 0) {
+              if (!cleanPhone.startsWith('55')) cleanPhone = '55' + cleanPhone;
+              onSaveContact({
+                id: `contact-${Date.now()}-${Math.random().toString(36).substr(2, 4)}`,
+                name: toTitleCase(name),
+                phone: cleanPhone,
+                region: 'Geral',
+              });
+              count++;
+            }
+          });
+          alert(`✅ ${count} contato(s) importados da agenda nativa com sucesso!`);
+          return;
+        }
+      } catch (err) {
+        console.warn('Contacts select permission cancelled or not supported:', err);
+      }
+    } else {
+      alert('A seleção direta de contatos da agenda nativa requer um dispositivo ou navegador compatível com a API Contacts (ex: Chrome no Android ou PWA instalado).');
+    }
+  };
+
   const filteredContacts = contacts
     .filter((contact) => {
       const s = searchTerm.toLowerCase();
@@ -238,8 +273,8 @@ export const AgendaModal: React.FC<AgendaModalProps> = ({
     .sort((a, b) => a.name.localeCompare(b.name, 'pt-BR', { sensitivity: 'base' }));
 
   return (
-    <div className="fixed inset-0 bg-black/80 backdrop-blur-xs flex items-center justify-center z-50 p-4">
-      <div className="bg-[#0f0f0f] border border-white/10 rounded-2xl w-full max-w-lg overflow-hidden flex flex-col max-h-[90vh] shadow-2xl animate-in zoom-in-95 duration-150">
+    <div className="fixed inset-0 bg-black/80 backdrop-blur-xs flex items-center justify-center z-50 p-4 touch-none overscroll-contain">
+      <div className="bg-[#0f0f0f] border border-white/10 rounded-2xl w-full max-w-lg overflow-hidden flex flex-col max-h-[90vh] shadow-2xl overscroll-contain animate-in zoom-in-95 duration-150">
         
         {/* Header */}
         <div className="p-4 border-b border-white/10 flex justify-between items-center bg-[#141414]">
@@ -254,7 +289,7 @@ export const AgendaModal: React.FC<AgendaModalProps> = ({
           </div>
           <button
             onClick={onClose}
-            className="text-gray-400 hover:text-white p-1 rounded-lg hover:bg-white/5 transition-colors"
+            className="text-gray-400 hover:text-white p-1 rounded-lg hover:bg-white/5 transition-colors cursor-pointer"
           >
             <X className="w-5 h-5" />
           </button>
@@ -346,7 +381,7 @@ export const AgendaModal: React.FC<AgendaModalProps> = ({
         )}
 
         {/* Search bar and List */}
-        <div className="p-4 flex-1 overflow-y-auto space-y-3">
+        <div className="p-4 flex-1 overflow-y-auto overscroll-contain touch-pan-y space-y-3">
           {!isAdding && (
             <div className="flex justify-between items-center gap-2">
               <div className="relative flex-1">
@@ -359,13 +394,25 @@ export const AgendaModal: React.FC<AgendaModalProps> = ({
                   className="w-full bg-[#141414] border border-white/5 rounded-xl pl-10 pr-4 py-2 text-xs text-white focus:outline-hidden focus:border-emerald-500/50 placeholder-gray-500"
                 />
               </div>
-              <button
-                onClick={handleStartAdd}
-                className="px-3 py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-xs font-bold flex items-center gap-1.5 shrink-0 transition-colors"
-              >
-                <Plus className="w-4 h-4" />
-                <span className="hidden sm:inline">Adicionar</span>
-              </button>
+              <div className="flex items-center gap-1.5 shrink-0">
+                <button
+                  type="button"
+                  onClick={handleImportDeviceContacts}
+                  className="px-3 py-2 bg-blue-600/20 hover:bg-blue-600/30 text-blue-300 border border-blue-500/30 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer"
+                  title="Importar contatos da agenda telefônica ou arquivos VCF/JSON"
+                >
+                  <Upload className="w-4 h-4 text-blue-400" />
+                  <span className="hidden sm:inline">Importar</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={handleStartAdd}
+                  className="px-3 py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-xs font-bold flex items-center gap-1.5 transition-colors cursor-pointer"
+                >
+                  <Plus className="w-4 h-4" />
+                  <span className="hidden sm:inline">Adicionar</span>
+                </button>
+              </div>
             </div>
           )}
 

@@ -51,7 +51,7 @@ interface InlineEditProps {
 
 const InlineEdit = ({ value, label, onSave, isCurrency = true }: InlineEditProps) => {
   const [isEditing, setIsEditing] = useState(false);
-  const [tempValue, setTempValue] = useState<string>(value.toString());
+  const [tempValue, setTempValue] = useState<string>(value === 0 ? '' : value.toString());
 
   if (isEditing) {
     return (
@@ -59,8 +59,11 @@ const InlineEdit = ({ value, label, onSave, isCurrency = true }: InlineEditProps
         <input
           type="number"
           step="any"
+          placeholder="0"
           value={tempValue}
           onChange={(e) => setTempValue(e.target.value)}
+          onFocus={(e) => e.target.select()}
+          onClick={(e) => (e.target as HTMLInputElement).select()}
           className="w-20 px-1 py-0.5 bg-neutral-800 border border-neutral-700 text-white rounded font-mono text-xs text-right focus:outline-hidden focus:border-blue-500"
           autoFocus
           onKeyDown={(e) => {
@@ -473,36 +476,42 @@ export const VehicleCard: React.FC<VehicleCardProps> = ({
     isOpen: boolean;
     key: 'financiamento' | 'seguro' | 'ipva' | 'manutencao' | 'custoExtra';
     title: string;
-    pagas: number;
-    totais: number;
+    pagas: number | '';
+    totais: number | '';
   } | null>(null);
 
   const openParcelasModal = (
     key: 'financiamento' | 'seguro' | 'ipva' | 'manutencao' | 'custoExtra',
     title: string,
-    pagasDefault: number,
-    totaisDefault: number
+    pagasDefault?: number,
+    totaisDefault?: number
   ) => {
     setParcelasModalData({
       isOpen: true,
       key,
       title,
-      pagas: pagasDefault || 0,
-      totais: totaisDefault || 12,
+      pagas: (pagasDefault !== undefined && pagasDefault !== null && pagasDefault > 0) ? pagasDefault : '',
+      totais: (totaisDefault !== undefined && totaisDefault !== null && totaisDefault > 0) ? totaisDefault : '',
     });
   };
 
   const handleSaveParcelasModal = () => {
     if (!parcelasModalData) return;
     const { key, pagas, totais } = parcelasModalData;
-    if (totais < 0 || pagas < 0) {
+    const numPagas = pagas === '' ? 0 : Number(pagas);
+    const numTotais = totais === '' ? 0 : Number(totais);
+    if (numTotais < 0 || numPagas < 0) {
       alert('Por favor, informe números válidos.');
+      return;
+    }
+    if (numTotais === 0 && numPagas === 0) {
+      handleRemoveParcelasModal();
       return;
     }
     onUpdateVehicle({
       ...vehicle,
-      [`${key}ParcelasPagas`]: Number(pagas) || 0,
-      [`${key}ParcelasTotais`]: Number(totais) || 0,
+      [`${key}ParcelasPagas`]: numPagas,
+      [`${key}ParcelasTotais`]: numTotais,
     });
     setParcelasModalData(null);
   };
@@ -1586,7 +1595,7 @@ export const VehicleCard: React.FC<VehicleCardProps> = ({
                       <div className="mt-1">
                         <button
                           type="button"
-                          onClick={() => openParcelasModal('financiamento', 'Financiamento', vehicle.financiamentoParcelasPagas || 0, vehicle.financiamentoParcelasTotais || 12)}
+                          onClick={() => openParcelasModal('financiamento', 'Financiamento', vehicle.financiamentoParcelasPagas, vehicle.financiamentoParcelasTotais)}
                           className="text-[9px] font-mono bg-amber-500/10 text-amber-300 border border-amber-500/20 px-1.5 py-0.5 rounded-md font-bold hover:bg-amber-500/20 transition-all cursor-pointer flex items-center gap-1 shrink-0"
                           title="Clique para alterar parcelas do financiamento"
                         >
@@ -1600,7 +1609,7 @@ export const VehicleCard: React.FC<VehicleCardProps> = ({
                         <div className="mt-1">
                           <button
                             type="button"
-                            onClick={() => openParcelasModal('financiamento', 'Financiamento', 0, 12)}
+                            onClick={() => openParcelasModal('financiamento', 'Financiamento', undefined, undefined)}
                             className="text-[9px] font-mono text-gray-500 hover:text-amber-300 transition-colors px-1.5 py-0.5 bg-white/5 hover:bg-white/10 rounded-md border border-white/10 flex items-center gap-1 cursor-pointer shrink-0"
                             title="Definir quantas parcelas foram pagas e quantas faltam"
                           >
@@ -1636,7 +1645,7 @@ export const VehicleCard: React.FC<VehicleCardProps> = ({
                       <div className="mt-1">
                         <button
                           type="button"
-                          onClick={() => openParcelasModal('seguro', 'Seguro', vehicle.seguroParcelasPagas || 0, vehicle.seguroParcelasTotais || 12)}
+                          onClick={() => openParcelasModal('seguro', 'Seguro', vehicle.seguroParcelasPagas, vehicle.seguroParcelasTotais)}
                           className="text-[9px] font-mono bg-amber-500/10 text-amber-300 border border-amber-500/20 px-1.5 py-0.5 rounded-md font-bold hover:bg-amber-500/20 transition-all cursor-pointer flex items-center gap-1 shrink-0"
                           title="Clique para alterar parcelas do seguro"
                         >
@@ -1650,7 +1659,7 @@ export const VehicleCard: React.FC<VehicleCardProps> = ({
                         <div className="mt-1">
                           <button
                             type="button"
-                            onClick={() => openParcelasModal('seguro', 'Seguro', 0, 12)}
+                            onClick={() => openParcelasModal('seguro', 'Seguro', undefined, undefined)}
                             className="text-[9px] font-mono text-gray-500 hover:text-amber-300 transition-colors px-1.5 py-0.5 bg-white/5 hover:bg-white/10 rounded-md border border-white/10 flex items-center gap-1 cursor-pointer shrink-0"
                             title="Definir quantas parcelas foram pagas e quantas faltam"
                           >
@@ -1686,7 +1695,7 @@ export const VehicleCard: React.FC<VehicleCardProps> = ({
                       <div className="mt-1">
                         <button
                           type="button"
-                          onClick={() => openParcelasModal('ipva', 'IPVA', vehicle.ipvaParcelasPagas || 0, vehicle.ipvaParcelasTotais || 10)}
+                          onClick={() => openParcelasModal('ipva', 'IPVA', vehicle.ipvaParcelasPagas, vehicle.ipvaParcelasTotais)}
                           className="text-[9px] font-mono bg-amber-500/10 text-amber-300 border border-amber-500/20 px-1.5 py-0.5 rounded-md font-bold hover:bg-amber-500/20 transition-all cursor-pointer flex items-center gap-1 shrink-0"
                           title="Clique para alterar parcelas do IPVA"
                         >
@@ -1700,7 +1709,7 @@ export const VehicleCard: React.FC<VehicleCardProps> = ({
                         <div className="mt-1">
                           <button
                             type="button"
-                            onClick={() => openParcelasModal('ipva', 'IPVA', 0, 10)}
+                            onClick={() => openParcelasModal('ipva', 'IPVA', undefined, undefined)}
                             className="text-[9px] font-mono text-gray-500 hover:text-amber-300 transition-colors px-1.5 py-0.5 bg-white/5 hover:bg-white/10 rounded-md border border-white/10 flex items-center gap-1 cursor-pointer shrink-0"
                             title="Definir quantas parcelas foram pagas e quantas faltam"
                           >
@@ -1736,7 +1745,7 @@ export const VehicleCard: React.FC<VehicleCardProps> = ({
                       <div className="mt-1">
                         <button
                           type="button"
-                          onClick={() => openParcelasModal('manutencao', 'Manutenção Preventiva', vehicle.manutencaoParcelasPagas || 0, vehicle.manutencaoParcelasTotais || 12)}
+                          onClick={() => openParcelasModal('manutencao', 'Manutenção Preventiva', vehicle.manutencaoParcelasPagas, vehicle.manutencaoParcelasTotais)}
                           className="text-[9px] font-mono bg-amber-500/10 text-amber-300 border border-amber-500/20 px-1.5 py-0.5 rounded-md font-bold hover:bg-amber-500/20 transition-all cursor-pointer flex items-center gap-1 shrink-0"
                           title="Clique para alterar parcelas da Manutenção Preventiva"
                         >
@@ -1750,7 +1759,7 @@ export const VehicleCard: React.FC<VehicleCardProps> = ({
                         <div className="mt-1">
                           <button
                             type="button"
-                            onClick={() => openParcelasModal('manutencao', 'Manutenção Preventiva', 0, 12)}
+                            onClick={() => openParcelasModal('manutencao', 'Manutenção Preventiva', undefined, undefined)}
                             className="text-[9px] font-mono text-gray-500 hover:text-amber-300 transition-colors px-1.5 py-0.5 bg-white/5 hover:bg-white/10 rounded-md border border-white/10 flex items-center gap-1 cursor-pointer shrink-0"
                             title="Definir quantas parcelas foram pagas e quantas faltam"
                           >
@@ -1806,7 +1815,7 @@ export const VehicleCard: React.FC<VehicleCardProps> = ({
                           <div className="mt-1">
                             <button
                               type="button"
-                              onClick={() => openParcelasModal('custoExtra', custoExtraLabel, 0, 12)}
+                              onClick={() => openParcelasModal('custoExtra', custoExtraLabel, undefined, undefined)}
                               className="text-[9px] font-mono text-gray-500 hover:text-amber-300 transition-colors px-1.5 py-0.5 bg-white/5 hover:bg-white/10 rounded-md border border-white/10 flex items-center gap-1 cursor-pointer shrink-0"
                               title="Definir quantas parcelas foram pagas e quantas faltam"
                             >
@@ -1938,6 +1947,8 @@ export const VehicleCard: React.FC<VehicleCardProps> = ({
                           placeholder="0,00"
                           value={newExpenseAmount || ''}
                           onChange={(e) => setNewExpenseAmount(Number(e.target.value))}
+                          onFocus={(e) => e.target.select()}
+                          onClick={(e) => (e.target as HTMLInputElement).select()}
                           className="w-full text-xs bg-black border border-white/15 rounded-lg px-2.5 py-1.5 text-white focus:outline-hidden font-mono focus:border-amber-500"
                         />
                       </div>
@@ -4378,8 +4389,17 @@ export const VehicleCard: React.FC<VehicleCardProps> = ({
                   <input
                     type="number"
                     min="0"
+                    placeholder="0"
                     value={parcelasModalData.pagas}
-                    onChange={(e) => setParcelasModalData({ ...parcelasModalData, pagas: Number(e.target.value) })}
+                    onChange={(e) => {
+                      const val = e.target.value;
+                      setParcelasModalData({
+                        ...parcelasModalData,
+                        pagas: val === '' ? '' : Math.max(0, parseInt(val, 10) || 0),
+                      });
+                    }}
+                    onFocus={(e) => e.target.select()}
+                    onClick={(e) => (e.target as HTMLInputElement).select()}
                     className="w-full text-xs bg-black border border-white/20 rounded-lg px-3 py-2 text-white font-mono focus:outline-hidden focus:border-amber-500"
                     autoFocus
                   />
@@ -4391,20 +4411,29 @@ export const VehicleCard: React.FC<VehicleCardProps> = ({
                   <input
                     type="number"
                     min="1"
+                    placeholder="Ex: 12"
                     value={parcelasModalData.totais}
-                    onChange={(e) => setParcelasModalData({ ...parcelasModalData, totais: Number(e.target.value) })}
+                    onChange={(e) => {
+                      const val = e.target.value;
+                      setParcelasModalData({
+                        ...parcelasModalData,
+                        totais: val === '' ? '' : Math.max(0, parseInt(val, 10) || 0),
+                      });
+                    }}
+                    onFocus={(e) => e.target.select()}
+                    onClick={(e) => (e.target as HTMLInputElement).select()}
                     className="w-full text-xs bg-black border border-white/20 rounded-lg px-3 py-2 text-white font-mono focus:outline-hidden focus:border-amber-500"
                   />
                 </div>
               </div>
 
-              {parcelasModalData.totais > 0 && (
+              {(parcelasModalData.totais !== '' && Number(parcelasModalData.totais) > 0) && (
                 <div className="p-2.5 bg-amber-500/10 border border-amber-500/20 rounded-xl flex justify-between items-center text-xs text-amber-300 font-mono">
                   <span>Resumo:</span>
                   <div className="font-bold flex items-center gap-2">
-                    <span className="text-emerald-400">Pagas: {parcelasModalData.pagas}</span>
+                    <span className="text-emerald-400">Pagas: {parcelasModalData.pagas === '' ? 0 : parcelasModalData.pagas}</span>
                     <span className="text-white/20">|</span>
-                    <span className="text-rose-400">Faltam: {Math.max(0, parcelasModalData.totais - parcelasModalData.pagas)}</span>
+                    <span className="text-rose-400">Faltam: {Math.max(0, Number(parcelasModalData.totais) - (parcelasModalData.pagas === '' ? 0 : Number(parcelasModalData.pagas)))}</span>
                   </div>
                 </div>
               )}

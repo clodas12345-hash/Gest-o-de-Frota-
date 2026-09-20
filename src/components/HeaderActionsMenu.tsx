@@ -62,6 +62,20 @@ export function HeaderActionsMenu({
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
 
+  useEffect(() => {
+    if (isOpen) {
+      document.documentElement.classList.add('modal-open');
+      document.body.classList.add('modal-open');
+    } else {
+      document.documentElement.classList.remove('modal-open');
+      document.body.classList.remove('modal-open');
+    }
+    return () => {
+      document.documentElement.classList.remove('modal-open');
+      document.body.classList.remove('modal-open');
+    };
+  }, [isOpen]);
+
   const handleAction = (actionFn: () => void) => {
     actionFn();
     setIsOpen(false);
@@ -91,15 +105,15 @@ export function HeaderActionsMenu({
 
       {/* Expanded Dropdown Menu Overlay */}
       {isOpen && (
-        <div className="fixed inset-0 z-[999] flex items-start justify-end p-2 sm:p-6 pt-16 sm:pt-20 bg-black/50 backdrop-blur-xs animate-in fade-in duration-150">
+        <div className="fixed inset-0 z-[999] flex items-start justify-end p-2 sm:p-6 pt-16 sm:pt-20 bg-black/50 backdrop-blur-xs animate-in fade-in duration-150 overscroll-contain">
           {/* Backdrop click to close */}
           <div 
-            className="absolute inset-0" 
+            className="absolute inset-0 touch-none" 
             onClick={() => setIsOpen(false)} 
           />
 
           {/* Modal Content Card */}
-          <div className="relative w-full sm:w-80 max-w-[calc(100vw-1rem)] max-h-[85vh] overflow-y-auto bg-[#141414] border border-white/20 rounded-2xl shadow-2xl z-[1000] p-3 space-y-2 animate-in zoom-in-95 duration-150 scrollbar-thin scrollbar-thumb-white/20">
+          <div className="relative w-full sm:w-80 max-w-[calc(100vw-1rem)] max-h-[85vh] overflow-y-auto overscroll-contain touch-pan-y bg-[#141414] border border-white/20 rounded-2xl shadow-2xl z-[1000] p-3 space-y-2 animate-in zoom-in-95 duration-150 scrollbar-thin scrollbar-thumb-white/20">
             <div className="px-3 py-2 border-b border-white/10 flex items-center justify-between sticky top-0 bg-[#141414] z-10">
               <div className="flex items-center gap-2">
                 <Menu className="w-4 h-4 text-blue-400" />
@@ -173,39 +187,19 @@ export function HeaderActionsMenu({
               )}
             </button>
 
-            {/* Option 3: Central de Ajuda */}
-            <button
-              type="button"
-              onClick={() => handleAction(onOpenHelp)}
-              className="w-full flex items-center justify-between p-3 rounded-xl bg-indigo-500/10 hover:bg-indigo-500/20 text-left group transition-all cursor-pointer border border-indigo-500/20 hover:border-indigo-500/40"
-            >
-              <div className="flex items-center gap-3">
-                <div className="p-2 bg-indigo-600 text-white rounded-lg group-hover:scale-105 transition-transform shadow-md shadow-indigo-500/20">
-                  <HelpCircle className="w-4 h-4" />
-                </div>
-                <div>
-                  <p className="text-xs font-bold text-white group-hover:text-indigo-300">Ajuda e Suporte IA</p>
-                  <p className="text-[10px] text-gray-400">Tirar dúvidas e instruções</p>
-                </div>
-              </div>
-              <span className="text-[10px] bg-indigo-500/20 text-indigo-300 font-bold px-2 py-0.5 rounded-full flex items-center gap-1 border border-indigo-500/30">
-                <Sparkles className="w-2.5 h-2.5 text-indigo-400" /> IA
-              </span>
-            </button>
-
             {/* Option: Configurações */}
             {onOpenSettings && (
               <button
                 type="button"
                 onClick={() => handleAction(onOpenSettings)}
-                className="w-full flex items-center gap-3 p-3 rounded-xl bg-slate-800/40 hover:bg-slate-800/80 text-left group transition-all cursor-pointer border border-white/10 hover:border-white/20"
+                className="w-full flex items-center gap-3 p-3 rounded-xl bg-sky-950/40 hover:bg-sky-900/60 text-left group transition-all cursor-pointer border border-sky-500/20 hover:border-sky-500/40"
               >
-                <div className="p-2 bg-slate-700 text-white rounded-lg group-hover:scale-105 transition-transform shadow-md">
-                  <Settings className="w-4 h-4 text-blue-400" />
+                <div className="p-2 bg-sky-600 text-white rounded-lg group-hover:scale-105 transition-transform shadow-md shadow-sky-500/20">
+                  <Settings className="w-4 h-4 text-white" />
                 </div>
                 <div>
-                  <p className="text-xs font-bold text-white group-hover:text-blue-300">Configurações</p>
-                  <p className="text-[10px] text-gray-400">Lembretes de vistoria e notificações</p>
+                  <p className="text-xs font-bold text-white group-hover:text-sky-300">Configurações</p>
+                  <p className="text-[10px] text-gray-400">Lembretes, suporte, notificações e permissões</p>
                 </div>
               </button>
             )}
@@ -224,27 +218,6 @@ export function HeaderActionsMenu({
               <div>
                 <p className="text-xs font-bold text-white group-hover:text-teal-300">Agenda Telefônica & Locatários</p>
                 <p className="text-[10px] text-gray-400">Contatos, telefones e regiões</p>
-              </div>
-            </button>
-
-            {/* Option: Fale Conosco / Suporte WhatsApp */}
-            <button
-              type="button"
-              onClick={() => {
-                const phone = '5511953292570';
-                const text = 'Olá! Gostaria de enviar uma sugestão para o aplicativo Gestão de Frota: ';
-                const url = `https://wa.me/${phone}?text=${encodeURIComponent(text)}`;
-                window.open(url, '_blank');
-                setIsOpen(false);
-              }}
-              className="w-full flex items-center gap-3 p-3 rounded-xl bg-emerald-500/10 hover:bg-emerald-500/20 text-left group transition-all cursor-pointer border border-emerald-500/20 hover:border-emerald-500/40"
-            >
-              <div className="p-2 bg-emerald-600 text-white rounded-lg group-hover:scale-105 transition-transform shadow-md shadow-emerald-500/20">
-                <MessageCircle className="w-4 h-4" />
-              </div>
-              <div>
-                <p className="text-xs font-bold text-white group-hover:text-emerald-300">Fale Conosco (WhatsApp)</p>
-                <p className="text-[10px] text-gray-400">Enviar sugestão para o Aplicativo</p>
               </div>
             </button>
 

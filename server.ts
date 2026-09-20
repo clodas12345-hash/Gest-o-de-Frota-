@@ -52,7 +52,7 @@ async function startServer() {
 Schema requirement: ${schemaText}`;
 
       const response = await ai.models.generateContent({
-        model: "gemini-3.6-flash",
+        model: "gemini-2.5-flash",
         contents: prompt,
         config: {
           systemInstruction: systemPrompt,
@@ -68,7 +68,11 @@ Schema requirement: ${schemaText}`;
       res.json({ success: true, data: extractedData });
     } catch (error: any) {
       console.error("AI Fill Error:", error);
-      res.status(500).json({ error: error.message || "Failed to process AI request" });
+      const errMsg = error.message || "";
+      if (errMsg.includes("resource_exhausted") || errMsg.includes("quota") || errMsg.includes("429")) {
+        return res.status(429).json({ error: "Limite de cota da IA excedido temporariamente. Por favor, preencha os dados manualmente." });
+      }
+      res.status(500).json({ error: errMsg || "Failed to process AI request" });
     }
   });
 

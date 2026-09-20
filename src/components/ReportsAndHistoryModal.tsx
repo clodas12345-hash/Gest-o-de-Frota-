@@ -56,13 +56,13 @@ export function ReportsAndHistoryModal({
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 z-[2000] flex items-center justify-center p-3 sm:p-6 bg-black/80 backdrop-blur-sm animate-in fade-in duration-200">
+    <div className="fixed inset-0 z-[2000] flex items-center justify-center p-3 sm:p-6 bg-black/80 backdrop-blur-sm touch-none overscroll-contain animate-in fade-in duration-200">
       <div 
         className="absolute inset-0" 
         onClick={onClose} 
       />
 
-      <div className="relative w-full max-w-6xl max-h-[92vh] bg-[#121212] border border-white/15 rounded-2xl shadow-2xl z-[2001] flex flex-col overflow-hidden animate-in zoom-in-95 duration-150">
+      <div className="relative w-full max-w-6xl max-h-[92vh] bg-[#121212] border border-white/15 rounded-2xl shadow-2xl z-[2001] flex flex-col overflow-hidden overscroll-contain animate-in zoom-in-95 duration-150">
         {/* Modal Header */}
         <div className="px-5 py-4 border-b border-white/10 flex items-center justify-between bg-[#18181b] shrink-0">
           <div className="flex items-center gap-3">
@@ -117,7 +117,7 @@ export function ReportsAndHistoryModal({
         </div>
 
         {/* Modal Body Content */}
-        <div className="p-5 overflow-y-auto flex-1 space-y-6 scrollbar-thin scrollbar-thumb-white/20">
+        <div className="p-5 overflow-y-auto overscroll-contain touch-pan-y flex-1 space-y-6 scrollbar-thin scrollbar-thumb-white/20">
           {activeTab === 'charts' ? (
             <div className="space-y-6 animate-in fade-in duration-200">
               <VisualCharts

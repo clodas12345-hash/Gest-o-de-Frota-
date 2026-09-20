@@ -13,7 +13,8 @@ import {
   ShieldCheck,
   Camera,
   HardDrive,
-  MapPin
+  MapPin,
+  MessageCircle
 } from 'lucide-react';
 import { Vehicle } from '../types';
 
@@ -312,6 +313,36 @@ export function SettingsModal({
                   <span>Localização</span>
                 </button>
               </div>
+            </div>
+          </div>
+
+          <div className="border-t border-white/10" />
+
+          {/* Section 4: Suporte e Fale Conosco (WhatsApp) */}
+          <div className="space-y-3">
+            <h3 className="text-xs font-bold text-gray-300 uppercase tracking-wider flex items-center gap-1.5">
+              <MessageCircle className="w-3.5 h-3.5 text-emerald-400" />
+              <span>4. Suporte e Fale Conosco</span>
+            </h3>
+
+            <div className="p-4 rounded-xl bg-white/5 border border-white/10 space-y-3">
+              <p className="text-[11px] text-gray-400 leading-relaxed">
+                Precisa de suporte técnico, tirar dúvidas ou enviar sugestões para o aplicativo Gestão de Frota? Fale diretamente com nossa equipe via WhatsApp.
+              </p>
+
+              <button
+                type="button"
+                onClick={() => {
+                  const phone = '5511953292570';
+                  const text = 'Olá! Gostaria de suporte / enviar uma sugestão para o aplicativo Gestão de Frota: ';
+                  const url = `https://wa.me/${phone}?text=${encodeURIComponent(text)}`;
+                  window.open(url, '_blank');
+                }}
+                className="w-full px-4 py-2.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-xs font-bold flex items-center justify-center gap-2 transition-all cursor-pointer shadow-lg shadow-emerald-600/20"
+              >
+                <MessageCircle className="w-4 h-4 text-white shrink-0" />
+                <span>Abrir Suporte no WhatsApp</span>
+              </button>
             </div>
           </div>
 

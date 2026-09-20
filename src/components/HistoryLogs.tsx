@@ -217,7 +217,7 @@ export function HistoryLogs({
       onUpdateVistoria({
         ...log,
         date: editVistoriaDate,
-        type: editVistoriaType.trim() || undefined,
+        type: (editVistoriaType.trim() as 'Entrega de Veículo' | 'Periódica' | 'Devolução de Veículo') || undefined,
         notes: editVistoriaNotes.trim(),
       });
     }

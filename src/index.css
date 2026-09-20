@@ -16,3 +16,13 @@
   }
 }
 
+html.modal-open,
+body.modal-open {
+  overflow: hidden !important;
+  overscroll-behavior: none !important;
+  touch-action: none !important;
+  position: fixed !important;
+  width: 100% !important;
+  height: 100% !important;
+}
+
