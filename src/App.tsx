@@ -417,34 +417,16 @@ export default function App() {
     getDoc(docRef).then((snap) => {
       if (snap.exists()) {
         const d = snap.data();
-        if (d.vehicles && Array.isArray(d.vehicles) && d.vehicles.length > 0) {
-          setVehicles(prevVehicles => {
-            const cloudIds = new Set(d.vehicles.map((v: any) => v.id));
-            const localOnly = prevVehicles.filter(v => !cloudIds.has(v.id));
-            return [...ensureFuturePaymentsForVehicles(d.vehicles), ...localOnly];
-          });
-        } else {
-          // Cloud has no vehicles, but local might have vehicles: sync local to cloud!
-          setVehicles(prevVehicles => {
-            if (prevVehicles && prevVehicles.length > 0) {
-              setTimeout(() => {
-                const payload = sanitizeForCloud({
-                  vehicles: cleanVehiclesForCloud(prevVehicles),
-                  updatedAt: new Date().toISOString()
-                });
-                setDoc(docRef, payload, { merge: true }).catch(err => console.warn('Error syncing local vehicles to empty cloud:', err));
-              }, 100);
-            }
-            return prevVehicles;
-          });
+        if (d.vehicles && Array.isArray(d.vehicles)) {
+          setVehicles(ensureFuturePaymentsForVehicles(d.vehicles));
         }
-        if (d.contacts && Array.isArray(d.contacts) && d.contacts.length > 0) setContacts(d.contacts);
-        if (d.fuelLogs && Array.isArray(d.fuelLogs) && d.fuelLogs.length > 0) setFuelLogs(d.fuelLogs);
-        if (d.maintenanceLogs && Array.isArray(d.maintenanceLogs) && d.maintenanceLogs.length > 0) setMaintenanceLogs(d.maintenanceLogs);
-        if (d.tripLogs && Array.isArray(d.tripLogs) && d.tripLogs.length > 0) setTripLogs(d.tripLogs);
-        if (d.expenseLogs && Array.isArray(d.expenseLogs) && d.expenseLogs.length > 0) setExpenseLogs(d.expenseLogs);
-        if (d.vistorias && Array.isArray(d.vistorias) && d.vistorias.length > 0) setVistorias(d.vistorias);
-        if (d.finalizedContracts && Array.isArray(d.finalizedContracts) && d.finalizedContracts.length > 0) setFinalizedContracts(d.finalizedContracts);
+        if (d.contacts && Array.isArray(d.contacts)) setContacts(d.contacts);
+        if (d.fuelLogs && Array.isArray(d.fuelLogs)) setFuelLogs(d.fuelLogs);
+        if (d.maintenanceLogs && Array.isArray(d.maintenanceLogs)) setMaintenanceLogs(d.maintenanceLogs);
+        if (d.tripLogs && Array.isArray(d.tripLogs)) setTripLogs(d.tripLogs);
+        if (d.expenseLogs && Array.isArray(d.expenseLogs)) setExpenseLogs(d.expenseLogs);
+        if (d.vistorias && Array.isArray(d.vistorias)) setVistorias(d.vistorias);
+        if (d.finalizedContracts && Array.isArray(d.finalizedContracts)) setFinalizedContracts(d.finalizedContracts);
       } else {
         const initialPayload = sanitizeForCloud({
           vehicles: cleanVehiclesForCloud(vehicles),
@@ -470,35 +452,15 @@ export default function App() {
         const d = snap.data();
         isRemoteUpdateRef.current = true;
         if (d.vehicles && Array.isArray(d.vehicles)) {
-          if (d.vehicles.length > 0) {
-            setVehicles(prevVehicles => {
-              const cloudIds = new Set(d.vehicles.map((v: any) => v.id));
-              const localOnly = prevVehicles.filter(v => !cloudIds.has(v.id));
-              return [...ensureFuturePaymentsForVehicles(d.vehicles), ...localOnly];
-            });
-          } else {
-            // Cloud has 0 vehicles! DO NOT wipe local vehicles!
-            setVehicles(prevVehicles => {
-              if (prevVehicles && prevVehicles.length > 0) {
-                setTimeout(() => {
-                  const payload = sanitizeForCloud({
-                    vehicles: cleanVehiclesForCloud(prevVehicles),
-                    updatedAt: new Date().toISOString()
-                  });
-                  setDoc(docRef, payload, { merge: true }).catch(err => console.warn('Error resyncing local vehicles to cloud:', err));
-                }, 100);
-              }
-              return prevVehicles;
-            });
-          }
+          setVehicles(ensureFuturePaymentsForVehicles(d.vehicles));
         }
-        if (d.contacts && Array.isArray(d.contacts) && d.contacts.length > 0) setContacts(d.contacts);
-        if (d.fuelLogs && Array.isArray(d.fuelLogs) && d.fuelLogs.length > 0) setFuelLogs(d.fuelLogs);
-        if (d.maintenanceLogs && Array.isArray(d.maintenanceLogs) && d.maintenanceLogs.length > 0) setMaintenanceLogs(d.maintenanceLogs);
-        if (d.tripLogs && Array.isArray(d.tripLogs) && d.tripLogs.length > 0) setTripLogs(d.tripLogs);
-        if (d.expenseLogs && Array.isArray(d.expenseLogs) && d.expenseLogs.length > 0) setExpenseLogs(d.expenseLogs);
-        if (d.vistorias && Array.isArray(d.vistorias) && d.vistorias.length > 0) setVistorias(d.vistorias);
-        if (d.finalizedContracts && Array.isArray(d.finalizedContracts) && d.finalizedContracts.length > 0) setFinalizedContracts(d.finalizedContracts);
+        if (d.contacts && Array.isArray(d.contacts)) setContacts(d.contacts);
+        if (d.fuelLogs && Array.isArray(d.fuelLogs)) setFuelLogs(d.fuelLogs);
+        if (d.maintenanceLogs && Array.isArray(d.maintenanceLogs)) setMaintenanceLogs(d.maintenanceLogs);
+        if (d.tripLogs && Array.isArray(d.tripLogs)) setTripLogs(d.tripLogs);
+        if (d.expenseLogs && Array.isArray(d.expenseLogs)) setExpenseLogs(d.expenseLogs);
+        if (d.vistorias && Array.isArray(d.vistorias)) setVistorias(d.vistorias);
+        if (d.finalizedContracts && Array.isArray(d.finalizedContracts)) setFinalizedContracts(d.finalizedContracts);
         setTimeout(() => {
           isRemoteUpdateRef.current = false;
         }, 150);
@@ -1130,13 +1092,16 @@ export default function App() {
 
     if (options.veiculos) {
       localStorage.removeItem('fleet_vehicles');
+      localStorage.removeItem('fleet_vehicles_last_known');
       localStorage.removeItem('fleet_vehicle_draft');
       setVehicles([]);
+      saveToCloud('vehicles', []);
     }
 
     if (options.vistorias) {
       localStorage.removeItem('fleet_vistorias');
       setVistorias([]);
+      saveToCloud('vistorias', []);
     }
 
     if (options.manutencoes) {
@@ -1144,6 +1109,8 @@ export default function App() {
       localStorage.removeItem('fleet_expense_logs');
       setMaintenanceLogs([]);
       setExpenseLogs([]);
+      saveToCloud('maintenanceLogs', []);
+      saveToCloud('expenseLogs', []);
     }
 
     if (options.abastecimentos) {
@@ -1151,16 +1118,20 @@ export default function App() {
       localStorage.removeItem('fleet_trip_logs');
       setFuelLogs([]);
       setTripLogs([]);
+      saveToCloud('fuelLogs', []);
+      saveToCloud('tripLogs', []);
     }
 
     if (options.contratosFinalizados) {
       localStorage.removeItem('fleet_finalized_contracts');
       setFinalizedContracts([]);
+      saveToCloud('finalizedContracts', []);
     }
 
     if (options.agenda) {
       localStorage.removeItem('fleet_contacts');
       setContacts([]);
+      saveToCloud('contacts', []);
     }
 
     if (options.configuracoes) {
@@ -1194,21 +1165,41 @@ export default function App() {
 
   const handleConfirmResetData = () => {
     localStorage.removeItem('fleet_vehicles');
+    localStorage.removeItem('fleet_vehicles_last_known');
+    localStorage.removeItem('fleet_vehicle_draft');
     localStorage.removeItem('fleet_fuel_logs');
     localStorage.removeItem('fleet_maint_logs');
     localStorage.removeItem('fleet_trip_logs');
     localStorage.removeItem('fleet_expense_logs');
     localStorage.removeItem('fleet_vistorias');
+    localStorage.removeItem('fleet_finalized_contracts');
+    localStorage.removeItem('fleet_contacts');
     
-    setVehicles(ensureFuturePaymentsForVehicles(INITIAL_VEHICLES));
-    setFuelLogs(INITIAL_FUEL_LOGS);
-    setMaintenanceLogs(INITIAL_MAINTENANCE_LOGS);
-    setTripLogs(INITIAL_TRIP_LOGS);
-    setExpenseLogs(INITIAL_EXPENSE_LOGS);
+    setVehicles([]);
+    setFuelLogs([]);
+    setMaintenanceLogs([]);
+    setTripLogs([]);
+    setExpenseLogs([]);
     setVistorias([]);
+    setFinalizedContracts([]);
+    setContacts([]);
+    
+    const docRef = doc(db, 'fleetData', 'main');
+    setDoc(docRef, {
+      vehicles: [],
+      contacts: [],
+      fuelLogs: [],
+      maintenanceLogs: [],
+      tripLogs: [],
+      expenseLogs: [],
+      vistorias: [],
+      finalizedContracts: [],
+      updatedAt: new Date().toISOString()
+    }).catch(err => console.warn('Error resetting cloud data:', err));
+
     setIsResetConfirmOpen(false);
 
-    setDeleteToastMsg('Dados restaurados para o estado padrão com sucesso.');
+    setDeleteToastMsg('Dados zerados com sucesso! O aplicativo e o banco de dados estão limpos.');
     setTimeout(() => setDeleteToastMsg(null), 4000);
   };
 
@@ -1803,10 +1794,10 @@ export default function App() {
       {/* Confirmation Modal: Dataset Reset */}
       <ConfirmDeleteModal
         isOpen={isResetConfirmOpen}
-        title="Restaurar Dados da Frota?"
-        description="Esta ação restaurará os veículos padrão de demonstração e apagará as modificações locais."
-        warningNote="Recomendamos fazer o download do backup antes de restaurar."
-        confirmButtonText="Sim, Restaurar"
+        title="Zerar Dados do Aplicativo?"
+        description="Esta ação limpará todos os veículos, manutenções, despesas, contatos e vistorias para que o aplicativo/APK fique 100% limpo e sem dados."
+        warningNote="Recomendamos fazer o download do backup antes de zerar se desejar guardar uma cópia."
+        confirmButtonText="Sim, Zerar Todos os Dados"
         onConfirm={handleConfirmResetData}
         onCancel={() => setIsResetConfirmOpen(false)}
       />

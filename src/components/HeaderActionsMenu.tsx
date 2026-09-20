@@ -271,7 +271,7 @@ export function HeaderActionsMenu({
                 type="button"
                 onClick={() => handleAction(onResetData)}
                 className="p-2 text-gray-400 hover:text-rose-400 hover:bg-rose-500/10 rounded-xl border border-white/10 transition-colors cursor-pointer"
-                title="Redefinir para dados demonstrativos"
+                title="Zerar todos os dados do sistema (Gerar APK limpo)"
               >
                 <RefreshCw className="w-3.5 h-3.5" />
               </button>
