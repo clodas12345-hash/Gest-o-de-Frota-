@@ -55,7 +55,7 @@ export const AboutAppModal: React.FC<AboutAppModalProps> = ({
             >
               <img 
                 src={logoImg} 
-                alt="GKD Mobility Logo" 
+                alt="Gestão de Frota Logo" 
                 className="w-20 h-20 rounded-2xl bg-white p-1 border border-white/20 object-contain shadow-lg shadow-blue-500/10 group-hover:scale-105 group-hover:border-blue-400 transition-all"
                 referrerPolicy="no-referrer"
               />
@@ -68,9 +68,6 @@ export const AboutAppModal: React.FC<AboutAppModalProps> = ({
              <div className="text-center sm:text-left space-y-1">
               <div className="flex flex-wrap items-center justify-center sm:justify-start gap-2">
                 <h2 className="text-xl font-bold text-white tracking-tight">Gestão de Frota</h2>
-                <span className="text-xs font-semibold px-2.5 py-0.5 rounded-full bg-blue-500/20 text-blue-400 border border-blue-500/30">
-                  GKD Mobility
-                </span>
               </div>
               <p className="text-xs text-blue-300/90 font-medium">
                 Plataforma Completa para Controle e Gestão de Veículos Alugados

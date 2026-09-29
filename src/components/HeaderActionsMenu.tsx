@@ -15,7 +15,9 @@ import {
   Car,
   Settings,
   FileText,
-  MessageCircle
+  MessageCircle,
+  Wrench,
+  Fuel
 } from 'lucide-react';
 
 interface HeaderActionsMenuProps {
@@ -26,6 +28,7 @@ interface HeaderActionsMenuProps {
   unviewedContractsCount?: number;
   onOpenHelp: () => void;
   onOpenAgenda: () => void;
+  onOpenLogForm: (type: 'fuel' | 'maintenance' | 'expense') => void;
   onOpenDocumentUpload: () => void;
   onOpenSettings?: () => void;
   onOpenChecklistConfig?: () => void;
@@ -42,6 +45,7 @@ export function HeaderActionsMenu({
   unviewedContractsCount = 0,
   onOpenHelp,
   onOpenAgenda,
+  onOpenLogForm,
   onOpenDocumentUpload,
   onOpenSettings,
   onOpenChecklistConfig,
@@ -113,7 +117,7 @@ export function HeaderActionsMenu({
           />
 
           {/* Modal Content Card */}
-          <div className="relative w-full sm:w-80 max-w-[calc(100vw-1rem)] max-h-[85vh] overflow-y-auto overscroll-contain touch-pan-y bg-[#141414] border border-white/20 rounded-2xl shadow-2xl z-[1000] p-3 space-y-2 animate-in zoom-in-95 duration-150 scrollbar-thin scrollbar-thumb-white/20">
+            <div className="relative w-full sm:w-80 max-w-[calc(100vw-1rem)] max-h-[85vh] overflow-y-auto overscroll-contain touch-pan-y bg-[#141414] border border-white/20 rounded-2xl shadow-2xl z-[1000] p-3 space-y-2 animate-in zoom-in-95 duration-150 scrollbar-thin scrollbar-thumb-white/20">
             <div className="px-3 py-2 border-b border-white/10 flex items-center justify-between sticky top-0 bg-[#141414] z-10">
               <div className="flex items-center gap-2">
                 <Menu className="w-4 h-4 text-blue-400" />
@@ -141,6 +145,21 @@ export function HeaderActionsMenu({
               <div>
                 <p className="text-xs font-bold text-white group-hover:text-blue-300">Adicionar Veículo</p>
                 <p className="text-[10px] text-gray-400">Cadastrar novo carro na frota</p>
+              </div>
+            </button>
+
+            {/* Option: Registrar Manutenção */}
+            <button
+              type="button"
+              onClick={() => handleAction(() => onOpenLogForm('maintenance'))}
+              className="w-full flex items-center gap-3 p-3 rounded-xl bg-amber-500/10 hover:bg-amber-500/20 text-left group transition-all cursor-pointer border border-amber-500/20 hover:border-amber-500/40"
+            >
+              <div className="p-2 bg-amber-600 text-white rounded-lg group-hover:scale-105 transition-transform shadow-md shadow-amber-500/20">
+                <Wrench className="w-4 h-4" />
+              </div>
+              <div>
+                <p className="text-xs font-bold text-white group-hover:text-amber-300">Registrar Manutenção</p>
+                <p className="text-[10px] text-gray-400">Oficina, peças e custos de conserto</p>
               </div>
             </button>
 

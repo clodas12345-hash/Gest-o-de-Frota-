@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Vehicle, FuelLog, MaintenanceLog, TripLog, ExpenseLog, Vistoria } from '../types';
+import { Vehicle, FuelLog, MaintenanceLog, ExpenseLog, Vistoria } from '../types';
 import { BarChart3, History, X, PieChart } from 'lucide-react';
 import { VisualCharts } from './VisualCharts';
 import { HistoryLogs } from './HistoryLogs';
@@ -10,19 +10,16 @@ interface ReportsAndHistoryModalProps {
   vehicles: Vehicle[];
   fuelLogs: FuelLog[];
   maintenanceLogs: MaintenanceLog[];
-  tripLogs: TripLog[];
   expenseLogs: ExpenseLog[];
   vistorias: Vistoria[];
   selectedMonth?: number;
   selectedYear?: number;
   onDeleteFuel: (id: string) => void;
   onDeleteMaintenance: (id: string) => void;
-  onDeleteTrip: (id: string) => void;
   onDeleteExpense: (id: string) => void;
   onDeleteVistoria: (id: string) => void;
   onUpdateFuel: (log: FuelLog) => void;
   onUpdateMaintenance: (log: MaintenanceLog) => void;
-  onUpdateTrip: (log: TripLog) => void;
   onUpdateExpense: (log: ExpenseLog) => void;
   onUpdateVistoria: (log: Vistoria) => void;
   onClearAllVistorias: () => void;
@@ -34,19 +31,16 @@ export function ReportsAndHistoryModal({
   vehicles,
   fuelLogs,
   maintenanceLogs,
-  tripLogs,
   expenseLogs,
   vistorias,
   selectedMonth,
   selectedYear,
   onDeleteFuel,
   onDeleteMaintenance,
-  onDeleteTrip,
   onDeleteExpense,
   onDeleteVistoria,
   onUpdateFuel,
   onUpdateMaintenance,
-  onUpdateTrip,
   onUpdateExpense,
   onUpdateVistoria,
   onClearAllVistorias,
@@ -136,17 +130,14 @@ export function ReportsAndHistoryModal({
                 vehicles={vehicles}
                 fuelLogs={fuelLogs}
                 maintenanceLogs={maintenanceLogs}
-                tripLogs={tripLogs}
                 expenseLogs={expenseLogs}
                 vistorias={vistorias}
                 onDeleteFuel={onDeleteFuel}
                 onDeleteMaintenance={onDeleteMaintenance}
-                onDeleteTrip={onDeleteTrip}
                 onDeleteExpense={onDeleteExpense}
                 onDeleteVistoria={onDeleteVistoria}
                 onUpdateFuel={onUpdateFuel}
                 onUpdateMaintenance={onUpdateMaintenance}
-                onUpdateTrip={onUpdateTrip}
                 onUpdateExpense={onUpdateExpense}
                 onUpdateVistoria={onUpdateVistoria}
                 onClearAllVistorias={onClearAllVistorias}

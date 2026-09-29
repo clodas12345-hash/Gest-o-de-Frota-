@@ -78,22 +78,30 @@ jobs:
         chmod +x gradlew
         ./gradlew assembleDebug
 
+    - name: Preparar APK com Nome Gestão de Frota
+      run: |
+        ORIGINAL_APK=$(find android/app/build/outputs/apk/debug -name "*.apk" | head -n 1)
+        echo "APK gerado: $ORIGINAL_APK"
+        if [ "$ORIGINAL_APK" != "android/app/build/outputs/apk/debug/Gestão de Frota.apk" ]; then
+          cp "$ORIGINAL_APK" "android/app/build/outputs/apk/debug/Gestão de Frota.apk"
+        fi
+        ls -la "android/app/build/outputs/apk/debug/"
+
     - name: Verificar Fingerprint da Assinatura do APK
       continue-on-error: true
       run: |
         SDK=${ANDROID_HOME:-/usr/local/lib/android/sdk}
-        APK=android/app/build/outputs/apk/debug/app-debug.apk
+        APK="android/app/build/outputs/apk/debug/Gestão de Frota.apk"
         APKSIGNER=$(ls $SDK/build-tools/*/apksigner 2>/dev/null | sort -V | tail -1)
         echo "=== Fingerprint da assinatura deste APK (compare entre builds) ==="
         if [ -z "$APKSIGNER" ]; then
           echo "apksigner nao encontrado - pulando verificacao"
           exit 0
         fi
-        "$APKSIGNER" verify --print-certs "$APK" | grep -i "SHA-256\|SHA-1"
+        "$APKSIGNER" verify --print-certs "$APK" | grep -i "SHA-256\\|SHA-1"
 
     - name: Upload APK Artifact
       uses: actions/upload-artifact@v4
       with:
-        name: app-debug
-        path: android/app/build/outputs/apk/debug/app-debug.apk
-
+        name: Gestão de Frota
+        path: android/app/build/outputs/apk/debug/Gestão de Frota.apk

@@ -1,10 +1,9 @@
-import React, { useState, useEffect, useRef } from 'react';
-import { Vehicle, FuelLog, MaintenanceLog, TripLog, ExpenseLog, AgendaContact, Vistoria, VehicleDocument, FinalizedContract } from './types';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
+import { Vehicle, FuelLog, MaintenanceLog, ExpenseLog, AgendaContact, Vistoria, VehicleDocument, FinalizedContract } from './types';
 import { 
   INITIAL_VEHICLES, 
   INITIAL_FUEL_LOGS, 
   INITIAL_MAINTENANCE_LOGS, 
-  INITIAL_TRIP_LOGS, 
   INITIAL_EXPENSE_LOGS,
   INITIAL_VISTORIAS
 } from './mockData';
@@ -61,7 +60,11 @@ import {
   FolderArchive,
   BarChart3,
   MessageCircle,
-  ZoomIn
+  ZoomIn,
+  Wrench,
+  Fuel,
+  Coins,
+  Map
 } from 'lucide-react';
 
 function ensureFuturePaymentsForVehicles(vehicles: Vehicle[]): Vehicle[] {
@@ -202,17 +205,6 @@ export default function App() {
     return INITIAL_MAINTENANCE_LOGS;
   });
 
-  const [tripLogs, setTripLogs] = useState<TripLog[]>(() => {
-    const saved = localStorage.getItem('fleet_trip_logs');
-    if (saved) {
-      try {
-        const parsed = JSON.parse(saved);
-        if (Array.isArray(parsed)) return parsed;
-      } catch (e) {}
-    }
-    return INITIAL_TRIP_LOGS;
-  });
-
   const [expenseLogs, setExpenseLogs] = useState<ExpenseLog[]>(() => {
     const saved = localStorage.getItem('fleet_expense_logs');
     if (saved) {
@@ -257,6 +249,28 @@ export default function App() {
     setFridayReminderDoneDate(todayDateStr);
     localStorage.setItem('fleet_friday_reminder_done_date', todayDateStr);
   };
+
+  // Helper to determine if a vehicle is currently rented
+  const isVehicleRented = (v: Vehicle): boolean => {
+    const driver = (v.driver || '').trim();
+    const hasDriver = driver !== '' && driver.toLowerCase() !== 'não definido' && driver.toLowerCase() !== 'não informado';
+    const hasContract = Boolean(v.contractNumber && v.contractNumber.trim());
+    const hasStartDate = Boolean(v.startDate && v.startDate.trim());
+    const hasWeekly = Boolean((v.valorSemanal && v.valorSemanal > 0) || (v.weeklyPayments && v.weeklyPayments.length > 0));
+    return hasDriver || hasContract || hasStartDate || hasWeekly;
+  };
+
+  // Carros alugados devem ficar no topo da página
+  const sortedVehicles = useMemo(() => {
+    return [...vehicles].sort((a, b) => {
+      const aRented = isVehicleRented(a) ? 1 : 0;
+      const bRented = isVehicleRented(b) ? 1 : 0;
+      if (aRented !== bRented) {
+        return bRented - aRented; // Rented first (1 before 0)
+      }
+      return 0;
+    });
+  }, [vehicles]);
 
   // Preventive Maintenance Browser Notifications State
   const [maintNotificationsEnabled, setMaintNotificationsEnabled] = useState<boolean>(() => {
@@ -366,7 +380,7 @@ export default function App() {
   // Global AI State
   const [globalPrefilledData, setGlobalPrefilledData] = useState<any>(null);
 
-  const handleGlobalDataExtracted = (type: 'vehicle' | 'fuel' | 'maintenance' | 'trip' | 'expense', data: any) => {
+  const handleGlobalDataExtracted = (type: 'vehicle' | 'fuel' | 'maintenance' | 'expense', data: any) => {
     setGlobalPrefilledData(data);
     setActiveFormType(type);
     setIsFormOpen(true);
@@ -423,7 +437,6 @@ export default function App() {
         if (d.contacts && Array.isArray(d.contacts)) setContacts(d.contacts);
         if (d.fuelLogs && Array.isArray(d.fuelLogs)) setFuelLogs(d.fuelLogs);
         if (d.maintenanceLogs && Array.isArray(d.maintenanceLogs)) setMaintenanceLogs(d.maintenanceLogs);
-        if (d.tripLogs && Array.isArray(d.tripLogs)) setTripLogs(d.tripLogs);
         if (d.expenseLogs && Array.isArray(d.expenseLogs)) setExpenseLogs(d.expenseLogs);
         if (d.vistorias && Array.isArray(d.vistorias)) setVistorias(d.vistorias);
         if (d.finalizedContracts && Array.isArray(d.finalizedContracts)) setFinalizedContracts(d.finalizedContracts);
@@ -433,7 +446,6 @@ export default function App() {
           contacts,
           fuelLogs,
           maintenanceLogs,
-          tripLogs,
           expenseLogs,
           vistorias,
           finalizedContracts,
@@ -457,7 +469,6 @@ export default function App() {
         if (d.contacts && Array.isArray(d.contacts)) setContacts(d.contacts);
         if (d.fuelLogs && Array.isArray(d.fuelLogs)) setFuelLogs(d.fuelLogs);
         if (d.maintenanceLogs && Array.isArray(d.maintenanceLogs)) setMaintenanceLogs(d.maintenanceLogs);
-        if (d.tripLogs && Array.isArray(d.tripLogs)) setTripLogs(d.tripLogs);
         if (d.expenseLogs && Array.isArray(d.expenseLogs)) setExpenseLogs(d.expenseLogs);
         if (d.vistorias && Array.isArray(d.vistorias)) setVistorias(d.vistorias);
         if (d.finalizedContracts && Array.isArray(d.finalizedContracts)) setFinalizedContracts(d.finalizedContracts);
@@ -533,14 +544,6 @@ export default function App() {
 
   useEffect(() => {
     try {
-      localStorage.setItem('fleet_trip_logs', JSON.stringify(tripLogs));
-    } catch (e) { console.warn('Storage quota exceeded', e); }
-
-    saveToCloud('tripLogs', tripLogs);
-  }, [tripLogs]);
-
-  useEffect(() => {
-    try {
       localStorage.setItem('fleet_expense_logs', JSON.stringify(expenseLogs));
     } catch (e) { console.warn('Storage quota exceeded', e); }
 
@@ -581,7 +584,7 @@ export default function App() {
 
   // Modal / Form Management
   const [isFormOpen, setIsFormOpen] = useState(false);
-  const [activeFormType, setActiveFormType] = useState< 'vehicle' | 'fuel' | 'maintenance' | 'trip' | 'expense' | null>(null);
+  const [activeFormType, setActiveFormType] = useState< 'vehicle' | 'fuel' | 'maintenance' | 'expense' | null>(null);
   const [selectedVehicleId, setSelectedVehicleId] = useState<string>('');
   const [vehicleToEdit, setVehicleToEdit] = useState<Vehicle | null>(null);
 
@@ -628,7 +631,7 @@ export default function App() {
   ]);
 
   // Trigger Form Handlers
-  const handleOpenForm = (type: 'vehicle' | 'fuel' | 'maintenance' | 'trip' | 'expense', vId: string = '') => {
+  const handleOpenForm = (type: 'vehicle' | 'fuel' | 'maintenance' | 'expense', vId: string = '') => {
     setActiveFormType(type);
     setSelectedVehicleId(vId || (vehicles[0]?.id || ''));
     setVehicleToEdit(null);
@@ -717,32 +720,6 @@ export default function App() {
     setMaintenanceLogs((prev) => [newLog, ...prev]);
   };
 
-  // Actions: Save Trip Log + UPDATE VEHICLE ODOMETER & REDUCE FUEL BASED ON KM DRIVEN
-  const handleSaveTrip = (log: Omit<TripLog, 'id'>) => {
-    const newId = `trip-${Date.now()}`;
-    const newLog: TripLog = { ...log, id: newId };
-    setTripLogs((prev) => [newLog, ...prev]);
-
-    // Calculate approximate fuel consumed (1 oitavo for every 40 km driven, minimum 1 if distance > 0)
-    const distance = log.endKm - log.startKm;
-    const fuelBurnEighths = distance > 0 ? Math.max(1, Math.round(distance / 40)) : 0;
-
-    // Update vehicle properties
-    setVehicles((prevVehicles) =>
-      prevVehicles.map((v) => {
-        if (v.id === log.vehicleId) {
-          const finalFuel = Math.max(0, v.fuelLevel - fuelBurnEighths);
-          return {
-            ...v,
-            currentKm: Math.max(v.currentKm, log.endKm),
-            fuelLevel: finalFuel,
-          };
-        }
-        return v;
-      })
-    );
-  };
-
   // Actions: Save Expense Log
   const handleSaveExpense = (log: Omit<ExpenseLog, 'id'>) => {
     const newId = `exp-${Date.now()}`;
@@ -764,10 +741,6 @@ export default function App() {
     setMaintenanceLogs((prev) => prev.map((log) => (log.id === updatedLog.id ? updatedLog : log)));
   };
 
-  const handleUpdateTrip = (updatedLog: TripLog) => {
-    setTripLogs((prev) => prev.map((log) => (log.id === updatedLog.id ? updatedLog : log)));
-  };
-
   const handleUpdateVistoria = (updatedLog: Vistoria) => {
     setVistorias((prev) => prev.map((log) => (log.id === updatedLog.id ? updatedLog : log)));
   };
@@ -779,10 +752,6 @@ export default function App() {
 
   const handleDeleteMaintenance = (id: string) => {
     setMaintenanceLogs((prev) => prev.filter((log) => log.id !== id));
-  };
-
-  const handleDeleteTrip = (id: string) => {
-    setTripLogs((prev) => prev.filter((log) => log.id !== id));
   };
 
   const handleDeleteExpense = (id: string) => {
@@ -845,7 +814,6 @@ export default function App() {
       setVehicles((prev) => prev.filter((v) => v.id !== id));
       setFuelLogs((prev) => prev.filter((log) => log.vehicleId !== id));
       setMaintenanceLogs((prev) => prev.filter((log) => log.vehicleId !== id));
-      setTripLogs((prev) => prev.filter((log) => log.vehicleId !== id));
       setExpenseLogs((prev) => prev.filter((log) => log.vehicleId !== id));
       setVistorias((prev) => prev.filter((log) => log.vehicleId !== id));
 
@@ -1115,11 +1083,8 @@ export default function App() {
 
     if (options.abastecimentos) {
       localStorage.removeItem('fleet_fuel_logs');
-      localStorage.removeItem('fleet_trip_logs');
       setFuelLogs([]);
-      setTripLogs([]);
       saveToCloud('fuelLogs', []);
-      saveToCloud('tripLogs', []);
     }
 
     if (options.contratosFinalizados) {
@@ -1178,7 +1143,6 @@ export default function App() {
     setVehicles([]);
     setFuelLogs([]);
     setMaintenanceLogs([]);
-    setTripLogs([]);
     setExpenseLogs([]);
     setVistorias([]);
     setFinalizedContracts([]);
@@ -1190,7 +1154,6 @@ export default function App() {
       contacts: [],
       fuelLogs: [],
       maintenanceLogs: [],
-      tripLogs: [],
       expenseLogs: [],
       vistorias: [],
       finalizedContracts: [],
@@ -1203,19 +1166,59 @@ export default function App() {
     setTimeout(() => setDeleteToastMsg(null), 4000);
   };
 
-  // Backup data functions
+  // Backup data functions - Backup COMPLETO de todo o sistema, arquivos, fotos, contratos, configurações e dados editáveis
   const handleDownloadBackup = async () => {
+    // 1. Coleta todas as configurações, templates e dados salvos no localStorage
+    const localSettings: Record<string, string> = {};
+    if (typeof window !== 'undefined' && window.localStorage) {
+      for (let i = 0; i < localStorage.length; i++) {
+        const key = localStorage.key(i);
+        if (key && (key.startsWith('fleet_') || key.startsWith('custom_') || key.startsWith('app_'))) {
+          const val = localStorage.getItem(key);
+          if (val !== null) {
+            localSettings[key] = val;
+          }
+        }
+      }
+    }
+
+    // 2. Monta o pacote de backup com 100% do estado da aplicação e anexos
     const backupData = {
+      version: '2.0-full',
+      appName: 'Gestão de Frota',
+      exportDate: new Date().toISOString(),
+      summary: {
+        totalVehicles: vehicles.length,
+        totalVistorias: vistorias.length,
+        totalMaintenanceLogs: maintenanceLogs.length,
+        totalExpenseLogs: expenseLogs.length,
+        totalFuelLogs: fuelLogs.length,
+        totalContacts: contacts.length,
+        totalFinalizedContracts: finalizedContracts.length,
+        totalDocumentsAttached: vehicles.reduce((sum, v) => sum + (v.documents?.length || 0), 0)
+      },
       vehicles,
       fuelLogs,
       maintenanceLogs,
-      tripLogs,
       expenseLogs,
       vistorias,
       contacts,
       finalizedContracts,
       checklistConfig,
-      exportDate: new Date().toISOString()
+      settings: {
+        disableFridayReminder,
+        fridayReminderDoneDate,
+        maintNotificationsEnabled,
+      },
+      customTemplates: {
+        paymentReminder: localStorage.getItem('fleet_payment_msg_lembrete') || null,
+        paymentToday: localStorage.getItem('fleet_payment_msg_hoje') || null,
+        paymentOverdue: localStorage.getItem('fleet_payment_msg_atrasado') || null,
+        vistoriaShare: localStorage.getItem('fleet_vistoria_share_template') || null,
+        vistoriaRequest: localStorage.getItem('fleet_vistoria_request_template') || null,
+        vistoriaReturnLink: localStorage.getItem('fleet_vistoria_return_link') || null,
+      },
+      localSettings
     };
     
     const jsonString = JSON.stringify(backupData, null, 2);
@@ -1223,7 +1226,7 @@ export default function App() {
     const day = String(now.getDate()).padStart(2, '0');
     const month = String(now.getMonth() + 1).padStart(2, '0');
     const year = now.getFullYear();
-    const fileName = `backup_controle_frota_${day}_${month}_${year}.json`;
+    const fileName = `backup_completo_gestao_frota_${day}_${month}_${year}.json`;
 
     if (Capacitor.isNativePlatform()) {
       try {
@@ -1235,21 +1238,21 @@ export default function App() {
         });
         
         await Share.share({
-          title: 'Backup Gestão de Frota',
-          text: 'Arquivo de backup do sistema Gestão de Frota',
+          title: 'Backup Completo Gestão de Frota',
+          text: 'Arquivo completo de backup com todos os veículos, fotos, documentos e configurações.',
           url: result.uri,
           dialogTitle: 'Salvar ou Compartilhar Backup'
         });
 
-        setDeleteToastMsg('Backup gerado e salvo na memória interna com sucesso!');
-        setTimeout(() => setDeleteToastMsg(null), 4000);
+        setDeleteToastMsg(`Backup completo gerado (${backupData.summary.totalVehicles} carros, ${backupData.summary.totalDocumentsAttached} docs/arquivos) e salvo na memória interna!`);
+        setTimeout(() => setDeleteToastMsg(null), 5000);
         return;
       } catch (err) {
         console.error('Erro ao salvar backup nativo:', err);
       }
     }
 
-    // Fallback for Web / Blob download
+    // Fallback para Web / Navegador
     const blob = new Blob([jsonString], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
     const downloadAnchor = document.createElement('a');
@@ -1260,8 +1263,8 @@ export default function App() {
     downloadAnchor.remove();
     URL.revokeObjectURL(url);
 
-    setDeleteToastMsg('Backup gerado e baixado com sucesso!');
-    setTimeout(() => setDeleteToastMsg(null), 4000);
+    setDeleteToastMsg(`Backup completo baixado com sucesso! (${backupData.summary.totalVehicles} carros, ${backupData.summary.totalVistorias} vistorias, ${backupData.summary.totalDocumentsAttached} documentos anexos e configurações).`);
+    setTimeout(() => setDeleteToastMsg(null), 5000);
   };
 
   const handleUploadBackup = (event: React.ChangeEvent<HTMLInputElement>) => {
@@ -1272,24 +1275,107 @@ export default function App() {
     fileReader.onload = (e) => {
       try {
         const parsed = JSON.parse(e.target?.result as string);
-        if (parsed.vehicles || parsed.fuelLogs || parsed.vistorias || parsed.maintenanceLogs) {
-          if (parsed.vehicles) setVehicles(parsed.vehicles);
-          if (parsed.fuelLogs) setFuelLogs(parsed.fuelLogs);
-          if (parsed.maintenanceLogs) setMaintenanceLogs(parsed.maintenanceLogs);
-          if (parsed.tripLogs) setTripLogs(parsed.tripLogs || []);
-          if (parsed.expenseLogs) setExpenseLogs(parsed.expenseLogs || []);
-          if (parsed.vistorias) setVistorias(parsed.vistorias || []);
-          if (parsed.contacts) setContacts(parsed.contacts || []);
-          if (parsed.finalizedContracts) setFinalizedContracts(parsed.finalizedContracts || []);
-          if (parsed.checklistConfig) setChecklistConfig(parsed.checklistConfig);
+        if (parsed.vehicles || parsed.fuelLogs || parsed.vistorias || parsed.maintenanceLogs || parsed.contacts || parsed.finalizedContracts) {
+          // 1. Restauração das entidades principais
+          const restoredVehicles = parsed.vehicles && Array.isArray(parsed.vehicles) ? parsed.vehicles : [];
+          const restoredFuelLogs = parsed.fuelLogs && Array.isArray(parsed.fuelLogs) ? parsed.fuelLogs : [];
+          const restoredMaintLogs = parsed.maintenanceLogs && Array.isArray(parsed.maintenanceLogs) ? parsed.maintenanceLogs : [];
+          const restoredExpenseLogs = parsed.expenseLogs && Array.isArray(parsed.expenseLogs) ? parsed.expenseLogs : [];
+          const restoredVistorias = parsed.vistorias && Array.isArray(parsed.vistorias) ? parsed.vistorias : [];
+          const restoredContacts = parsed.contacts && Array.isArray(parsed.contacts) ? parsed.contacts : [];
+          const restoredFinalizedContracts = parsed.finalizedContracts && Array.isArray(parsed.finalizedContracts) ? parsed.finalizedContracts : [];
+          const restoredChecklistConfig = parsed.checklistConfig && Array.isArray(parsed.checklistConfig) ? parsed.checklistConfig : null;
 
-          setDeleteToastMsg('Backup restaurado com sucesso! Todos os dados foram recuperados.');
-          setTimeout(() => setDeleteToastMsg(null), 4000);
+          if (restoredVehicles.length > 0 || parsed.vehicles) {
+            setVehicles(restoredVehicles);
+            try { localStorage.setItem('fleet_vehicles', JSON.stringify(restoredVehicles)); } catch (err) {}
+          }
+          if (restoredFuelLogs.length > 0 || parsed.fuelLogs) {
+            setFuelLogs(restoredFuelLogs);
+            try { localStorage.setItem('fleet_fuel_logs', JSON.stringify(restoredFuelLogs)); } catch (err) {}
+          }
+          if (restoredMaintLogs.length > 0 || parsed.maintenanceLogs) {
+            setMaintenanceLogs(restoredMaintLogs);
+            try { localStorage.setItem('fleet_maint_logs', JSON.stringify(restoredMaintLogs)); } catch (err) {}
+          }
+          if (restoredExpenseLogs.length > 0 || parsed.expenseLogs) {
+            setExpenseLogs(restoredExpenseLogs);
+            try { localStorage.setItem('fleet_expense_logs', JSON.stringify(restoredExpenseLogs)); } catch (err) {}
+          }
+          if (restoredVistorias.length > 0 || parsed.vistorias) {
+            setVistorias(restoredVistorias);
+            try { localStorage.setItem('fleet_vistorias', JSON.stringify(restoredVistorias)); } catch (err) {}
+          }
+          if (restoredContacts.length > 0 || parsed.contacts) {
+            setContacts(restoredContacts);
+            try { localStorage.setItem('fleet_contacts', JSON.stringify(restoredContacts)); } catch (err) {}
+          }
+          if (restoredFinalizedContracts.length > 0 || parsed.finalizedContracts) {
+            setFinalizedContracts(restoredFinalizedContracts);
+            try { localStorage.setItem('fleet_finalized_contracts', JSON.stringify(restoredFinalizedContracts)); } catch (err) {}
+          }
+          if (restoredChecklistConfig) {
+            setChecklistConfig(restoredChecklistConfig);
+            try { localStorage.setItem('fleet_checklist_config', JSON.stringify(restoredChecklistConfig)); } catch (err) {}
+          }
+
+          // 2. Restauração de configurações gerais do sistema
+          if (parsed.settings) {
+            if (typeof parsed.settings.disableFridayReminder === 'boolean') {
+              setDisableFridayReminder(parsed.settings.disableFridayReminder);
+              try { localStorage.setItem('fleet_disable_friday_reminder', JSON.stringify(parsed.settings.disableFridayReminder)); } catch (err) {}
+            }
+            if (parsed.settings.fridayReminderDoneDate) {
+              setFridayReminderDoneDate(parsed.settings.fridayReminderDoneDate);
+              try { localStorage.setItem('fleet_friday_reminder_done_date', parsed.settings.fridayReminderDoneDate); } catch (err) {}
+            }
+            if (typeof parsed.settings.maintNotificationsEnabled === 'boolean') {
+              setMaintNotificationsEnabled(parsed.settings.maintNotificationsEnabled);
+              try { localStorage.setItem('fleet_maint_notif_enabled', JSON.stringify(parsed.settings.maintNotificationsEnabled)); } catch (err) {}
+            }
+          }
+
+          // 3. Restauração de templates customizados do WhatsApp
+          if (parsed.customTemplates) {
+            if (parsed.customTemplates.paymentReminder) localStorage.setItem('fleet_payment_msg_lembrete', parsed.customTemplates.paymentReminder);
+            if (parsed.customTemplates.paymentToday) localStorage.setItem('fleet_payment_msg_hoje', parsed.customTemplates.paymentToday);
+            if (parsed.customTemplates.paymentOverdue) localStorage.setItem('fleet_payment_msg_atrasado', parsed.customTemplates.paymentOverdue);
+            if (parsed.customTemplates.vistoriaShare) localStorage.setItem('fleet_vistoria_share_template', parsed.customTemplates.vistoriaShare);
+            if (parsed.customTemplates.vistoriaRequest) localStorage.setItem('fleet_vistoria_request_template', parsed.customTemplates.vistoriaRequest);
+            if (parsed.customTemplates.vistoriaReturnLink) localStorage.setItem('fleet_vistoria_return_link', parsed.customTemplates.vistoriaReturnLink);
+          }
+
+          // 4. Restauração de todas as chaves customizadas de localStorage salvas no backup
+          if (parsed.localSettings && typeof parsed.localSettings === 'object') {
+            Object.entries(parsed.localSettings).forEach(([k, v]) => {
+              if (typeof v === 'string') {
+                try { localStorage.setItem(k, v); } catch (err) {}
+              }
+            });
+          }
+
+          // 5. Sincronização imediata com Firestore Cloud
+          const docRef = doc(db, 'fleetData', 'main');
+          setDoc(docRef, {
+            vehicles: restoredVehicles,
+            contacts: restoredContacts,
+            fuelLogs: restoredFuelLogs,
+            maintenanceLogs: restoredMaintLogs,
+            expenseLogs: restoredExpenseLogs,
+            vistorias: restoredVistorias,
+            finalizedContracts: restoredFinalizedContracts,
+            updatedAt: new Date().toISOString()
+          }, { merge: true }).catch(err => console.warn('Error syncing restored backup to cloud:', err));
+
+          const totalDocs = restoredVehicles.reduce((acc: number, v: any) => acc + (v.documents?.length || 0), 0);
+          setDeleteToastMsg(`Backup COMPLETO restaurado com sucesso! ${restoredVehicles.length} veículos, ${totalDocs} documentos anexados, ${restoredVistorias.length} vistorias, ${restoredMaintLogs.length} manutenções, agenda e configurações recuperadas.`);
+          setTimeout(() => setDeleteToastMsg(null), 6000);
         } else {
-          alert('Arquivo de backup inválido.');
+          alert('Arquivo de backup inválido ou não reconhecido.');
         }
       } catch (err) {
-        alert('Erro ao processar o arquivo de backup.');
+        console.error('Erro ao ler arquivo de backup:', err);
+        alert('Erro ao processar o arquivo de backup. Verifique se o arquivo JSON está correto.');
       }
     };
     fileReader.readAsText(file);
@@ -1409,7 +1495,7 @@ export default function App() {
             >
               <img 
                 src={logoImg} 
-                alt="GKD Mobility" 
+                alt="Gestão de Frota" 
                 className="w-12 h-12 object-contain rounded-xl bg-white p-0.5 border border-white/20 shadow-lg shadow-blue-500/10 group-hover:border-blue-400 group-hover:scale-105 transition-all" 
                 referrerPolicy="no-referrer" 
               />
@@ -1422,11 +1508,10 @@ export default function App() {
               type="button"
               onClick={() => setIsAboutModalOpen(true)}
               className="text-left group cursor-pointer focus:outline-none focus:ring-2 focus:ring-blue-500/50 rounded-lg py-1 px-1.5 -ml-1 transition-all"
-              title="Clique para ver sobre o aplicativo GKD Mobility"
+              title="Clique para ver sobre o aplicativo Gestão de Frota"
             >
-              <h1 className="text-sm font-bold tracking-tight text-white flex items-center gap-1.5">
-                <span className="group-hover:text-blue-300 transition-colors">GKD Mobility</span>
-                <span className="text-[10px] font-normal text-blue-400 bg-blue-500/10 px-1.5 py-0.5 rounded border border-blue-500/20">Gestão de Frota</span>
+              <h1 className="text-base font-bold tracking-tight text-white flex items-center gap-1.5">
+                <span className="group-hover:text-blue-300 transition-colors">Gestão de Frota</span>
               </h1>
               <p className="text-[10px] text-gray-400">Controle para seus {vehicles.length} carros alugados</p>
             </button>
@@ -1437,10 +1522,10 @@ export default function App() {
             <button
               type="button"
               onClick={() => setIsReportsModalOpen(true)}
-              className="px-3 py-2 bg-blue-600/20 hover:bg-blue-600/30 text-blue-300 border border-blue-500/30 rounded-xl flex items-center gap-1.5 text-xs font-bold transition-all shadow-md shadow-blue-500/10 cursor-pointer"
+              className="px-3 py-2 bg-zinc-800/80 hover:bg-zinc-700 text-zinc-200 border border-zinc-700/60 rounded-xl flex items-center gap-1.5 text-xs font-semibold transition-all cursor-pointer"
               title="Abrir painel consolidado de gráficos e histórico"
             >
-              <BarChart3 className="w-4 h-4 text-blue-400" />
+              <BarChart3 className="w-4 h-4 text-zinc-400" />
               <span className="hidden sm:inline">Gráficos & Histórico</span>
               <span className="sm:hidden">Painel</span>
             </button>
@@ -1448,10 +1533,10 @@ export default function App() {
             <button
               type="button"
               onClick={() => setIsAgendaOpen(true)}
-              className="px-3 py-2 bg-teal-600/20 hover:bg-teal-600/30 text-teal-300 border border-teal-500/30 rounded-xl flex items-center gap-1.5 text-xs font-bold transition-all shadow-md shadow-teal-500/10 cursor-pointer"
+              className="px-3 py-2 bg-zinc-800/80 hover:bg-zinc-700 text-zinc-200 border border-zinc-700/60 rounded-xl flex items-center gap-1.5 text-xs font-semibold transition-all cursor-pointer"
               title="Abrir Agenda Telefônica e de Contatos/Locatários"
             >
-              <BookOpen className="w-4 h-4 text-teal-400" />
+              <BookOpen className="w-4 h-4 text-zinc-400" />
               <span className="hidden sm:inline">Agenda de Contatos</span>
               <span className="sm:hidden">Agenda</span>
             </button>
@@ -1467,6 +1552,7 @@ export default function App() {
               unviewedContractsCount={finalizedContracts.filter((c) => !c.viewed).length}
               onOpenHelp={() => setIsHelpOpen(true)}
               onOpenAgenda={() => setIsAgendaOpen(true)}
+              onOpenLogForm={(type) => handleOpenForm(type)}
               onOpenDocumentUpload={() => setIsUploadDocOpen(true)}
               onOpenSettings={() => setIsSettingsOpen(true)}
               onOpenChecklistConfig={() => setIsChecklistConfigOpen(true)}
@@ -1481,19 +1567,6 @@ export default function App() {
       {/* Main Container */}
       <main className="flex-1 max-w-7xl w-full mx-auto p-4 sm:p-6 lg:p-8 space-y-8" id="app-main-content">
         
-        {/* Dashboard Calendar */}
-        <DashboardCalendar 
-          vehicles={vehicles}
-          maintenanceLogs={maintenanceLogs}
-          vistorias={vistorias}
-          selectedMonth={selectedMonth}
-          selectedYear={selectedYear}
-          onMonthChange={(yr, mo) => {
-            setSelectedYear(yr);
-            setSelectedMonth(mo);
-          }}
-        />
-
         {/* Friday Vistoria Reminder Banner - Only shows on Fridays when enabled and not completed */}
         {isTodayFriday && !disableFridayReminder && fridayReminderDoneDate !== todayDateStr && (
           <div className="p-4 rounded-2xl border flex flex-col md:flex-row items-start md:items-center justify-between gap-4 transition-all shadow-xl bg-gradient-to-r from-purple-950/60 via-indigo-950/60 to-purple-900/60 border-purple-500/40 shadow-purple-900/20" id="friday-vistoria-banner">
@@ -1543,10 +1616,9 @@ export default function App() {
 
         {/* 1. Global KPIs Row */}
         <DashboardStats 
-          vehicles={vehicles}
+          vehicles={sortedVehicles}
           fuelLogs={fuelLogs}
           maintenanceLogs={maintenanceLogs}
-          tripLogs={tripLogs}
           expenseLogs={expenseLogs}
           selectedMonth={selectedMonth}
           selectedYear={selectedYear}
@@ -1577,11 +1649,12 @@ export default function App() {
             </div>
           ) : (
             <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-6" id="vehicles-grid">
-              {vehicles.map((car) => (
+              {sortedVehicles.map((car) => (
                 <VehicleCard
                   key={car.id}
                   vehicle={car}
                   vehicleExpenses={expenseLogs.filter((log) => log.vehicleId === car.id)}
+                  maintenanceLogs={maintenanceLogs.filter((log) => log.vehicleId === car.id)}
                   vistorias={vistorias.filter((v) => v.vehicleId === car.id)}
                   checklistConfig={checklistConfig}
                   onUpdateChecklistConfig={setChecklistConfig}
@@ -1626,6 +1699,40 @@ export default function App() {
           )}
         </div>
 
+        {/* Quick Launch Actions (Abaixo dos Carros - Lado a Lado) */}
+        <div className="grid grid-cols-2 gap-3 max-w-xl mx-auto w-full">
+          <button
+            type="button"
+            onClick={() => handleOpenForm('maintenance')}
+            className="flex items-center justify-center gap-2 p-3 bg-amber-500/10 hover:bg-amber-500/20 text-amber-400 border border-amber-500/20 rounded-2xl transition-all cursor-pointer shadow-lg shadow-amber-500/5 group"
+          >
+            <Wrench className="w-4 h-4 group-hover:rotate-12 transition-transform shrink-0" />
+            <span className="text-xs font-bold uppercase tracking-tight truncate">Manutenção</span>
+          </button>
+          
+          <button
+            type="button"
+            onClick={() => handleOpenForm('expense')}
+            className="flex items-center justify-center gap-2 p-3 bg-blue-500/10 hover:bg-blue-500/20 text-blue-400 border border-blue-500/20 rounded-2xl transition-all cursor-pointer shadow-lg shadow-blue-500/5 group"
+          >
+            <Coins className="w-4 h-4 group-hover:translate-y-[-2px] transition-transform shrink-0" />
+            <span className="text-xs font-bold uppercase tracking-tight truncate">Despesa</span>
+          </button>
+        </div>
+
+        {/* 3. Dashboard Calendar */}
+        <DashboardCalendar 
+          vehicles={sortedVehicles}
+          maintenanceLogs={maintenanceLogs}
+          vistorias={vistorias}
+          selectedMonth={selectedMonth}
+          selectedYear={selectedYear}
+          onMonthChange={(yr, mo) => {
+            setSelectedYear(yr);
+            setSelectedMonth(mo);
+          }}
+        />
+
         {/* Reports & History Modal Trigger Card */}
         <div className="bg-[#111111] border border-white/10 rounded-2xl p-6 text-center shadow-xl flex flex-col sm:flex-row items-center justify-between gap-4">
           <div className="flex items-center gap-3 text-left">
@@ -1667,7 +1774,6 @@ export default function App() {
         onSaveVehicle={handleSaveVehicle}
         onSaveFuel={handleSaveFuel}
         onSaveMaintenance={handleSaveMaintenance}
-        onSaveTrip={handleSaveTrip}
         onSaveExpense={handleSaveExpense}
         onSaveContact={handleSaveContact}
       />
@@ -1680,7 +1786,7 @@ export default function App() {
           setAgendaPreFill(null);
         }}
         contacts={contacts}
-        vehicles={vehicles}
+        vehicles={sortedVehicles}
         onSaveContact={handleSaveContact}
         onSaveMultipleContacts={handleSaveMultipleContacts}
         onDeleteContact={handleDeleteContact}
@@ -1691,7 +1797,7 @@ export default function App() {
       <DocumentUploadModal
         isOpen={isUploadDocOpen}
         onClose={() => setIsUploadDocOpen(false)}
-        vehicles={vehicles}
+        vehicles={sortedVehicles}
         onUploadDocument={handleUploadDocument}
       />
 
@@ -1740,7 +1846,7 @@ export default function App() {
         isOpen={isRentalContractOpen}
         onClose={() => setIsRentalContractOpen(false)}
         vehicle={selectedContractVehicle}
-        vehicles={vehicles}
+        vehicles={sortedVehicles}
         onUpdateVehicle={handleUpdateVehicle}
         checklistConfig={checklistConfig}
         onSaveVistoria={handleSaveVistoria}
@@ -1751,22 +1857,19 @@ export default function App() {
       <ReportsAndHistoryModal
         isOpen={isReportsModalOpen}
         onClose={() => setIsReportsModalOpen(false)}
-        vehicles={vehicles}
+        vehicles={sortedVehicles}
         fuelLogs={fuelLogs}
         maintenanceLogs={maintenanceLogs}
-        tripLogs={tripLogs}
         expenseLogs={expenseLogs}
         vistorias={vistorias}
         selectedMonth={selectedMonth}
         selectedYear={selectedYear}
         onDeleteFuel={handleDeleteFuel}
         onDeleteMaintenance={handleDeleteMaintenance}
-        onDeleteTrip={handleDeleteTrip}
         onDeleteExpense={handleDeleteExpense}
         onDeleteVistoria={handleDeleteVistoria}
         onUpdateFuel={handleUpdateFuel}
         onUpdateMaintenance={handleUpdateMaintenance}
-        onUpdateTrip={handleUpdateTrip}
         onUpdateExpense={handleUpdateExpense}
         onUpdateVistoria={handleUpdateVistoria}
         onClearAllVistorias={handleClearAllVistorias}

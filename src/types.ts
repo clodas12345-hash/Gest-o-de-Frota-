@@ -41,6 +41,14 @@ export interface Vehicle {
   manutencaoParcelasTotais?: number;
   custoExtraParcelasPagas?: number;
   custoExtraParcelasTotais?: number;
+  extraExpenses?: {
+    id: string;
+    label: string;
+    value: number;
+    parcelasPagas?: number;
+    parcelasTotais?: number;
+    startDate?: string; // YYYY-MM
+  }[];
   preventiveMaintCurrentKm?: number;
   preventiveMaintNextKm?: number;
   preventiveMaintDate?: string;
@@ -90,17 +98,8 @@ export interface MaintenanceLog {
   nextKm?: number;
   boNumber?: string;
   partsReplaced?: string;
-}
-
-export interface TripLog {
-  id: string;
-  vehicleId: string;
-  date: string;
-  driverName: string;
-  driver?: string;
-  startKm: number;
-  endKm: number;
-  purpose: string;
+  parcelasPagas?: number;
+  parcelasTotais?: number;
 }
 
 export interface ExpenseLog {

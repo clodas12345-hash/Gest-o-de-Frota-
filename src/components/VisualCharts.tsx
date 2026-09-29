@@ -43,8 +43,22 @@ export function VisualCharts({
                    (vehicle.manutencaoPreventiva || 0);
 
     const maintenance = maintenanceLogs
-      .filter((log) => log.vehicleId === vId && isCurrentMonth(log.date))
-      .reduce((sum, log) => sum + log.cost, 0);
+      .filter((log) => log.vehicleId === vId)
+      .reduce((sum, log) => {
+        if (log.parcelasTotais && log.parcelasTotais > 1) {
+          // Compute if it's active in the current month
+          const [logYear, logMonth] = log.date.split('-').map(Number);
+          const monthsDiff = (currentYear - logYear) * 12 + (currentMonth - (logMonth - 1));
+          const parcelaBase = log.parcelasPagas || 1;
+          const currentParcela = parcelaBase + monthsDiff;
+          
+          if (currentParcela >= 1 && currentParcela <= log.parcelasTotais) {
+            return sum + (log.cost / log.parcelasTotais);
+          }
+          return sum;
+        }
+        return isCurrentMonth(log.date) ? sum + log.cost : sum;
+      }, 0);
 
     const other = (vehicle.custoExtra || 0) + expenseLogs
       .filter((log) => log.vehicleId === vId && isCurrentMonth(log.date))

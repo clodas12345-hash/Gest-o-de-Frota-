@@ -3,6 +3,7 @@ import { Vehicle, VehicleDocument, Vistoria, AgendaContact } from '../types';
 import { generateRentalContractPDF, RentalContractData } from '../utils/pdfGenerator';
 import { generateNextContractNumber } from '../utils/contractHelper';
 import { DriverVistoriaForm } from './DriverVistoriaForm';
+import CurrencyInput from './CurrencyInput';
 import { 
   X, 
   FileText, 
@@ -233,10 +234,10 @@ export const RentalContractModal: React.FC<RentalContractModalProps> = ({
   const [odometerKm, setOdometerKm] = useState<number>(0);
   const [startDate, setStartDate] = useState('');
   const [endDate, setEndDate] = useState('');
-  const [rentalValue, setRentalValue] = useState<number>(960);
+  const [rentalValue, setRentalValue] = useState<number>(0);
   const [paymentPeriod, setPaymentPeriod] = useState<string>('Semanal');
   const [dueDay, setDueDay] = useState<string>('Toda sexta-feira até 23:59');
-  const [caucaoValue, setCaucaoValue] = useState<number>(1920);
+  const [caucaoValue, setCaucaoValue] = useState<number>(0);
   const [kmLimit, setKmLimit] = useState<string>('5.000 km por mês');
   const [workshopName, setWorkshopName] = useState('Pneus Andriatti (Penha, SP)');
   const [insuranceCompany, setInsuranceCompany] = useState('LOOVI SEGUROS');
@@ -931,13 +932,11 @@ O contrato oficial em PDF já foi gerado e está arquivado nos documentos do ve�
                       Valor do Aluguel (R$) *
                     </label>
                     <div className="relative">
-                      <DollarSign className="w-4 h-4 text-emerald-400 absolute left-3 top-2.5" />
-                      <input
-                        type="number"
-                        step="any"
-                        value={rentalValue || ''}
-                        onChange={(e) => setRentalValue(Number(e.target.value))}
-                        placeholder="Ex: 650.00"
+                      <DollarSign className="w-4 h-4 text-emerald-400 absolute left-3 top-2.5 pointer-events-none" />
+                      <CurrencyInput
+                        value={rentalValue}
+                        onChange={setRentalValue}
+                        placeholder="0,00"
                         className="w-full bg-[#111111] border border-white/10 rounded-xl pl-9 pr-3 py-2 text-white font-mono font-bold text-sm focus:outline-hidden focus:border-amber-500/50"
                         required
                       />
@@ -1005,12 +1004,10 @@ O contrato oficial em PDF já foi gerado e está arquivado nos documentos do ve�
                     <label className="text-[10px] text-gray-400 font-semibold uppercase tracking-wider block">
                       Depósito Caução (R$) <span className="text-[9px] text-emerald-400/80 font-normal lowercase">(Informativo - Não somar)</span>
                     </label>
-                    <input
-                      type="number"
-                      step="any"
-                      value={caucaoValue || ''}
-                      onChange={(e) => setCaucaoValue(Number(e.target.value))}
-                      placeholder="Ex: 1000.00"
+                    <CurrencyInput
+                      value={caucaoValue}
+                      onChange={setCaucaoValue}
+                      placeholder="0,00"
                       className="w-full bg-[#111111] border border-white/10 rounded-xl px-3 py-2 text-white font-mono focus:outline-hidden focus:border-amber-500/50"
                     />
                   </div>

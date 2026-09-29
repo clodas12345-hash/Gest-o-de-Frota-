@@ -274,7 +274,7 @@ _Enviado via sistema de vistoria digital._`;
           >
             <img 
               src={logoImg} 
-              alt="GKD Mobility" 
+              alt="Gestão de Frota" 
               className="w-10 h-10 object-contain rounded-xl bg-white p-0.5 border border-white/10 shrink-0 shadow-md group-hover:scale-105 transition-all" 
               referrerPolicy="no-referrer" 
             />
@@ -284,7 +284,7 @@ _Enviado via sistema de vistoria digital._`;
           </button>
           <div>
             <h1 className="text-sm font-bold text-emerald-400 tracking-wider">VISTORIA DIGITAL</h1>
-            <p className="text-[10px] text-gray-400 uppercase tracking-widest mt-0.5">GKD Mobility</p>
+            <p className="text-[10px] text-gray-400 uppercase tracking-widest mt-0.5">Gestão de Frota</p>
           </div>
         </div>
         {vehicle && (

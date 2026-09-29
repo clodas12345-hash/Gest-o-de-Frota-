@@ -1,7 +1,8 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Vehicle, FuelLog, MaintenanceLog, TripLog, ExpenseLog, AgendaContact } from '../types';
-import { X, Save, AlertCircle, Users, BookOpen, Sparkles, Mic, MicOff, Calculator, Plus, Trash2, User, Phone, Search, Smartphone, Check, Upload, ExternalLink, AlertTriangle } from 'lucide-react';
+import { Vehicle, FuelLog, MaintenanceLog, ExpenseLog, AgendaContact } from '../types';
+import { X, Save, AlertCircle, Users, BookOpen, Sparkles, Mic, MicOff, Calculator, Plus, Trash2, User, Phone, Search, Smartphone, Check, Upload, ExternalLink, AlertTriangle, Car } from 'lucide-react';
 import { generateNextContractNumber } from '../utils/contractHelper';
+import CurrencyInput from './CurrencyInput';
 
 const getTodayStr = (): string => {
   const d = new Date();
@@ -51,7 +52,7 @@ const formatDateBR = (dateStr?: string): string => {
 interface LogFormsProps {
   isOpen: boolean;
   onClose: () => void;
-  formType: 'vehicle' | 'fuel' | 'maintenance' | 'trip' | 'expense' | null;
+  formType: 'vehicle' | 'fuel' | 'maintenance' | 'expense' | null;
   vehicles: Vehicle[];
   selectedVehicleId?: string;
   vehicleToEdit?: Vehicle | null;
@@ -61,7 +62,6 @@ interface LogFormsProps {
   onSaveVehicle: (vehicle: Vehicle) => void;
   onSaveFuel: (log: Omit<FuelLog, 'id'>) => void;
   onSaveMaintenance: (log: Omit<MaintenanceLog, 'id'>) => void;
-  onSaveTrip: (log: Omit<TripLog, 'id'>) => void;
   onSaveExpense: (log: Omit<ExpenseLog, 'id'>) => void;
   onSaveContact?: (contact: AgendaContact) => void;
 }
@@ -80,7 +80,6 @@ export function LogForms({
   onSaveVehicle,
   onSaveFuel,
   onSaveMaintenance,
-  onSaveTrip,
   onSaveExpense,
   onSaveContact,
 }: LogFormsProps) {
@@ -123,6 +122,7 @@ export function LogForms({
   const [expenseParcelado, setExpenseParcelado] = useState(false);
   const [expenseTotalVal, setExpenseTotalVal] = useState<number>(0);
   const [expenseNumParcelas, setExpenseNumParcelas] = useState<number>(10);
+  const [extraExpenses, setExtraExpenses] = useState<{ id: string; label: string; value: number; parcelasPagas?: number; parcelasTotais?: number; startDate?: string; }[]>([]);
 
   // 2. Fuel Form State
   const [fuelDate, setFuelDate] = useState(getTodayStr);
@@ -142,17 +142,12 @@ export function LogForms({
   const [maintNextKm, setMaintNextKm] = useState<number | undefined>(undefined);
   const [maintBoNumber, setMaintBoNumber] = useState('');
   const [maintPartsReplaced, setMaintPartsReplaced] = useState('');
+  const [maintParcelasPagas, setMaintParcelasPagas] = useState<number | undefined>(undefined);
+  const [maintParcelasTotais, setMaintParcelasTotais] = useState<number | undefined>(undefined);
 
-  // 4. Trip Form State
-  const [tripDate, setTripDate] = useState(getTodayStr);
-  const [tripDriver, setTripDriver] = useState('');
-  const [tripStartKm, setTripStartKm] = useState(0);
-  const [tripEndKm, setTripEndKm] = useState(0);
-  const [tripPurpose, setTripPurpose] = useState('');
-
-  // 5. Expense Form State
+  // 4. Expense Form State
   const [expDate, setExpDate] = useState(getTodayStr);
-  const [expCategory, setExpCategory] = useState<ExpenseLog['category']>('Lavagem');
+  const [expCategory, setExpCategory] = useState<ExpenseLog['category']>('' as any);
   const [expDescription, setExpDescription] = useState('');
   const [expCost, setExpCost] = useState(0);
 
@@ -453,12 +448,6 @@ export function LogForms({
         if (extracted.maintCost !== undefined) setMaintCost(extracted.maintCost);
         if (extracted.maintShop) setMaintShop(extracted.maintShop);
         if (extracted.maintNextKm !== undefined) setMaintNextKm(extracted.maintNextKm);
-      } else if (formType === 'trip') {
-        if (extracted.tripDate) setTripDate(extracted.tripDate);
-        if (extracted.tripDriver) setTripDriver(extracted.tripDriver);
-        if (extracted.tripStartKm !== undefined) setTripStartKm(extracted.tripStartKm);
-        if (extracted.tripEndKm !== undefined) setTripEndKm(extracted.tripEndKm);
-        if (extracted.tripPurpose) setTripPurpose(extracted.tripPurpose);
       } else if (formType === 'expense') {
         if (extracted.expDate) setExpDate(extracted.expDate);
         if (extracted.expCategory) setExpCategory(extracted.expCategory.charAt(0).toUpperCase() + extracted.expCategory.slice(1).toLowerCase());
@@ -522,12 +511,6 @@ export function LogForms({
         if (extracted.maintCost !== undefined) setMaintCost(extracted.maintCost);
         if (extracted.maintShop) setMaintShop(extracted.maintShop);
         if (extracted.maintNextKm !== undefined) setMaintNextKm(extracted.maintNextKm);
-      } else if (formType === 'trip') {
-        if (extracted.tripDate) setTripDate(extracted.tripDate);
-        if (extracted.tripDriver) setTripDriver(extracted.tripDriver);
-        if (extracted.tripStartKm !== undefined) setTripStartKm(extracted.tripStartKm);
-        if (extracted.tripEndKm !== undefined) setTripEndKm(extracted.tripEndKm);
-        if (extracted.tripPurpose) setTripPurpose(extracted.tripPurpose);
       } else if (formType === 'expense') {
         if (extracted.expDate) setExpDate(extracted.expDate);
         if (extracted.expCategory) setExpCategory(extracted.expCategory.charAt(0).toUpperCase() + extracted.expCategory.slice(1).toLowerCase());
@@ -574,6 +557,7 @@ export function LogForms({
         setNextVistoriaDate(vehicleToEdit.nextVistoriaDate || '');
         setCustoExtra(vehicleToEdit.custoExtra || 0);
         setCustoExtraLabel(vehicleToEdit.custoExtraLabel || 'Outras Despesas');
+        setExtraExpenses(vehicleToEdit.extraExpenses || (vehicleToEdit.custoExtra ? [{ id: 'default', label: vehicleToEdit.custoExtraLabel || 'Outras Despesas', value: vehicleToEdit.custoExtra, parcelasPagas: vehicleToEdit.custoExtraParcelasPagas, parcelasTotais: vehicleToEdit.custoExtraParcelasTotais }] : []));
         if (vehicleToEdit.custoExtra && vehicleToEdit.custoExtra > 0) {
           setShowAddExpense(true);
         }
@@ -608,6 +592,7 @@ export function LogForms({
             setCaucaoData(draft.caucaoData ?? new Date().toISOString().split('T')[0]);
             setCaucaoObservacoes(draft.caucaoObservacoes ?? '');
             setNextVistoriaDate(draft.nextVistoriaDate ?? '');
+            setExtraExpenses(draft.extraExpenses ?? []);
           } catch (e) {
             console.error('Error loading vehicle draft:', e);
           }
@@ -621,19 +606,19 @@ export function LogForms({
           setRentalCompany('');
           setStartDate(new Date().toISOString().split('T')[0]);
           setEndDate('');
-          setInitialKm(0);
+          setInitialKm(undefined);
           setContractNumber('');
           setValorRecebido(0);
-          setValorSemanal(1000);
-          setFinanciamento(1200);
-          setSeguro(250);
-          setIpva(150);
-          setManutencaoPreventiva(200);
+          setValorSemanal(0);
+          setFinanciamento(0);
+          setSeguro(0);
+          setIpva(0);
+          setManutencaoPreventiva(0);
           setCurrentKm(0);
           setFuelLevel(8);
           setDriver('');
           setDriverPhone('');
-          setCaucaoValor(1500);
+          setCaucaoValor(0);
           setCaucaoData(new Date().toISOString().split('T')[0]);
           setCaucaoObservacoes('');
           setNextVistoriaDate('');
@@ -641,9 +626,9 @@ export function LogForms({
       }
     } else if (formType === 'fuel' && currentSelectedCar) {
       setFuelKm(currentSelectedCar.currentKm);
-      setFuelLiters(35);
-      setFuelPricePerLiter(5.85);
-      setFuelTotalCost(204.75);
+      setFuelLiters(0);
+      setFuelPricePerLiter(0);
+      setFuelTotalCost(0);
       setFuelType('Gasolina');
       setFuelStation('');
       setFuelDate(getTodayStr());
@@ -654,15 +639,11 @@ export function LogForms({
       setMaintCost(0);
       setMaintShop('');
       setMaintNextKm(currentSelectedCar.currentKm + 10000);
-    } else if (formType === 'trip' && currentSelectedCar) {
-      setTripDate(getTodayStr());
-      setTripDriver(currentSelectedCar.driver || '');
-      setTripStartKm(currentSelectedCar.currentKm);
-      setTripEndKm(currentSelectedCar.currentKm + 50);
-      setTripPurpose('');
+      setMaintParcelasPagas(undefined);
+      setMaintParcelasTotais(undefined);
     } else if (formType === 'expense') {
       setExpDate(getTodayStr());
-      setExpCategory('Lavagem');
+      setExpCategory('' as any);
       setExpDescription('');
       setExpCost(0);
     }
@@ -696,7 +677,8 @@ export function LogForms({
         caucaoValor,
         caucaoData,
         caucaoObservacoes,
-        nextVistoriaDate
+        nextVistoriaDate,
+        extraExpenses
       };
       localStorage.setItem(VEHICLE_DRAFT_KEY, JSON.stringify(draftData));
     }
@@ -704,7 +686,7 @@ export function LogForms({
     isOpen, formType, vehicleToEdit, brand, model, plate, color, yearFab, yearModel, rentalCompany,
     startDate, endDate, initialKm, contractNumber, valorRecebido, valorSemanal,
     financiamento, seguro, ipva, manutencaoPreventiva, currentKm, fuelLevel,
-    driver, driverPhone, caucaoValor, caucaoData, caucaoObservacoes, nextVistoriaDate
+    driver, driverPhone, caucaoValor, caucaoData, caucaoObservacoes, nextVistoriaDate, extraExpenses
   ]);
 
   // Handle vehicle select change & auto-populate corresponding km
@@ -714,10 +696,6 @@ export function LogForms({
     if (selectedCar) {
       if (formType === 'fuel') {
         setFuelKm(selectedCar.currentKm);
-      } else if (formType === 'trip') {
-        setTripStartKm(selectedCar.currentKm);
-        setTripEndKm(selectedCar.currentKm + 50);
-        setTripDriver(selectedCar.driver || '');
       } else if (formType === 'maintenance') {
         setMaintNextKm(selectedCar.currentKm + 10000);
       }
@@ -775,12 +753,13 @@ export function LogForms({
         caucaoData: caucaoData || getTodayStr(),
         caucaoObservacoes: caucaoObservacoes || '',
         weeklyPayments: vehicleToEdit ? (vehicleToEdit.weeklyPayments || []) : [],
-        custoExtra: Number(custoExtra) || 0,
-        custoExtraLabel: custoExtraLabel || 'Outras Despesas',
+        custoExtra: extraExpenses.reduce((sum, exp) => sum + (exp.value || 0), 0),
+        custoExtraLabel: extraExpenses.length > 0 ? extraExpenses[0].label : 'Outras Despesas',
         preventiveMaintCurrentKm: vehicleToEdit ? (vehicleToEdit.preventiveMaintCurrentKm ?? (Number(currentKm) || 0)) : (Number(currentKm) || 0),
         preventiveMaintNextKm: vehicleToEdit ? (vehicleToEdit.preventiveMaintNextKm ?? ((Number(currentKm) || 0) + 10000)) : ((Number(currentKm) || 0) + 10000),
         preventiveMaintDate: vehicleToEdit ? (vehicleToEdit.preventiveMaintDate || getTodayStr()) : getTodayStr(),
         nextVistoriaDate: nextVistoriaDate || '',
+        extraExpenses,
         documents: vehicleToEdit?.documents || []
       };
 
@@ -814,8 +793,8 @@ export function LogForms({
     }
 
     else if (formType === 'maintenance') {
-      if (!maintDescription || maintCost < 0) {
-        setError('Informe uma descrição válida e o custo correspondente.');
+      if (maintCost < 0) {
+        setError('Informe o custo correspondente.');
         return;
       }
       onSaveMaintenance({
@@ -827,34 +806,16 @@ export function LogForms({
         shopName: maintShop,
         nextKm: maintNextKm ? Number(maintNextKm) : undefined,
         boNumber: maintBoNumber.trim() || undefined,
-        partsReplaced: maintPartsReplaced.trim() || undefined
-      });
-      onClose();
-    }
-
-    else if (formType === 'trip') {
-      if (tripEndKm <= tripStartKm) {
-        setError(`A quilometragem final (${tripEndKm} km) deve ser maior que a quilometragem inicial (${tripStartKm} km).`);
-        return;
-      }
-      if (!tripDriver || !tripPurpose) {
-        setError('Informe o condutor responsável e a justificativa/destino da viagem.');
-        return;
-      }
-      onSaveTrip({
-        vehicleId,
-        date: tripDate,
-        driverName: tripDriver,
-        startKm: Number(tripStartKm),
-        endKm: Number(tripEndKm),
-        purpose: tripPurpose
+        partsReplaced: maintPartsReplaced.trim() || undefined,
+        parcelasPagas: maintParcelasPagas,
+        parcelasTotais: maintParcelasTotais
       });
       onClose();
     }
 
     else if (formType === 'expense') {
-      if (!expDescription || expCost <= 0) {
-        setError('Informe uma descrição da despesa e o valor cobrado.');
+      if (expCost <= 0) {
+        setError('Informe o valor cobrado.');
         return;
       }
       onSaveExpense({
@@ -882,7 +843,6 @@ export function LogForms({
             {formType === 'vehicle' && (vehicleToEdit ? 'Editar Detalhes do Carro' : 'Adicionar Novo Carro')}
             {formType === 'fuel' && 'Registrar Abastecimento'}
             {formType === 'maintenance' && 'Registrar Manutenção ou Conserto'}
-            {formType === 'trip' && 'Registrar Viagem / Uso de KM'}
             {formType === 'expense' && 'Registrar Outra Despesa'}
           </h2>
           <button 
@@ -947,20 +907,24 @@ export function LogForms({
 
           {/* Vehicle Select for log entries */}
           {formType !== 'vehicle' && vehicles.length > 0 && (
-            <div className="space-y-1">
-              <label className="text-[11px] font-bold text-gray-400 uppercase tracking-wider">Selecione o Veículo</label>
+            <div className="bg-blue-500/5 border border-blue-500/20 p-4 rounded-2xl space-y-2">
+              <label className="text-[11px] font-black text-blue-400 uppercase tracking-widest flex items-center gap-2">
+                <Car className="w-4 h-4" />
+                Vincular ao Veículo
+              </label>
               <select
                 value={vehicleId}
                 onChange={(e) => handleVehicleChange(e.target.value)}
-                className="w-full text-xs bg-white/[0.03] border border-white/10 rounded-xl px-3 py-2 text-white focus:outline-hidden focus:border-blue-500/50 focus:bg-[#1a1a1a] font-semibold"
+                className="w-full text-sm bg-black/40 border border-white/10 rounded-xl px-3 py-2.5 text-white focus:outline-hidden focus:border-blue-500 focus:bg-[#1a1a1a] font-bold shadow-lg"
                 id="form-select-vehicle"
               >
                 {vehicles.map(v => (
                   <option key={v.id} value={v.id} className="bg-[#111111] text-white">
-                    {v.brand} {v.model} ({v.plate})
+                    {v.brand} {v.model} — {v.plate}
                   </option>
                 ))}
               </select>
+              <p className="text-[10px] text-gray-500 italic px-1">Esta despesa será vinculada e descontada no saldo deste carro.</p>
             </div>
           )}
 
@@ -1102,196 +1066,154 @@ export function LogForms({
                   <label className="font-semibold text-emerald-400 flex items-center justify-between">
                     <span>Valor Semanal (R$)</span>
                   </label>
-                  <input 
-                    type="number" 
-                    value={valorSemanal || ''} 
-                    onChange={e => setValorSemanal(Number(e.target.value))}
-                    onFocus={e => e.target.select()}
-                    onClick={e => (e.target as HTMLInputElement).select()}
-                    placeholder="Ex: 800"
+                  <CurrencyInput 
+                    value={valorSemanal} 
+                    onChange={setValorSemanal}
+                    placeholder="0,00"
                     className="w-full text-xs bg-emerald-500/5 border border-emerald-500/20 rounded-xl px-3 py-2 text-white focus:outline-hidden focus:border-emerald-500 focus:bg-[#1a1a1a] font-mono"
                   />
                   <span className="text-[9px] text-gray-500 block">Cobrança semanal (não conta na receita inicial de contrato).</span>
                 </div>
                 <div className="space-y-1">
                   <label className="font-semibold text-gray-400">Valor Recebido Inicial (R$)</label>
-                  <input 
-                    type="number" 
-                    value={valorRecebido || ''} 
-                    onChange={e => setValorRecebido(Number(e.target.value))}
-                    onFocus={e => e.target.select()}
-                    onClick={e => (e.target as HTMLInputElement).select()}
-                    placeholder="0"
+                  <CurrencyInput 
+                    value={valorRecebido} 
+                    onChange={setValorRecebido}
+                    placeholder="0,00"
                     className="w-full text-xs bg-white/[0.03] border border-white/10 rounded-xl px-3 py-2 text-white focus:outline-hidden focus:border-blue-500/50 focus:bg-[#1a1a1a] font-mono"
                   />
                   <span className="text-[9px] text-gray-500 block">No início de contrato inicia em R$ 0,00 até o lançamento de pagamentos.</span>
                 </div>
               </div>
 
-              {/* Despesas do Veículo / Botão + Novo */}
-              <div className="bg-white/[0.02] border border-white/10 p-3 rounded-xl space-y-3">
-                <div className="flex items-center justify-between">
+              {/* Despesas do Veículo - Multi-Expense Section */}
+              <div className="bg-[#1a1a1a] border border-white/10 p-4 rounded-2xl space-y-4">
+                <div className="flex items-center justify-between border-b border-white/5 pb-2">
                   <div className="flex items-center gap-2">
-                    <span className="text-[11px] font-bold uppercase tracking-wider text-amber-400">Despesas do Veículo</span>
-                    {custoExtra > 0 && (
-                      <span className="text-[10px] bg-amber-500/20 text-amber-300 font-mono px-2 py-0.5 rounded-md border border-amber-500/30 flex items-center gap-1.5">
-                        <span>{custoExtraLabel}: R$ {custoExtra.toFixed(2)}/mês</span>
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setCustoExtra(0);
-                            setCustoExtraLabel('Outras Despesas');
-                            setShowAddExpense(false);
-                          }}
-                          className="text-amber-400 hover:text-rose-400 cursor-pointer p-0.5 rounded transition-colors"
-                          title="Deletar despesa"
-                        >
-                          <Trash2 className="w-3 h-3" />
-                        </button>
-                      </span>
-                    )}
+                    <Calculator className="w-4 h-4 text-amber-500" />
+                    <span className="text-[11px] font-black uppercase tracking-wider text-amber-400">Despesas Fixas do Veículo</span>
                   </div>
                   <button
                     type="button"
-                    onClick={() => setShowAddExpense(!showAddExpense)}
-                    className="text-xs text-amber-400 hover:text-amber-300 font-bold px-2.5 py-1 bg-amber-500/15 hover:bg-amber-500/25 border border-amber-500/30 rounded-lg flex items-center gap-1.5 cursor-pointer transition-all shadow-xs"
+                    onClick={() => {
+                      const newId = `exp-${Date.now()}`;
+                      const currentMonth = new Date().toISOString().substring(0, 7); // YYYY-MM
+                      setExtraExpenses([...extraExpenses, { id: newId, label: '', value: 0, startDate: currentMonth }]);
+                    }}
+                    className="text-[10px] font-bold bg-amber-500/10 hover:bg-amber-500/20 text-amber-400 border border-amber-500/30 px-3 py-1.5 rounded-xl flex items-center gap-1.5 transition-all cursor-pointer shadow-lg shadow-amber-500/5"
                   >
                     <Plus className="w-3.5 h-3.5" />
-                    <span>Novo</span>
+                    <span>Adicionar Despesa</span>
                   </button>
                 </div>
 
-                {showAddExpense && (
-                  <div className="p-3 bg-neutral-900 border border-amber-500/30 rounded-xl space-y-3 animate-in slide-in-from-top-1 duration-150">
-                    <div className="flex items-center justify-between border-b border-white/10 pb-2">
-                      <span className="text-xs font-semibold text-white">Adicionar / Editar Nova Despesa</span>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setShowAddExpense(false);
-                        }}
-                        className="text-gray-400 hover:text-white cursor-pointer"
-                      >
-                        <X className="w-3.5 h-3.5" />
-                      </button>
-                    </div>
-
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                      <div className="space-y-1">
-                        <label className="text-[10px] text-gray-300 font-semibold block">Nome / Descrição da Despesa</label>
-                        <input
-                          type="text"
-                          placeholder="Ex: IPVA, Seguro, Rastreamento, Manutenção..."
-                          value={custoExtraLabel}
-                          onChange={(e) => setCustoExtraLabel(e.target.value)}
-                          className="w-full text-xs bg-black/60 border border-white/15 rounded-lg px-2.5 py-1.5 text-white focus:border-amber-500"
-                        />
-                      </div>
-
-                      <div className="space-y-1">
-                        <label className="text-[10px] text-gray-300 font-semibold block">Valor Mensal (R$)</label>
-                        <input
-                          type="number"
-                          placeholder="0.00"
-                          value={custoExtra || ''}
-                          onChange={(e) => setCustoExtra(Number(e.target.value))}
-                          onFocus={(e) => e.target.select()}
-                          onClick={(e) => (e.target as HTMLInputElement).select()}
-                          className="w-full text-xs bg-black/60 border border-white/15 rounded-lg px-2.5 py-1.5 text-white font-mono focus:border-amber-500"
-                        />
-                      </div>
-                    </div>
-
-                    {/* Opção de Calculadora de Parcelado */}
-                    <div className="pt-2 border-t border-white/10 space-y-2">
-                      <div className="flex items-center justify-between">
-                        <button
-                          type="button"
-                          onClick={() => setExpenseParcelado(!expenseParcelado)}
-                          className="text-[11px] text-amber-400 hover:text-amber-300 font-bold flex items-center gap-1.5 bg-amber-500/10 hover:bg-amber-500/20 border border-amber-500/20 px-2 py-1 rounded-lg cursor-pointer transition-all"
-                        >
-                          <Calculator className="w-3.5 h-3.5 text-amber-400" />
-                          <span>{expenseParcelado ? 'Fechar Calculadora de Parcelado' : 'Calcular Valor Parcelado? (Ex: IPVA em 10x)'}</span>
-                        </button>
-                      </div>
-
-                      {expenseParcelado && (
-                        <div className="p-2.5 bg-black/80 border border-amber-500/20 rounded-lg space-y-2 text-xs">
-                          <div className="grid grid-cols-2 gap-2">
-                            <div>
-                              <label className="text-[10px] text-gray-300 font-semibold block mb-1">Valor Total (R$)</label>
-                              <input
-                                type="number"
-                                placeholder="Ex: 1800"
-                                value={expenseTotalVal || ''}
-                                onChange={(e) => setExpenseTotalVal(Number(e.target.value))}
-                                onFocus={(e) => e.target.select()}
-                                onClick={(e) => (e.target as HTMLInputElement).select()}
-                                className="w-full text-xs bg-neutral-900 border border-white/15 rounded-lg px-2.5 py-1.5 text-white font-mono focus:border-amber-500"
-                              />
-                            </div>
-                            <div>
-                              <label className="text-[10px] text-gray-300 font-semibold block mb-1">Nº de Parcelas</label>
-                              <select
-                                value={expenseNumParcelas}
-                                onChange={(e) => setExpenseNumParcelas(Number(e.target.value))}
-                                className="w-full text-xs bg-neutral-900 border border-white/15 rounded-lg px-2.5 py-1.5 text-white font-mono focus:border-amber-500"
-                              >
-                                {[2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 18, 24, 36, 48, 60].map((n) => (
-                                  <option key={n} value={n}>{n}x parcelas mensais</option>
-                                ))}
-                              </select>
-                            </div>
+                {extraExpenses.length === 0 ? (
+                  <div className="py-4 text-center">
+                    <p className="text-[10px] text-gray-500 italic">Nenhuma despesa extra cadastrada.</p>
+                  </div>
+                ) : (
+                  <div className="space-y-4">
+                    {extraExpenses.map((exp, index) => (
+                      <div key={exp.id} className="p-3 bg-black/20 rounded-xl border border-white/5 space-y-3 animate-in fade-in slide-in-from-left-2 duration-200">
+                        <div className="grid grid-cols-12 gap-2 items-end">
+                          <div className="col-span-7 space-y-1">
+                            <label className="text-[9px] text-gray-500 font-bold uppercase ml-1">Descrição</label>
+                            <input
+                              type="text"
+                              value={exp.label}
+                              onChange={(e) => {
+                                const newList = [...extraExpenses];
+                                newList[index].label = e.target.value;
+                                setExtraExpenses(newList);
+                              }}
+                              placeholder="Ex: Seguro, IPVA..."
+                              className="w-full text-xs bg-black/40 border border-white/10 rounded-xl px-3 py-2 text-white focus:border-amber-500/50"
+                            />
                           </div>
-
-                          {expenseTotalVal > 0 && (
-                            <div className="flex items-center justify-between p-2 bg-amber-500/10 border border-amber-500/20 rounded-lg mt-1">
-                              <span className="text-[11px] text-amber-200">
-                                💡 <strong>{expenseNumParcelas}x</strong> de <strong>R$ {(expenseTotalVal / expenseNumParcelas).toFixed(2).replace('.', ',')}</strong> / mês
-                              </span>
+                          <div className="col-span-5 space-y-1">
+                            <div className="flex items-center justify-between">
+                              <label className="text-[9px] text-gray-500 font-bold uppercase ml-1">Valor Mensal</label>
                               <button
                                 type="button"
                                 onClick={() => {
-                                  const valorMensal = Math.round((expenseTotalVal / expenseNumParcelas) * 100) / 100;
-                                  setCustoExtra(valorMensal);
-                                  setExpenseParcelado(false);
+                                  setExtraExpenses(extraExpenses.filter((_, i) => i !== index));
                                 }}
-                                className="px-2.5 py-1 bg-amber-500 hover:bg-amber-400 text-black font-extrabold rounded-md text-[10px] cursor-pointer transition-all shadow-sm"
+                                className="text-gray-500 hover:text-rose-400 transition-colors p-1"
+                                title="Remover despesa"
                               >
-                                Aplicar R$ {(expenseTotalVal / expenseNumParcelas).toFixed(2).replace('.', ',')} / mês
+                                <Trash2 className="w-3.5 h-3.5" />
                               </button>
                             </div>
-                          )}
+                            <CurrencyInput
+                              value={exp.value}
+                              onChange={(val) => {
+                                const newList = [...extraExpenses];
+                                newList[index].value = val;
+                                setExtraExpenses(newList);
+                              }}
+                              placeholder="0,00"
+                              className="w-full text-xs bg-black/40 border border-white/10 rounded-xl px-3 py-2 text-white font-mono focus:border-amber-500/50"
+                            />
+                          </div>
                         </div>
-                      )}
-                    </div>
-
-                    {/* Botões Salvar e Deletar Despesa */}
-                    <div className="pt-2 border-t border-white/10 flex items-center justify-between">
-                      {custoExtra > 0 ? (
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setCustoExtra(0);
-                            setCustoExtraLabel('Outras Despesas');
-                            setShowAddExpense(false);
-                          }}
-                          className="px-3 py-1.5 bg-rose-500/20 hover:bg-rose-500/30 text-rose-300 border border-rose-500/30 font-bold rounded-lg text-xs flex items-center gap-1.5 cursor-pointer transition-all"
-                        >
-                          <Trash2 className="w-3.5 h-3.5" />
-                          <span>Excluir Despesa</span>
-                        </button>
-                      ) : <div />}
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setShowAddExpense(false);
-                        }}
-                        className="px-4 py-1.5 bg-amber-500 hover:bg-amber-400 text-black font-extrabold rounded-lg text-xs flex items-center gap-1.5 cursor-pointer transition-all shadow-md"
-                      >
-                        <Save className="w-3.5 h-3.5" />
-                        <span>Salvar Despesa</span>
-                      </button>
+                        
+                        <div className="flex items-center gap-4 pt-1 border-t border-white/5">
+                          <div className="flex items-center gap-2">
+                            <span className="text-[9px] text-gray-500 font-bold uppercase shrink-0">Início:</span>
+                            <input
+                              type="month"
+                              value={exp.startDate || ''}
+                              onChange={(e) => {
+                                const newList = [...extraExpenses];
+                                newList[index].startDate = e.target.value;
+                                setExtraExpenses(newList);
+                              }}
+                              className="text-[10px] bg-black/40 border border-white/10 rounded-lg px-2 py-1 text-white focus:border-amber-500/50"
+                            />
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <span className="text-[9px] text-gray-500 font-bold uppercase shrink-0">Parc. Pagas:</span>
+                            <input
+                              type="number"
+                              value={exp.parcelasPagas ?? ''}
+                              onChange={(e) => {
+                                const newList = [...extraExpenses];
+                                newList[index].parcelasPagas = e.target.value === '' ? undefined : Number(e.target.value);
+                                setExtraExpenses(newList);
+                              }}
+                              placeholder="Ex: 1"
+                              className="w-16 text-center text-xs bg-black/40 border border-white/10 rounded-lg py-1 text-white font-mono focus:border-amber-500/50"
+                            />
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <span className="text-[9px] text-gray-500 font-bold uppercase shrink-0">Total Parc:</span>
+                            <input
+                              type="number"
+                              value={exp.parcelasTotais ?? ''}
+                              onChange={(e) => {
+                                const newList = [...extraExpenses];
+                                newList[index].parcelasTotais = e.target.value === '' ? undefined : Number(e.target.value);
+                                setExtraExpenses(newList);
+                              }}
+                              placeholder="Ex: 12"
+                              className="w-16 text-center text-xs bg-black/40 border border-white/10 rounded-lg py-1 text-white font-mono focus:border-amber-500/50"
+                            />
+                          </div>
+                          {exp.parcelasTotais && exp.parcelasTotais > 0 ? (
+                            <span className="text-[9px] text-amber-500/60 font-medium italic">
+                              Faltam {(exp.parcelasTotais || 0) - (exp.parcelasPagas || 0)} parcelas
+                            </span>
+                          ) : null}
+                        </div>
+                      </div>
+                    ))}
+                    
+                    {/* Total Summary */}
+                    <div className="pt-2 border-t border-white/5 flex justify-between items-center px-1">
+                      <span className="text-[10px] text-gray-500 font-bold uppercase">Total Mensal:</span>
+                      <span className="text-sm font-black font-mono text-amber-400">
+                        R$ {extraExpenses.reduce((sum, exp) => sum + (exp.value || 0), 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                      </span>
                     </div>
                   </div>
                 )}
@@ -1393,11 +1315,10 @@ export function LogForms({
                       <span>Valor do Caução (R$)</span>
                       <span className="text-[9px] text-emerald-400/80 font-normal">(Garantia - Não soma na receita)</span>
                     </label>
-                    <input 
-                      type="number" 
-                      value={caucaoValor || ''} 
-                      onChange={e => setCaucaoValor(Number(e.target.value))}
-                      placeholder="0.00"
+                    <CurrencyInput 
+                      value={caucaoValor} 
+                      onChange={setCaucaoValor}
+                      placeholder="0,00"
                       className="w-full text-xs bg-black/40 border border-white/10 rounded-xl px-3 py-2 text-white focus:outline-hidden focus:border-emerald-500/50 font-mono"
                     />
                   </div>
@@ -1448,10 +1369,10 @@ export function LogForms({
                   />
                 </div>
                 <div className="space-y-1">
-                  <label className="font-semibold text-gray-400">Quilometragem (Odometer)</label>
+                  <label className="font-semibold text-gray-400 text-[11px]">Quilometragem (Odometer)</label>
                   <input 
                     type="number" 
-                    value={fuelKm || ''} 
+                    value={fuelKm} 
                     onChange={e => setFuelKm(Number(e.target.value))}
                     className="w-full text-xs bg-white/[0.03] border border-white/10 rounded-xl px-3 py-2 text-white focus:outline-hidden focus:border-blue-500/50 focus:bg-[#1a1a1a] font-mono"
                   />
@@ -1460,32 +1381,31 @@ export function LogForms({
 
               <div className="grid grid-cols-3 gap-3">
                 <div className="space-y-1">
-                  <label className="font-semibold text-gray-400">Litros Abastecidos</label>
+                  <label className="font-semibold text-gray-400 text-[11px]">Litros Abastecidos</label>
                   <input 
                     type="number" 
                     step="0.01"
                     value={fuelLiters || ''} 
                     onChange={e => updateFuelTotal(Number(e.target.value), fuelPricePerLiter)}
+                    placeholder="0,00"
                     className="w-full text-xs bg-white/[0.03] border border-white/10 rounded-xl px-3 py-2 text-white focus:outline-hidden focus:border-blue-500/50 focus:bg-[#1a1a1a] font-mono"
                   />
                 </div>
                 <div className="space-y-1">
-                  <label className="font-semibold text-gray-400">Preço p/ Litro (R$)</label>
-                  <input 
-                    type="number" 
-                    step="0.01"
-                    value={fuelPricePerLiter || ''} 
-                    onChange={e => updateFuelTotal(fuelLiters, Number(e.target.value))}
+                  <label className="font-semibold text-gray-400 text-[11px]">Preço p/ Litro (R$)</label>
+                  <CurrencyInput 
+                    value={fuelPricePerLiter} 
+                    onChange={val => updateFuelTotal(fuelLiters, val)}
+                    placeholder="0,00"
                     className="w-full text-xs bg-white/[0.03] border border-white/10 rounded-xl px-3 py-2 text-white focus:outline-hidden focus:border-blue-500/50 focus:bg-[#1a1a1a] font-mono"
                   />
                 </div>
                 <div className="space-y-1">
-                  <label className="font-semibold text-gray-400">Custo Total</label>
-                  <input 
-                    type="number" 
-                    step="0.01"
-                    value={fuelTotalCost || ''} 
-                    onChange={e => setFuelTotalCost(Number(e.target.value))}
+                  <label className="font-semibold text-gray-400 text-[11px]">Custo Total</label>
+                  <CurrencyInput 
+                    value={fuelTotalCost} 
+                    onChange={setFuelTotalCost}
+                    placeholder="0,00"
                     className="w-full text-xs bg-white/[0.01] border border-white/5 rounded-xl px-3 py-2 text-gray-400 font-mono font-bold"
                     disabled
                   />
@@ -1578,10 +1498,10 @@ export function LogForms({
               <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-1">
                   <label className="font-semibold text-gray-400">Custo Total (R$)</label>
-                  <input 
-                    type="number" 
-                    value={maintCost || ''} 
-                    onChange={e => setMaintCost(Number(e.target.value))}
+                  <CurrencyInput 
+                    value={maintCost} 
+                    onChange={setMaintCost}
+                    placeholder="0,00"
                     className="w-full text-xs bg-white/[0.03] border border-white/10 rounded-xl px-3 py-2 text-white focus:outline-hidden focus:border-blue-500/50 focus:bg-[#1a1a1a] font-mono font-semibold"
                   />
                 </div>
@@ -1597,8 +1517,40 @@ export function LogForms({
                 </div>
               </div>
 
+              {/* Parcelas de Manutenção */}
+              <div className="bg-amber-500/5 border border-amber-500/10 p-3 rounded-xl space-y-3">
+                <p className="text-[10px] font-bold text-amber-500 uppercase tracking-wider">O custo foi parcelado?</p>
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-1">
+                    <label className="text-[10px] font-semibold text-gray-400 uppercase">Parcelas Pagas</label>
+                    <input 
+                      type="number" 
+                      value={maintParcelasPagas ?? ''} 
+                      onChange={e => setMaintParcelasPagas(e.target.value === '' ? undefined : Number(e.target.value))}
+                      placeholder="Ex: 1"
+                      className="w-full text-xs bg-black/40 border border-white/10 rounded-xl px-3 py-2 text-white focus:outline-hidden focus:border-amber-500/50"
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <label className="text-[10px] font-semibold text-gray-400 uppercase">Total de Parcelas</label>
+                    <input 
+                      type="number" 
+                      value={maintParcelasTotais ?? ''} 
+                      onChange={e => setMaintParcelasTotais(e.target.value === '' ? undefined : Number(e.target.value))}
+                      placeholder="Ex: 10"
+                      className="w-full text-xs bg-black/40 border border-white/10 rounded-xl px-3 py-2 text-white focus:outline-hidden focus:border-amber-500/50"
+                    />
+                  </div>
+                </div>
+                {maintParcelasTotais && maintParcelasTotais > 1 && (
+                   <p className="text-[10px] text-amber-400/70 italic">
+                      💡 Valor da parcela: R$ {(maintCost / maintParcelasTotais).toFixed(2).replace('.', ',')} / mês
+                   </p>
+                )}
+              </div>
+
               <div className="space-y-1">
-                <label className="font-semibold text-gray-400">Descrição Detalhada *</label>
+                <label className="font-semibold text-gray-400">Descrição Detalhada</label>
                 <textarea 
                   value={maintDescription} 
                   onChange={e => setMaintDescription(e.target.value ? e.target.value.charAt(0).toUpperCase() + e.target.value.slice(1) : '')}
@@ -1607,82 +1559,18 @@ export function LogForms({
                 />
               </div>
 
-              <div className="space-y-1">
-                <label className="font-semibold text-gray-400">Próxima Manutenção KM (Opcional)</label>
-                <input 
-                  type="number" 
-                  value={maintNextKm || ''} 
-                  onChange={e => setMaintNextKm(Number(e.target.value))}
-                  placeholder="Ex: 25000"
-                  className="w-full text-xs bg-white/[0.03] border border-white/10 rounded-xl px-3 py-2 text-white placeholder-gray-500 focus:outline-hidden focus:border-blue-500/50 focus:bg-[#1a1a1a] font-mono"
-                />
-              </div>
-            </div>
-          )}
-
-          {/* ----------------- TRIP FORM ----------------- */}
-          {formType === 'trip' && (
-            <div className="space-y-4 text-white text-xs">
-              <div className="grid grid-cols-2 gap-4">
+              {maintType === 'Preventiva' && (
                 <div className="space-y-1">
-                  <label className="font-semibold text-gray-400">Data da Viagem</label>
-                  <input 
-                    type="date" 
-                    value={tripDate} 
-                    onChange={e => setTripDate(e.target.value)}
-                    className="w-full text-xs bg-white/[0.03] border border-white/10 rounded-xl px-3 py-2 text-white focus:outline-hidden focus:border-blue-500/50 focus:bg-[#1a1a1a] scheme-dark"
-                  />
-                </div>
-                <div className="space-y-1">
-                  <label className="font-semibold text-gray-400">Locatário / Motorista Responsável *</label>
-                  <input 
-                    type="text" 
-                    value={tripDriver} 
-                    onChange={e => setTripDriver(e.target.value ? e.target.value.charAt(0).toUpperCase() + e.target.value.slice(1) : '')}
-                    placeholder="Ex: Mariana Lima"
-                    className="w-full text-xs bg-white/[0.03] border border-white/10 rounded-xl px-3 py-2 text-white placeholder-gray-500 focus:outline-hidden focus:border-blue-500/50 focus:bg-[#1a1a1a]"
-                  />
-                </div>
-              </div>
-
-              <div className="grid grid-cols-2 gap-4">
-                <div className="space-y-1">
-                  <label className="font-semibold text-gray-400">KM de Partida (Inicial)</label>
+                  <label className="font-semibold text-gray-400">Próxima Manutenção KM (Opcional)</label>
                   <input 
                     type="number" 
-                    value={tripStartKm} 
-                    disabled
-                    className="w-full text-xs bg-white/[0.01] border border-white/5 rounded-xl px-3 py-2 text-gray-400 font-mono"
+                    value={maintNextKm || ''} 
+                    onChange={e => setMaintNextKm(Number(e.target.value))}
+                    placeholder="Ex: 25000"
+                    className="w-full text-xs bg-white/[0.03] border border-white/10 rounded-xl px-3 py-2 text-white placeholder-gray-500 focus:outline-hidden focus:border-blue-500/50 focus:bg-[#1a1a1a] font-mono"
                   />
                 </div>
-                <div className="space-y-1">
-                  <label className="font-semibold text-gray-400">KM de Chegada (Final) *</label>
-                  <input 
-                    type="number" 
-                    value={tripEndKm || ''} 
-                    onChange={e => setTripEndKm(Number(e.target.value))}
-                    className="w-full text-xs bg-white/[0.03] border border-white/10 rounded-xl px-3 py-2 text-white focus:outline-hidden focus:border-blue-500/50 focus:bg-[#1a1a1a] font-mono"
-                  />
-                </div>
-              </div>
-
-              <div className="space-y-1 p-3 bg-white/[0.02] border border-white/5 rounded-xl">
-                <label className="text-[11px] font-bold text-gray-400 uppercase tracking-wider">Distância Total Estimada</label>
-                <div className="text-lg font-bold text-blue-400 font-mono">
-                  {(tripEndKm - tripStartKm) > 0 ? (tripEndKm - tripStartKm) : 0} <span className="text-xs text-gray-500 font-sans">km</span>
-                </div>
-              </div>
-
-              <div className="space-y-1">
-                <label className="font-semibold text-gray-400">Finalidade / Destino *</label>
-                <input 
-                  type="text" 
-                  value={tripPurpose} 
-                  onChange={e => setTripPurpose(e.target.value ? e.target.value.charAt(0).toUpperCase() + e.target.value.slice(1) : '')}
-                  placeholder="Ex: Reunião com clientes comerciais em SP"
-                  className="w-full text-xs bg-white/[0.03] border border-white/10 rounded-xl px-3 py-2 text-white placeholder-gray-500 focus:outline-hidden focus:border-blue-500/50 focus:bg-[#1a1a1a]"
-                />
-              </div>
+              )}
             </div>
           )}
 
@@ -1706,6 +1594,7 @@ export function LogForms({
                     onChange={e => setExpCategory(e.target.value as ExpenseLog['category'])}
                     className="w-full text-xs bg-white/[0.03] border border-white/10 rounded-xl px-3 py-2 text-white focus:outline-hidden focus:border-blue-500/50 focus:bg-[#1a1a1a]"
                   >
+                    <option value="" className="bg-[#111111] text-gray-500">Selecione uma categoria...</option>
                     <option value="Lavagem" className="bg-[#111111] text-white">Lavagem / Limpeza</option>
                     <option value="Multa" className="bg-[#111111] text-white">Multa de Trânsito</option>
                     <option value="Estacionamento" className="bg-[#111111] text-white">Estacionamento / Pedágio</option>
@@ -1716,18 +1605,17 @@ export function LogForms({
               </div>
 
               <div className="space-y-1">
-                <label className="font-semibold text-gray-400">Valor Pago (R$) *</label>
-                <input 
-                  type="number" 
-                  step="0.01"
-                  value={expCost || ''} 
-                  onChange={e => setExpCost(Number(e.target.value))}
+                <label className="font-semibold text-gray-400">Valor Pago (R$)</label>
+                <CurrencyInput 
+                  value={expCost} 
+                  onChange={setExpCost}
+                  placeholder="0,00"
                   className="w-full text-xs bg-white/[0.03] border border-white/10 rounded-xl px-3 py-2 text-white focus:outline-hidden focus:border-blue-500/50 focus:bg-[#1a1a1a] font-mono font-bold"
                 />
               </div>
 
               <div className="space-y-1">
-                <label className="font-semibold text-gray-400">Detalhes / Justificativa *</label>
+                <label className="font-semibold text-gray-400">Detalhes / Justificativa</label>
                 <input 
                   type="text" 
                   value={expDescription} 

@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Vehicle, ExpenseLog, WeeklyPayment, Vistoria, VehicleDocument } from '../types';
+import { Vehicle, ExpenseLog, WeeklyPayment, Vistoria, VehicleDocument, MaintenanceLog, FuelLog } from '../types';
 import { generateVistoriaPDF } from '../utils/pdfGenerator';
 import { 
   Calendar, 
@@ -41,6 +41,7 @@ import {
   Archive,
   Layers
 } from 'lucide-react';
+import CurrencyInput from './CurrencyInput';
 
 interface InlineEditProps {
   value: number;
@@ -51,35 +52,54 @@ interface InlineEditProps {
 
 const InlineEdit = ({ value, label, onSave, isCurrency = true }: InlineEditProps) => {
   const [isEditing, setIsEditing] = useState(false);
-  const [tempValue, setTempValue] = useState<string>(value === 0 ? '' : value.toString());
+  const [tempValue, setTempValue] = useState<number>(value);
 
   if (isEditing) {
     return (
       <div className="flex items-center gap-1" onClick={(e) => e.stopPropagation()}>
-        <input
-          type="number"
-          step="any"
-          placeholder="0"
-          value={tempValue}
-          onChange={(e) => setTempValue(e.target.value)}
-          onFocus={(e) => e.target.select()}
-          onClick={(e) => (e.target as HTMLInputElement).select()}
-          className="w-20 px-1 py-0.5 bg-neutral-800 border border-neutral-700 text-white rounded font-mono text-xs text-right focus:outline-hidden focus:border-blue-500"
-          autoFocus
-          onKeyDown={(e) => {
-            if (e.key === 'Enter') {
-              setIsEditing(false);
-              onSave(Number(tempValue) || 0);
-            } else if (e.key === 'Escape') {
-              setIsEditing(false);
-              setTempValue(value.toString());
-            }
-          }}
-        />
+        {isCurrency ? (
+          <CurrencyInput
+            value={tempValue}
+            onChange={(val) => setTempValue(val)}
+            placeholder="0,00"
+            className="w-24 px-1.5 py-0.5 bg-neutral-800 border border-neutral-700 text-white rounded font-mono text-xs text-right focus:outline-hidden focus:border-blue-500"
+            autoFocus
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') {
+                setIsEditing(false);
+                onSave(tempValue || 0);
+              } else if (e.key === 'Escape') {
+                setIsEditing(false);
+                setTempValue(value);
+              }
+            }}
+          />
+        ) : (
+          <input
+            type="number"
+            step="any"
+            placeholder="0"
+            value={tempValue || ''}
+            onChange={(e) => setTempValue(Number(e.target.value))}
+            onFocus={(e) => e.target.select()}
+            onClick={(e) => (e.target as HTMLInputElement).select()}
+            className="w-20 px-1 py-0.5 bg-neutral-800 border border-neutral-700 text-white rounded font-mono text-xs text-right focus:outline-hidden focus:border-blue-500"
+            autoFocus
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') {
+                setIsEditing(false);
+                onSave(tempValue || 0);
+              } else if (e.key === 'Escape') {
+                setIsEditing(false);
+                setTempValue(value);
+              }
+            }}
+          />
+        )}
         <button
           onClick={() => {
             setIsEditing(false);
-            onSave(Number(tempValue) || 0);
+            onSave(tempValue || 0);
           }}
           className="p-0.5 bg-emerald-500/20 text-emerald-400 rounded hover:bg-emerald-500/30 transition-colors"
         >
@@ -88,7 +108,7 @@ const InlineEdit = ({ value, label, onSave, isCurrency = true }: InlineEditProps
         <button
           onClick={() => {
             setIsEditing(false);
-            setTempValue(value.toString());
+            setTempValue(value);
           }}
           className="p-0.5 bg-rose-500/20 text-rose-400 rounded hover:bg-rose-500/30 transition-colors"
         >
@@ -102,7 +122,7 @@ const InlineEdit = ({ value, label, onSave, isCurrency = true }: InlineEditProps
     <span
       onClick={(e) => {
         e.stopPropagation();
-        setTempValue(value.toString());
+        setTempValue(value);
         setIsEditing(true);
       }}
       className="cursor-pointer hover:underline hover:text-white transition-colors border-b border-dashed border-white/20 font-mono text-right font-bold"
@@ -324,6 +344,7 @@ const formatPaymentTemplateText = (
 interface VehicleCardProps {
   vehicle: Vehicle;
   vehicleExpenses: ExpenseLog[];
+  maintenanceLogs: MaintenanceLog[];
   onEdit: (vehicle: Vehicle) => void;
   onUpdateVehicle: (updatedVehicle: Vehicle) => void;
   onAddExpense: (description: string, date: string, cost: number) => void;
@@ -345,6 +366,7 @@ interface VehicleCardProps {
 export const VehicleCard: React.FC<VehicleCardProps> = ({
   vehicle,
   vehicleExpenses,
+  maintenanceLogs,
   onEdit,
   onUpdateVehicle,
   onAddExpense,
@@ -363,11 +385,12 @@ export const VehicleCard: React.FC<VehicleCardProps> = ({
   onFinalizeContract,
 }) => {
   const [isExpanded, setIsExpanded] = useState(false); // Default to collapsed/closed as requested by user
-  const [isCaucaoExpanded, setIsCaucaoExpanded] = useState(false); // Hidden by default (retraído)
-  const [isContractExpanded, setIsContractExpanded] = useState(false); // Hidden by default
-  const [isAgendaExpanded, setIsAgendaExpanded] = useState(false); // Hidden by default when expanding vehicle
-  const [isVistoriaExpanded, setIsVistoriaExpanded] = useState(false); // Hidden by default when expanding vehicle
-  const [isDocExpanded, setIsDocExpanded] = useState(false); // Hidden by default when expanding vehicle
+  const [activeTab, setActiveTab] = useState<'financeiro' | 'pagamentos' | 'manutencao' | 'vistorias' | 'documentos'>('financeiro');
+  const [isCaucaoExpanded, setIsCaucaoExpanded] = useState(true);
+  const [isContractExpanded, setIsContractExpanded] = useState(true);
+  const [isAgendaExpanded, setIsAgendaExpanded] = useState(true);
+  const [isVistoriaExpanded, setIsVistoriaExpanded] = useState(true);
+  const [isDocExpanded, setIsDocExpanded] = useState(true);
   
   // Custom event listener to expand and focus vehicle when clicked anywhere
   React.useEffect(() => {
@@ -885,10 +908,11 @@ export const VehicleCard: React.FC<VehicleCardProps> = ({
 
   // Local expense operations
   const handleAddExpense = () => {
-    if (!newExpenseDesc.trim() || newExpenseAmount <= 0) {
-      alert('Por favor, informe a descrição e o valor da despesa.');
+    if (newExpenseAmount <= 0) {
+      alert('Por favor, informe o valor da despesa.');
       return;
     }
+    const finalDesc = newExpenseDesc.trim() || (expenseType === 'fixa' ? 'Despesa Fixa' : 'Despesa Eventual');
     const dateToUse = newExpenseDate || new Date().toISOString().split('T')[0];
 
     if (isExpenseParcelado && expenseInstallments > 1) {
@@ -909,11 +933,11 @@ export const VehicleCard: React.FC<VehicleCardProps> = ({
         const dStr = String(d.getDate()).padStart(2, '0');
         const parcDate = `${yStr}-${mStr}-${dStr}`;
 
-        const descWithParcela = `${newExpenseDesc.trim()} (${i + 1}/${totalParc})`;
+        const descWithParcela = `${finalDesc} (${i + 1}/${totalParc})`;
         onAddExpense(descWithParcela, parcDate, costPerParcela);
       }
     } else {
-      onAddExpense(newExpenseDesc.trim(), dateToUse, newExpenseAmount);
+      onAddExpense(finalDesc, dateToUse, newExpenseAmount);
     }
 
     setNewExpenseDesc('');
@@ -925,10 +949,11 @@ export const VehicleCard: React.FC<VehicleCardProps> = ({
 
   const handleSaveExpense = () => {
     if (expenseType === 'fixa') {
-      if (!newExpenseDesc.trim() || newExpenseAmount <= 0) {
-        alert('Por favor, informe a descrição e o valor da despesa fixa.');
+      if (newExpenseAmount <= 0) {
+        alert('Por favor, informe o valor da despesa fixa.');
         return;
       }
+      const finalDesc = newExpenseDesc.trim() || 'Despesa Fixa';
       let monthlyVal = newExpenseAmount;
       if (isExpenseParcelado && expenseInstallments > 1) {
         monthlyVal = expenseInstallmentMode === 'total'
@@ -938,7 +963,7 @@ export const VehicleCard: React.FC<VehicleCardProps> = ({
       onUpdateVehicle({
         ...vehicle,
         custoExtra: monthlyVal,
-        custoExtraLabel: newExpenseDesc.trim(),
+        custoExtraLabel: finalDesc,
       });
       setNewExpenseDesc('');
       setNewExpenseAmount(0);
@@ -1310,27 +1335,21 @@ export const VehicleCard: React.FC<VehicleCardProps> = ({
   const handleNavToAgenda = (e: React.MouseEvent) => {
     e.stopPropagation();
     setIsExpanded(true);
+    setActiveTab('manutencao');
     setIsAgendaExpanded(true);
-    setTimeout(() => {
-      const el = document.getElementById(`agenda-section-${vehicle.id}`);
-      el?.scrollIntoView({ behavior: 'smooth', block: 'center' });
-    }, 100);
   };
 
   const handleNavToVistorias = (e: React.MouseEvent) => {
     e.stopPropagation();
     setIsExpanded(true);
+    setActiveTab('vistorias');
     setIsVistoriaExpanded(true);
-    setTimeout(() => {
-      const el = document.getElementById(`vistorias-section-${vehicle.id}`);
-      el?.scrollIntoView({ behavior: 'smooth', block: 'center' });
-    }, 100);
   };
 
   return (
     <div 
       id={`vehicle-card-container-${vehicle.id}`} 
-      className="bg-[#111111] border border-white/5 rounded-2xl shadow-xl hover:border-white/10 hover:shadow-[0_4px_30px_rgba(0,0,0,0.4)] transition-all overflow-hidden flex flex-col h-full"
+      className="bg-[#111111] border border-white/10 rounded-2xl shadow-md hover:border-white/20 transition-all overflow-hidden flex flex-col h-full"
     >
       {/* Header Panel - Brand, Model, Plate and Collapse Status */}
       <div 
@@ -1341,15 +1360,15 @@ export const VehicleCard: React.FC<VehicleCardProps> = ({
         <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 min-w-0">
           <div className="flex-1 min-w-0 w-full sm:w-auto">
             <div className="flex items-center gap-2 flex-wrap">
-              <span className="text-xs font-semibold px-2 py-0.5 bg-white/10 text-white rounded-md tracking-wider font-mono border border-white/5">
+              <span className="text-xs font-semibold px-2 py-0.5 bg-zinc-800 text-zinc-200 rounded-md tracking-wider font-mono border border-zinc-700/60">
                 {vehicle.plate}
               </span>
-              <span className="text-xs text-gray-400 font-medium">{vehicle.color}</span>
+              <span className="text-xs text-zinc-400 font-medium">{vehicle.color}</span>
               {hasCompletedVistoria && (
                 <button
                   type="button"
                   onClick={handleNavToVistorias}
-                  className="flex items-center gap-1 text-[10px] font-bold bg-emerald-500/20 text-emerald-400 hover:bg-emerald-500/30 px-2 py-0.5 rounded-md border border-emerald-500/30 shadow-[0_0_10px_rgba(16,185,129,0.25)] cursor-pointer transition-all"
+                  className="flex items-center gap-1 text-[10px] font-medium bg-emerald-500/10 text-emerald-400 hover:bg-emerald-500/20 px-2 py-0.5 rounded-md border border-emerald-500/20 cursor-pointer transition-all"
                   title="Clique para ir direto às Vistorias do veículo"
                 >
                   <CheckCircle2 className="w-3 h-3 shrink-0 text-emerald-400" />
@@ -1360,7 +1379,7 @@ export const VehicleCard: React.FC<VehicleCardProps> = ({
                 <button
                   type="button"
                   onClick={handleNavToAgenda}
-                  className="flex items-center gap-1 text-[10px] font-bold bg-rose-500/15 text-rose-400 hover:bg-rose-500/25 px-2 py-0.5 rounded-md border border-rose-500/20 animate-pulse drop-shadow-[0_0_8px_rgba(239,68,68,0.4)] cursor-pointer transition-all"
+                  className="flex items-center gap-1 text-[10px] font-semibold bg-rose-500/15 text-rose-400 hover:bg-rose-500/25 px-2 py-0.5 rounded-md border border-rose-500/30 animate-pulse cursor-pointer transition-all"
                   title={`Atenção: Manutenção Vencida! Passou do limite por ${maintCurrentKm - maintNextKm} KM. Clique para ir à Agenda.`}
                 >
                   <Wrench className="w-3 h-3 shrink-0" />
@@ -1371,7 +1390,7 @@ export const VehicleCard: React.FC<VehicleCardProps> = ({
                 <button
                   type="button"
                   onClick={handleNavToAgenda}
-                  className="flex items-center gap-1 text-[10px] font-bold bg-amber-500/15 text-amber-400 hover:bg-amber-500/25 px-2 py-0.5 rounded-md border border-amber-500/20 animate-pulse drop-shadow-[0_0_8px_rgba(245,158,11,0.4)] cursor-pointer transition-all"
+                  className="flex items-center gap-1 text-[10px] font-semibold bg-amber-500/10 text-amber-300 hover:bg-amber-500/20 px-2 py-0.5 rounded-md border border-amber-500/25 cursor-pointer transition-all"
                   title={`Clique para ir à Agenda de Manutenção.`}
                 >
                   <Wrench className="w-3 h-3 shrink-0" />
@@ -1384,7 +1403,7 @@ export const VehicleCard: React.FC<VehicleCardProps> = ({
                 <button
                   type="button"
                   onClick={handleNavToAgenda}
-                  className="flex items-center gap-1 text-[10px] font-bold bg-amber-500/20 text-amber-300 hover:bg-amber-500/30 px-2 py-0.5 rounded-md border border-amber-500/30 animate-pulse font-mono drop-shadow-[0_0_8px_rgba(245,158,11,0.5)] cursor-pointer transition-all"
+                  className="flex items-center gap-1 text-[10px] font-semibold bg-amber-500/10 text-amber-300 hover:bg-amber-500/20 px-2 py-0.5 rounded-md border border-amber-500/25 font-mono cursor-pointer transition-all"
                   title="Clique para ir direto para a Revisão"
                 >
                   <Clock className="w-3 h-3 shrink-0 text-amber-300" />
@@ -1394,20 +1413,21 @@ export const VehicleCard: React.FC<VehicleCardProps> = ({
                 </button>
               )}
             </div>
-            <h3 className="text-lg font-bold text-white mt-1 flex items-center gap-2">
-              {vehicle.brand} <span className="font-medium text-gray-300">{vehicle.model}</span>
+            <h3 className="text-lg font-bold text-white mt-1 flex items-center gap-2 break-all break-words">
+              {vehicle.brand} <span className="font-medium text-gray-300 break-all break-words">{vehicle.model}</span>
             </h3>
-            <p className="text-xs text-gray-400 mt-1 flex items-center gap-1.5 flex-wrap">
-              <User className="w-3.5 h-3.5 text-gray-500" />
-              Locatário: <strong className="text-gray-200 font-semibold">{vehicle.driver || 'Não definido'}</strong>
+            <p className="text-xs text-gray-400 mt-1 flex items-center gap-1.5 flex-wrap break-all break-words">
+              <User className="w-3.5 h-3.5 text-gray-500 shrink-0" />
+              Locatário: <strong className="text-gray-200 font-semibold break-all break-words">{vehicle.driver || 'Não definido'}</strong>
               {vehicle.driverPhone && (
-                <span className="text-[10px] text-gray-500 font-mono ml-1">({vehicle.driverPhone})</span>
+                <span className="text-[10px] text-gray-500 font-mono ml-1 shrink-0">({vehicle.driverPhone})</span>
               )}
               <button
                 type="button"
                 onClick={(e) => {
                   e.stopPropagation();
                   if (!isExpanded) setIsExpanded(true);
+                  setActiveTab('pagamentos');
                   setShowPaymentWhatsApp(true);
                   setShowAddPayment(false);
                   const type = paymentWhatsAppType;
@@ -1423,7 +1443,7 @@ export const VehicleCard: React.FC<VehicleCardProps> = ({
                   );
                   setCustomPaymentMsgText(text);
                 }}
-                className="ml-1 text-[10px] text-emerald-400 hover:text-white bg-emerald-500/10 hover:bg-emerald-500/20 border border-emerald-500/20 px-2 py-0.5 rounded font-bold transition-all flex items-center gap-1 cursor-pointer"
+                className="ml-1 text-[10px] text-emerald-400 hover:text-white bg-emerald-500/10 hover:bg-emerald-500/20 border border-emerald-500/20 px-2 py-0.5 rounded font-medium transition-all flex items-center gap-1 cursor-pointer"
                 title="Enviar cobrança ou lembrete de pagamento via WhatsApp"
               >
                 <MessageCircle className="w-3 h-3 text-emerald-400" />
@@ -1508,22 +1528,104 @@ export const VehicleCard: React.FC<VehicleCardProps> = ({
       {/* Expanded Details Panel */}
       {isExpanded && (
         <div className="flex-1 flex flex-col justify-between" id={`vehicle-card-details-${vehicle.id}`}>
-          <div className="p-5 space-y-6 flex-1">
+          <div className="p-4 sm:p-5 space-y-4 flex-1">
             
-            {/* Financial Breakdown Section (with Click-To-Edit) */}
-            <div className="bg-white/[0.02] p-4 rounded-xl border border-white/5 space-y-4">
-              <div className="flex justify-between items-center text-xs pb-2 border-b border-white/5">
-                <span className="font-bold text-gray-300 flex items-center gap-1.5 uppercase tracking-wider text-[10px]">
-                  <DollarSign className="w-3.5 h-3.5 text-emerald-400" /> Demonstrativo Mensal
-                </span>
-                <span className="text-[10px] text-gray-500">Valores deste mês</span>
-              </div>
+            {/* Category Navigation Tabs */}
+            <div className="flex items-center gap-1.5 p-1 bg-black/40 border border-white/10 rounded-xl overflow-x-auto no-scrollbar">
+              <button
+                type="button"
+                onClick={() => setActiveTab('financeiro')}
+                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all whitespace-nowrap cursor-pointer ${
+                  activeTab === 'financeiro'
+                    ? 'bg-zinc-800 text-white shadow-xs border border-zinc-700'
+                    : 'text-zinc-400 hover:text-zinc-200 hover:bg-white/5'
+                }`}
+              >
+                <DollarSign className="w-3.5 h-3.5 text-emerald-400/80" />
+                <span>Custos & Resumo</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setActiveTab('pagamentos')}
+                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all whitespace-nowrap cursor-pointer ${
+                  activeTab === 'pagamentos'
+                    ? 'bg-zinc-800 text-white shadow-xs border border-zinc-700'
+                    : 'text-zinc-400 hover:text-zinc-200 hover:bg-white/5'
+                }`}
+              >
+                <Calendar className="w-3.5 h-3.5 text-blue-400/80" />
+                <span>Pagamentos</span>
+                {vehicle.weeklyPayments && vehicle.weeklyPayments.length > 0 && (
+                  <span className="text-[10px] bg-zinc-700 text-zinc-300 px-1.5 py-0.2 rounded-full font-mono">
+                    {vehicle.weeklyPayments.length}
+                  </span>
+                )}
+              </button>
+              <button
+                type="button"
+                onClick={() => setActiveTab('manutencao')}
+                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all whitespace-nowrap cursor-pointer ${
+                  activeTab === 'manutencao'
+                    ? 'bg-zinc-800 text-white shadow-xs border border-zinc-700'
+                    : 'text-zinc-400 hover:text-zinc-200 hover:bg-white/5'
+                }`}
+              >
+                <Wrench className="w-3.5 h-3.5 text-amber-400/80" />
+                <span>Manutenções</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setActiveTab('vistorias')}
+                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all whitespace-nowrap cursor-pointer ${
+                  activeTab === 'vistorias'
+                    ? 'bg-zinc-800 text-white shadow-xs border border-zinc-700'
+                    : 'text-zinc-400 hover:text-zinc-200 hover:bg-white/5'
+                }`}
+              >
+                <ClipboardCheck className="w-3.5 h-3.5 text-purple-400/80" />
+                <span>Vistorias</span>
+                {vehicleVistorias.length > 0 && (
+                  <span className="text-[10px] bg-zinc-700 text-zinc-300 px-1.5 py-0.2 rounded-full font-mono">
+                    {vehicleVistorias.length}
+                  </span>
+                )}
+              </button>
+              <button
+                type="button"
+                onClick={() => setActiveTab('documentos')}
+                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all whitespace-nowrap cursor-pointer ${
+                  activeTab === 'documentos'
+                    ? 'bg-zinc-800 text-white shadow-xs border border-zinc-700'
+                    : 'text-zinc-400 hover:text-zinc-200 hover:bg-white/5'
+                }`}
+              >
+                <FileText className="w-3.5 h-3.5 text-blue-400/80" />
+                <span>Contrato & Docs</span>
+                {(vehicle.documents || []).length > 0 && (
+                  <span className="text-[10px] bg-zinc-700 text-zinc-300 px-1.5 py-0.2 rounded-full font-mono">
+                    {(vehicle.documents || []).length}
+                  </span>
+                )}
+              </button>
+            </div>
 
-              {/* Entradas / Receitas */}
-              <div className="space-y-2">
-                <span className="text-[10px] font-bold text-emerald-400/90 uppercase tracking-wider block">
-                  Entradas (+)
-                </span>
+            {/* TAB 1: Financeiro / Custos */}
+            {activeTab === 'financeiro' && (
+              <div className="space-y-4 animate-in fade-in duration-150">
+                {/* Financial Breakdown Section (with Click-To-Edit) */}
+                <div className="bg-white/[0.02] p-4 rounded-xl border border-white/5 space-y-4">
+                  <div className="flex justify-between items-center text-xs pb-2 border-b border-white/5">
+                    <span className="font-bold text-gray-300 flex items-center gap-1.5 uppercase tracking-wider text-[10px]">
+                      <DollarSign className="w-3.5 h-3.5 text-emerald-400" /> Demonstrativo Mensal
+                    </span>
+                    <span className="text-[10px] text-gray-500">Valores deste mês</span>
+                  </div>
+
+                  {/* Entradas / Receitas */}
+                  <div className="space-y-2">
+                    <span className="text-[10px] font-bold text-emerald-400/90 uppercase tracking-wider block">
+                      Entradas (+)
+                    </span>
                 {/* Valor Semanal Fixado */}
                 <div className="flex justify-between items-center text-xs bg-emerald-500/5 p-2 rounded-lg border border-emerald-500/10">
                   <span className="text-emerald-300 font-semibold flex items-center gap-1.5">
@@ -1770,8 +1872,51 @@ export const VehicleCard: React.FC<VehicleCardProps> = ({
                     )}
                   </div>
 
-                  {/* Outras Despesas Fixas (custoExtra) */}
-                  {custoExtra > 0 && (
+                  {/* Outras Despesas Fixas (extraExpenses) */}
+                  {(vehicle.extraExpenses || []).map((exp) => {
+                    const getDynamicParcela = () => {
+                      if (!exp.parcelasTotais || exp.parcelasTotais <= 0) return null;
+                      if (!exp.startDate || selectedMonth === undefined || selectedYear === undefined) {
+                        return { current: exp.parcelasPagas || 0, total: exp.parcelasTotais };
+                      }
+                      
+                      const [startYear, startMonth] = exp.startDate.split('-').map(Number);
+                      const monthsDiff = (selectedYear - startYear) * 12 + (selectedMonth - (startMonth - 1));
+                      const parcelaBase = exp.parcelasPagas || 1;
+                      const current = parcelaBase + monthsDiff;
+                      
+                      return { current, total: exp.parcelasTotais };
+                    };
+
+                    const parcelaInfo = getDynamicParcela();
+                    const isOver = parcelaInfo && parcelaInfo.current > parcelaInfo.total;
+                    const isBefore = parcelaInfo && parcelaInfo.current < 1;
+                    
+                    if (isOver || isBefore) return null;
+
+                    return (
+                      <div key={exp.id} className="py-0.5 text-gray-400 hover:text-white transition-colors group">
+                        <div className="flex items-center justify-between gap-2">
+                          <div className="flex flex-col truncate">
+                            <span className="truncate max-w-[140px] font-medium text-gray-300">{exp.label || 'Outra Despesa'} (-)</span>
+                            {parcelaInfo ? (
+                              <span className="text-[9px] font-mono text-amber-500/70 font-bold">
+                                Parc: {parcelaInfo.current}/{parcelaInfo.total} (Faltam {Math.max(0, parcelaInfo.total - parcelaInfo.current)})
+                              </span>
+                            ) : null}
+                          </div>
+                          <div className="flex items-center gap-1.5 font-mono shrink-0">
+                            <span className="text-gray-300 text-xs font-bold">
+                              {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(exp.value || 0)}
+                            </span>
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })}
+
+                  {/* Fallback for old single custoExtra field if no extraExpenses exist */}
+                  {(!vehicle.extraExpenses || vehicle.extraExpenses.length === 0) && custoExtra > 0 && (
                     <div className="py-0.5 text-gray-400 hover:text-white transition-colors">
                       <div className="flex items-center justify-between gap-2">
                         <span className="truncate max-w-[140px] font-medium text-gray-300">{custoExtraLabel} (-)</span>
@@ -1942,13 +2087,10 @@ export const VehicleCard: React.FC<VehicleCardProps> = ({
                         <label className="text-[9px] text-gray-400 font-bold uppercase tracking-wider block mb-1">
                           {expenseType === 'fixa' ? 'Valor Mensal (R$)' : 'Valor (R$)'}
                         </label>
-                        <input
-                          type="number"
+                        <CurrencyInput
                           placeholder="0,00"
-                          value={newExpenseAmount || ''}
-                          onChange={(e) => setNewExpenseAmount(Number(e.target.value))}
-                          onFocus={(e) => e.target.select()}
-                          onClick={(e) => (e.target as HTMLInputElement).select()}
+                          value={newExpenseAmount}
+                          onChange={setNewExpenseAmount}
                           className="w-full text-xs bg-black border border-white/15 rounded-lg px-2.5 py-1.5 text-white focus:outline-hidden font-mono focus:border-amber-500"
                         />
                       </div>
@@ -2178,137 +2320,18 @@ export const VehicleCard: React.FC<VehicleCardProps> = ({
                 </div>
               )}
             </div>
-
-            {/* Dados do Contrato Section (Escondido por padrão, expande ao clicar) */}
-            <div className="bg-white/[0.02] p-4 rounded-xl border border-white/5 space-y-3 relative mb-4">
-              <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center text-xs pb-2 border-b border-white/5 gap-2">
-                <button 
-                  type="button"
-                  onClick={() => setIsContractExpanded(!isContractExpanded)}
-                  className="flex justify-between items-center w-full text-left font-bold text-gray-300 gap-2 uppercase tracking-wider text-[10px] hover:text-white transition-colors cursor-pointer py-0.5"
-                  title="Clique para alternar os dados do contrato"
-                >
-                  <span className="flex flex-wrap items-center gap-1.5">
-                    <FileText className="w-3.5 h-3.5 text-blue-400 shrink-0" /> 
-                    <span>Dados do Contrato</span>
-                    {vehicle.startDate || vehicle.initialKm || vehicle.contractNumber ? (
-                      <span className="font-mono text-blue-400 text-[10px] font-medium normal-case">
-                        ({vehicle.contractNumber ? `N° ${vehicle.contractNumber} | ` : ''}Início: {vehicle.startDate ? new Date(vehicle.startDate + 'T12:00:00').toLocaleDateString('pt-BR') : 'N/I'} | KM Início: {vehicle.initialKm ? `${vehicle.initialKm.toLocaleString('pt-BR')} km` : 'N/I'})
-                      </span>
-                    ) : (
-                      <span className="text-gray-500 text-[10px] normal-case font-normal">
-                        (Não cadastrado)
-                      </span>
-                    )}
-                  </span>
-                  <span className="flex items-center gap-1 text-[10px] text-blue-400 font-semibold bg-blue-500/10 hover:bg-blue-500/20 px-2.5 py-1 rounded-md border border-blue-500/15 shrink-0">
-                    {isContractExpanded ? 'Recolher' : 'Contrato'}
-                    {isContractExpanded ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
-                  </span>
-                </button>
-              </div>
-
-              {isContractExpanded && (
-                <div className="space-y-3 pt-1 animate-in slide-in-from-top-1 duration-150">
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                    {/* Data de Início */}
-                    <div className="bg-white/[0.01] p-3 rounded-xl border border-white/5 flex flex-col justify-between hover:border-white/10 transition-colors">
-                      <span className="text-[10px] text-gray-400 font-semibold mb-1 flex items-center gap-1">
-                        <Calendar className="w-3.5 h-3.5 text-blue-400" /> Data de Início
-                      </span>
-                      <div className="flex items-center justify-between mt-1">
-                        <InlineDateEdit
-                          value={vehicle.startDate}
-                          onSave={(val) => handleUpdateField('startDate', val)}
-                        />
-                      </div>
-                      {vehicle.startDate && (
-                        <div className="mt-2 pt-1.5 border-t border-white/5 text-[10px] text-emerald-400 font-mono font-medium flex items-center gap-1">
-                          <Clock className="w-3 h-3 text-emerald-400 shrink-0" />
-                          <span>1º Venc. Semanal: <strong>{formatDateBR(getNextWeekDate(vehicle.startDate))}</strong></span>
-                        </div>
-                      )}
-                    </div>
-
-                    {/* KM de Início (Entrada) */}
-                    <div className="bg-white/[0.01] p-3 rounded-xl border border-white/5 flex flex-col justify-between hover:border-white/10 transition-colors">
-                      <span className="text-[10px] text-gray-400 font-semibold mb-1 flex items-center gap-1">
-                        <Gauge className="w-3.5 h-3.5 text-emerald-400" /> KM de Início (Entrada)
-                      </span>
-                      <div className="flex items-center justify-between mt-1">
-                        <InlineEdit
-                          value={vehicle.initialKm || 0}
-                          label="KM Início"
-                          isCurrency={false}
-                          onSave={(val) => handleUpdateField('initialKm', val)}
-                        />
-                      </div>
-                    </div>
-                  </div>
-
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                    {/* Número do Contrato */}
-                    <div className="bg-white/[0.01] p-3 rounded-xl border border-white/5 space-y-1 hover:border-white/10 transition-all">
-                      <span className="text-[10px] text-gray-400 font-semibold flex items-center gap-1">
-                        <FileText className="w-3.5 h-3.5 text-amber-400" /> N° do Contrato / Código
-                      </span>
-                      <div className="pt-1">
-                        <InlineTextEdit
-                          value={vehicle.contractNumber || ''}
-                          label="Número do Contrato"
-                          placeholder="Ex: CT-GKD-ABC2323-08-2026-01"
-                          onSave={(val) => handleUpdateField('contractNumber', val)}
-                        />
-                      </div>
-                    </div>
-
-                    {/* Locadora / Empresa Responsável */}
-                    <div className="bg-white/[0.01] p-3 rounded-xl border border-white/5 space-y-1 hover:border-white/10 transition-all">
-                      <span className="text-[10px] text-gray-400 font-semibold flex items-center gap-1">
-                        <Building2 className="w-3.5 h-3.5 text-indigo-400" /> Locadora / Empresa
-                      </span>
-                      <div className="pt-1">
-                        <InlineTextEdit
-                          value={vehicle.rentalCompany || ''}
-                          label="Empresa Locadora"
-                          placeholder="Ex: Localiza, Movida, Frota Própria"
-                          onSave={(val) => handleUpdateField('rentalCompany', val)}
-                        />
-                      </div>
-                    </div>
-                  </div>
-
-                  <div className="pt-2 border-t border-white/5 grid grid-cols-1 sm:grid-cols-2 gap-2">
-                    <button
-                      type="button"
-                      onClick={() => onOpenRentalContract?.(vehicle)}
-                      className="w-full py-2.5 bg-emerald-600/20 hover:bg-emerald-600/30 text-emerald-400 font-bold text-xs rounded-xl flex items-center justify-center gap-2 border border-emerald-500/30 transition-all cursor-pointer shadow-md shadow-emerald-500/10"
-                    >
-                      <FileText className="w-4 h-4 text-emerald-400" />
-                      <span>Gerar / Alterar Contrato (PDF)</span>
-                    </button>
-
-                    {onFinalizeContract && (
-                      <button
-                        type="button"
-                        onClick={() => onFinalizeContract(vehicle)}
-                        className="w-full py-2.5 bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 font-bold text-xs rounded-xl flex items-center justify-center gap-2 border border-amber-500/30 transition-all cursor-pointer shadow-md shadow-amber-500/10"
-                      >
-                        <Archive className="w-4 h-4 text-amber-400" />
-                        <span>Finalizar Contrato Atual</span>
-                      </button>
-                    )}
-                  </div>
-                </div>
-              )}
             </div>
+          )}
 
-            {/* Weekly Payments Section (deixar + novo pra ir criando pagamentos) */}
-            <div className="bg-white/[0.02] p-4 rounded-xl border border-white/5 space-y-3 mb-4">
-              <div className="flex justify-between items-center text-xs pb-1.5 border-b border-white/5 flex-wrap gap-2">
-                <span className="font-bold text-gray-300 flex items-center gap-1.5 uppercase tracking-wider text-[10px]">
-                  <Calendar className="w-3.5 h-3.5 text-blue-400" /> Pagamentos Semanais
-                </span>
+          {/* TAB 2: Pagamentos Semanais */}
+          {activeTab === 'pagamentos' && (
+            <div className="space-y-4 animate-in fade-in duration-150">
+              {/* Weekly Payments Section */}
+              <div className="bg-white/[0.02] p-4 rounded-xl border border-white/5 space-y-3 mb-4">
+                <div className="flex justify-between items-center text-xs pb-1.5 border-b border-white/5 flex-wrap gap-2">
+                  <span className="font-bold text-gray-300 flex items-center gap-1.5 uppercase tracking-wider text-[10px]">
+                    <Calendar className="w-3.5 h-3.5 text-blue-400" /> Pagamentos Semanais
+                  </span>
                 <div className="flex items-center gap-1.5">
                   <button
                     type="button"
@@ -2366,9 +2389,8 @@ export const VehicleCard: React.FC<VehicleCardProps> = ({
                   </button>
                 </div>
               </div>
-            </div>
 
-            {/* WhatsApp Payment Reminder Panel */}
+              {/* WhatsApp Payment Reminder Panel */}
               {showPaymentWhatsApp && (
                 <div className="p-3 bg-[#0d1f17] rounded-xl border border-emerald-500/30 space-y-3 animate-in slide-in-from-top-1 duration-150 shadow-lg text-xs">
                   <div className="flex justify-between items-center pb-2 border-b border-emerald-500/20">
@@ -2503,11 +2525,9 @@ export const VehicleCard: React.FC<VehicleCardProps> = ({
                       <label className="text-[9px] text-gray-300 block mb-0.5 font-semibold uppercase tracking-wider">
                         Valor Semanal (R$)
                       </label>
-                      <input
-                        type="number"
-                        value={paymentWhatsAppAmount || ''}
-                        onChange={(e) => {
-                          const newAmt = Number(e.target.value);
+                      <CurrencyInput
+                        value={paymentWhatsAppAmount}
+                        onChange={(newAmt) => {
                           setPaymentWhatsAppAmount(newAmt);
                           const rawTpl = localStorage.getItem(`fleet_payment_msg_${paymentWhatsAppType}`) || DEFAULT_PAYMENT_TEMPLATES[paymentWhatsAppType];
                           const text = formatPaymentTemplateText(
@@ -2611,7 +2631,13 @@ export const VehicleCard: React.FC<VehicleCardProps> = ({
 
 
                           const url = `https://wa.me/${cleanPhone}?text=${encodeURIComponent(customPaymentMsgText)}`;
-                          window.open(url, '_blank');
+                          const a = document.createElement('a');
+                          a.href = url;
+                          a.target = '_blank';
+                          a.rel = 'noopener noreferrer';
+                          document.body.appendChild(a);
+                          a.click();
+                          document.body.removeChild(a);
                         }}
                         className="px-3.5 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg font-bold text-[11px] flex items-center gap-1.5 shadow-md shadow-emerald-500/15 transition-all cursor-pointer"
                       >
@@ -2637,10 +2663,9 @@ export const VehicleCard: React.FC<VehicleCardProps> = ({
                     </div>
                     <div>
                       <label className="text-[9px] text-gray-400 block mb-0.5">Valor (R$)</label>
-                      <input
-                        type="number"
-                        value={newPaymentAmount || ''}
-                        onChange={(e) => setNewPaymentAmount(Number(e.target.value))}
+                      <CurrencyInput
+                        value={newPaymentAmount}
+                        onChange={setNewPaymentAmount}
                         placeholder="0,00"
                         className="w-full text-xs bg-black border border-white/10 rounded-md px-2 py-1 text-white focus:outline-hidden font-mono"
                         autoFocus
@@ -2704,58 +2729,15 @@ export const VehicleCard: React.FC<VehicleCardProps> = ({
                 </div>
               )}
             </div>
+          </div>
+        )}
 
-            {/* Eventual Expenses Section */}
-            <div className="bg-white/[0.02] p-4 rounded-xl border border-white/5 space-y-3 mb-4">
-              <div className="flex justify-between items-center text-xs pb-1.5 border-b border-white/5">
-                <span className="font-bold text-gray-300 flex items-center gap-1.5 uppercase tracking-wider text-[10px]">
-                  <TrendingDown className="w-3.5 h-3.5 text-rose-400" /> Despesas do Carro (Eventuais)
-                </span>
-              </div>
-
-              <div className="space-y-1.5 max-h-36 overflow-y-auto pr-1">
-                {vehicleExpenses.filter((exp) => isCurrentMonth(exp.date)).length === 0 ? (
-                  <p className="text-[10px] text-gray-500 italic text-center py-2">Nenhuma despesa eventual registrada neste mês.</p>
-                ) : (
-                  vehicleExpenses
-                    .filter((exp) => isCurrentMonth(exp.date))
-                    .slice()
-                    .sort((a, b) => b.date.localeCompare(a.date))
-                    .map((exp) => {
-                      const inst = parseInstallmentInfo(exp.description);
-                      return (
-                        <div key={exp.id} className="flex justify-between items-center text-[11px] py-1 border-b border-white/[0.02]">
-                          <div className="flex flex-col">
-                            <div className="flex items-center gap-1.5 flex-wrap">
-                              <span className="text-gray-300 font-medium">{exp.description}</span>
-                              {inst && (
-                                <span className="text-[10px] font-mono bg-amber-500/10 text-amber-300 border border-amber-500/20 px-1.5 py-0.5 rounded font-bold shrink-0">
-                                  Pagas: {inst.pagas} | Faltam: {inst.faltam}
-                                </span>
-                              )}
-                            </div>
-                            <span className="text-[9px] text-gray-500 font-mono">{new Date(exp.date + 'T12:00:00').toLocaleDateString('pt-BR')}</span>
-                          </div>
-                          <div className="flex items-center gap-1.5 font-mono">
-                            <span className="font-mono text-rose-400 font-semibold">{formatBRL(exp.cost)}</span>
-                            <button
-                              onClick={() => onDeleteExpense(exp.id)}
-                              className="text-gray-500 hover:text-rose-400 transition-colors p-0.5 rounded cursor-pointer"
-                              title="Excluir despesa"
-                            >
-                              <Trash2 className="w-3.5 h-3.5" />
-                            </button>
-                          </div>
-                        </div>
-                      );
-                    })
-                )}
-              </div>
-            </div>
-
-            {/* Agenda de Manutenção Preventiva (Escondido por padrão, expande ao clicar) */}
-            <div id={`agenda-section-${vehicle.id}`} className="bg-white/[0.02] p-4 rounded-xl border border-white/5 space-y-3 mb-4">
-              <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center text-xs pb-2 border-b border-white/5 gap-2">
+          {/* TAB 3: Manutenções */}
+          {activeTab === 'manutencao' && (
+            <div className="space-y-4 animate-in fade-in duration-150">
+              {/* Agenda de Manutenção Preventiva */}
+              <div id={`agenda-section-${vehicle.id}`} className="bg-white/[0.02] p-4 rounded-xl border border-white/5 space-y-3 mb-4">
+                <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center text-xs pb-2 border-b border-white/5 gap-2">
                 <button
                   type="button"
                   onClick={() => setIsAgendaExpanded(!isAgendaExpanded)}
@@ -3144,10 +3126,15 @@ export const VehicleCard: React.FC<VehicleCardProps> = ({
                 </div>
               )}
             </div>
+            </div>
+          )}
 
-            {/* Vistorias (Laudos de Inspeção) */}
-            <div id={`vistorias-section-${vehicle.id}`} className="bg-white/[0.02] p-4 rounded-xl border border-white/5 space-y-3 mb-4">
-              <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center text-xs pb-1.5 border-b border-white/5 gap-2">
+          {/* TAB 4: Vistorias */}
+          {activeTab === 'vistorias' && (
+            <div className="space-y-4 animate-in fade-in duration-150">
+              {/* Vistorias (Laudos de Inspeção) */}
+              <div id={`vistorias-section-${vehicle.id}`} className="bg-white/[0.02] p-4 rounded-xl border border-white/5 space-y-3 mb-4">
+                <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center text-xs pb-1.5 border-b border-white/5 gap-2">
                 <button
                   type="button"
                   onClick={() => setIsVistoriaExpanded(!isVistoriaExpanded)}
@@ -3870,35 +3857,164 @@ export const VehicleCard: React.FC<VehicleCardProps> = ({
                 </div>
               )}
             </div>
+            </div>
+          )}
 
-            {/* Documentos do Veículo */}
-            <div className="bg-white/[0.02] p-4 rounded-xl border border-white/5 space-y-3 mb-4">
-              <div className="flex justify-between items-center text-xs pb-1.5 border-b border-white/5 gap-2">
+          {/* TAB 5: Contrato & Documentos */}
+          {activeTab === 'documentos' && (
+            <div className="space-y-4 animate-in fade-in duration-150">
+              {/* Dados do Contrato Section */}
+              <div className="bg-white/[0.02] p-4 rounded-xl border border-white/5 space-y-3 relative mb-4">
+                <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center text-xs pb-2 border-b border-white/5 gap-2">
+                  <button 
+                    type="button"
+                    onClick={() => setIsContractExpanded(!isContractExpanded)}
+                    className="flex justify-between items-center w-full text-left font-bold text-gray-300 gap-2 uppercase tracking-wider text-[10px] hover:text-white transition-colors cursor-pointer py-0.5"
+                    title="Clique para alternar os dados do contrato"
+                  >
+                    <span className="flex flex-wrap items-center gap-1.5">
+                      <FileText className="w-3.5 h-3.5 text-blue-400 shrink-0" /> 
+                      <span>Dados do Contrato</span>
+                      {vehicle.startDate || vehicle.initialKm || vehicle.contractNumber ? (
+                        <span className="font-mono text-blue-400 text-[10px] font-medium normal-case break-all">
+                          ({vehicle.contractNumber ? `N° ${vehicle.contractNumber} | ` : ''}Início: {vehicle.startDate ? new Date(vehicle.startDate + 'T12:00:00').toLocaleDateString('pt-BR') : 'N/I'} | KM Início: {vehicle.initialKm ? `${vehicle.initialKm.toLocaleString('pt-BR')} km` : 'N/I'})
+                        </span>
+                      ) : (
+                        <span className="text-gray-500 text-[10px] normal-case font-normal">
+                          (Não cadastrado)
+                        </span>
+                      )}
+                    </span>
+                    <span className="flex items-center gap-1 text-[10px] text-blue-400 font-semibold bg-blue-500/10 hover:bg-blue-500/20 px-2.5 py-1 rounded-md border border-blue-500/15 shrink-0">
+                      {isContractExpanded ? 'Recolher' : 'Contrato'}
+                      {isContractExpanded ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
+                    </span>
+                  </button>
+                </div>
+
+                {isContractExpanded && (
+                  <div className="space-y-3 pt-1 animate-in slide-in-from-top-1 duration-150">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                      {/* Data de Início */}
+                      <div className="bg-white/[0.01] p-3 rounded-xl border border-white/5 flex flex-col justify-between hover:border-white/10 transition-colors">
+                        <span className="text-[10px] text-gray-400 font-semibold mb-1 flex items-center gap-1">
+                          <Calendar className="w-3.5 h-3.5 text-blue-400" /> Data de Início
+                        </span>
+                        <div className="flex items-center justify-between mt-1">
+                          <InlineDateEdit
+                            value={vehicle.startDate}
+                            onSave={(val) => handleUpdateField('startDate', val)}
+                          />
+                        </div>
+                        {vehicle.startDate && (
+                          <div className="mt-2 pt-1.5 border-t border-white/5 text-[10px] text-emerald-400 font-mono font-medium flex items-center gap-1">
+                            <Clock className="w-3 h-3 text-emerald-400 shrink-0" />
+                            <span>1º Venc. Semanal: <strong>{formatDateBR(getNextWeekDate(vehicle.startDate))}</strong></span>
+                          </div>
+                        )}
+                      </div>
+
+                      {/* KM de Início (Entrada) */}
+                      <div className="bg-white/[0.01] p-3 rounded-xl border border-white/5 flex flex-col justify-between hover:border-white/10 transition-colors">
+                        <span className="text-[10px] text-gray-400 font-semibold mb-1 flex items-center gap-1">
+                          <Gauge className="w-3.5 h-3.5 text-emerald-400" /> KM de Início (Entrada)
+                        </span>
+                        <div className="flex items-center justify-between mt-1">
+                          <InlineEdit
+                            value={vehicle.initialKm || 0}
+                            label="KM Início"
+                            isCurrency={false}
+                            onSave={(val) => handleUpdateField('initialKm', val)}
+                          />
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                      {/* Número do Contrato */}
+                      <div className="bg-white/[0.01] p-3 rounded-xl border border-white/5 space-y-1 hover:border-white/10 transition-all">
+                        <span className="text-[10px] text-gray-400 font-semibold flex items-center gap-1">
+                          <FileText className="w-3.5 h-3.5 text-amber-400" /> N° do Contrato / Código
+                        </span>
+                        <div className="pt-1">
+                          <InlineTextEdit
+                            value={vehicle.contractNumber || ''}
+                            label="Número do Contrato"
+                            placeholder="Ex: CT-GKD-ABC2323-08-2026-01"
+                            onSave={(val) => handleUpdateField('contractNumber', val)}
+                          />
+                        </div>
+                      </div>
+
+                      {/* Locadora / Empresa Responsável */}
+                      <div className="bg-white/[0.01] p-3 rounded-xl border border-white/5 space-y-1 hover:border-white/10 transition-all">
+                        <span className="text-[10px] text-gray-400 font-semibold flex items-center gap-1">
+                          <Building2 className="w-3.5 h-3.5 text-indigo-400" /> Locadora / Empresa
+                        </span>
+                        <div className="pt-1">
+                          <InlineTextEdit
+                            value={vehicle.rentalCompany || ''}
+                            label="Empresa Locadora"
+                            placeholder="Ex: Localiza, Movida, Frota Própria"
+                            onSave={(val) => handleUpdateField('rentalCompany', val)}
+                          />
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="pt-2 border-t border-white/5 grid grid-cols-1 sm:grid-cols-2 gap-2">
+                      <button
+                        type="button"
+                        onClick={() => onOpenRentalContract?.(vehicle)}
+                        className="w-full py-2.5 bg-emerald-600/20 hover:bg-emerald-600/30 text-emerald-400 font-bold text-xs rounded-xl flex items-center justify-center gap-2 border border-emerald-500/30 transition-all cursor-pointer shadow-md shadow-emerald-500/10"
+                      >
+                        <FileText className="w-4 h-4 text-emerald-400" />
+                        <span>Gerar / Alterar Contrato (PDF)</span>
+                      </button>
+
+                      {onFinalizeContract && (
+                        <button
+                          type="button"
+                          onClick={() => onFinalizeContract(vehicle)}
+                          className="w-full py-2.5 bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 font-bold text-xs rounded-xl flex items-center justify-center gap-2 border border-amber-500/30 transition-all cursor-pointer shadow-md shadow-amber-500/10"
+                        >
+                          <Archive className="w-4 h-4 text-amber-400" />
+                          <span>Finalizar Contrato Atual</span>
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* Documentos do Veículo */}
+              <div className="bg-white/[0.02] p-3 sm:p-4 rounded-xl border border-white/5 space-y-3 mb-4">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between text-xs pb-2 border-b border-white/5 gap-2">
                 <button
                   type="button"
                   onClick={() => setIsDocExpanded(!isDocExpanded)}
-                  className="flex-1 flex items-center justify-between text-xs text-left cursor-pointer group"
+                  className="flex items-center justify-between text-xs text-left cursor-pointer group flex-1 w-full sm:w-auto"
                   title="Clique para alternar os Documentos"
                 >
                   <span className="font-bold text-gray-300 flex items-center gap-1.5 uppercase tracking-wider text-[10px] group-hover:text-white transition-colors">
-                    <Paperclip className="w-3.5 h-3.5 text-blue-400" /> Documentos do Veículo
+                    <Paperclip className="w-3.5 h-3.5 text-blue-400 shrink-0" /> Documentos do Veículo
                     {(vehicle.documents || []).length > 0 && (
                       <span className="text-gray-400 text-[10px] normal-case font-mono">
                         ({(vehicle.documents || []).length})
                       </span>
                     )}
                   </span>
-                  <span className="flex items-center gap-1.5 text-[10px] text-blue-400 font-semibold bg-blue-500/10 hover:bg-blue-500/20 px-2 py-0.5 rounded-md border border-blue-500/15 mr-2">
+                  <span className="flex items-center gap-1.5 text-[10px] text-blue-400 font-semibold bg-blue-500/10 hover:bg-blue-500/20 px-2 py-0.5 rounded-md border border-blue-500/15 sm:mr-2">
                     <span>{isDocExpanded ? 'Recolher' : 'Documentos'}</span>
                     {isDocExpanded ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
                   </span>
                 </button>
 
-                <div className="flex items-center gap-1.5 shrink-0">
+                <div className="flex items-center gap-1.5 flex-wrap justify-end shrink-0">
                   <button
                     type="button"
                     onClick={() => onOpenRentalContract?.(vehicle)}
-                    className="text-[11px] text-emerald-400 hover:text-emerald-300 font-bold flex items-center gap-1 px-2 py-0.5 bg-emerald-500/10 hover:bg-emerald-500/20 rounded-md border border-emerald-500/20 transition-all cursor-pointer"
+                    className="text-[11px] text-emerald-400 hover:text-emerald-300 font-bold flex items-center gap-1 px-2.5 py-1 bg-emerald-500/10 hover:bg-emerald-500/20 rounded-md border border-emerald-500/20 transition-all cursor-pointer"
                     title="Gerar contrato de locação e anexar em PDF"
                   >
                     <FileText className="w-3 h-3" />
@@ -3906,11 +4022,12 @@ export const VehicleCard: React.FC<VehicleCardProps> = ({
                   </button>
 
                   <button
+                    type="button"
                     onClick={() => {
                       if (!isDocExpanded) setIsDocExpanded(true);
                       setShowAddDoc(!showAddDoc);
                     }}
-                    className="text-[11px] text-blue-400 hover:text-blue-300 font-bold flex items-center gap-1 px-1.5 py-0.5 bg-blue-500/10 rounded-md border border-blue-500/10 hover:border-blue-500/20 transition-all"
+                    className="text-[11px] text-blue-400 hover:text-blue-300 font-bold flex items-center gap-1 px-2.5 py-1 bg-blue-500/10 rounded-md border border-blue-500/10 hover:border-blue-500/20 transition-all cursor-pointer"
                   >
                     {showAddDoc ? 'Fechar' : '+ Anexo'}
                   </button>
@@ -4131,7 +4248,7 @@ export const VehicleCard: React.FC<VehicleCardProps> = ({
               )}
 
               {/* Filtros de Categoria */}
-              <div className="flex gap-1.5 overflow-x-auto pb-2 text-[10px] scrollbar-thin scrollbar-thumb-white/10 scrollbar-track-transparent">
+              <div className="flex flex-wrap gap-1.5 pb-1 text-[10px]">
                 {['Todos', 'Contrato', 'CRLV', 'Vistoria', 'Comprovante', 'Outros'].map((cat) => {
                   const count = cat === 'Todos' 
                     ? (vehicle.documents || []).length 
@@ -4141,14 +4258,15 @@ export const VehicleCard: React.FC<VehicleCardProps> = ({
                   return (
                     <button
                       key={cat}
+                      type="button"
                       onClick={() => setDocCategoryFilter(cat)}
-                      className={`px-2 py-1 rounded-md border shrink-0 transition-all font-semibold ${
+                      className={`px-2.5 py-1 rounded-md border transition-all font-semibold cursor-pointer ${
                         docCategoryFilter === cat
-                          ? 'bg-blue-500/10 text-blue-400 border-blue-500/20 shadow-[0_0_8px_rgba(59,130,246,0.15)]'
-                          : 'bg-white/[0.01] text-gray-400 border-white/5 hover:border-white/10 hover:text-gray-200'
+                          ? 'bg-blue-500/15 text-blue-300 border-blue-500/30 shadow-xs'
+                          : 'bg-white/[0.02] text-gray-400 border-white/5 hover:border-white/10 hover:text-gray-200'
                       }`}
                     >
-                      {cat} <span className="opacity-65">({count})</span>
+                      {cat} <span className="opacity-70 font-mono">({count})</span>
                     </button>
                   );
                 })}
@@ -4247,6 +4365,9 @@ export const VehicleCard: React.FC<VehicleCardProps> = ({
         </div>
       </div>
     )}
+  </div>
+</div>
+)}
 
 
       {/* Document Preview Modal */}
@@ -4389,8 +4510,8 @@ export const VehicleCard: React.FC<VehicleCardProps> = ({
                   <input
                     type="number"
                     min="0"
-                    placeholder="0"
-                    value={parcelasModalData.pagas}
+                    placeholder="Ex: 1"
+                    value={parcelasModalData.pagas === 0 ? '' : parcelasModalData.pagas}
                     onChange={(e) => {
                       const val = e.target.value;
                       setParcelasModalData({

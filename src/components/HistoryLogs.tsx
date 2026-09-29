@@ -1,24 +1,22 @@
 import { useState } from 'react';
-import { Vehicle, MaintenanceLog, ExpenseLog, Vistoria, FuelLog, TripLog } from '../types';
+import { Vehicle, MaintenanceLog, ExpenseLog, Vistoria, FuelLog } from '../types';
 import { Search, Wrench, Landmark, Trash2, Calendar, User, Gauge, Edit2, Check, X, ChevronDown, ChevronUp, History, ClipboardCheck, Droplets, MapPin } from 'lucide-react';
+import CurrencyInput from './CurrencyInput';
 
 interface HistoryLogsProps {
   vehicles: Vehicle[];
   fuelLogs?: FuelLog[];
   maintenanceLogs: MaintenanceLog[];
-  tripLogs?: TripLog[];
   expenseLogs: ExpenseLog[];
   vistorias?: Vistoria[];
   
   onDeleteFuel?: (id: string) => void;
   onDeleteMaintenance: (id: string) => void;
-  onDeleteTrip?: (id: string) => void;
   onDeleteExpense: (id: string) => void;
   onDeleteVistoria?: (id: string) => void;
 
   onUpdateFuel?: (updatedLog: FuelLog) => void;
   onUpdateMaintenance?: (updatedLog: MaintenanceLog) => void;
-  onUpdateTrip?: (updatedLog: TripLog) => void;
   onUpdateExpense?: (updatedLog: ExpenseLog) => void;
   onUpdateVistoria?: (updatedLog: Vistoria) => void;
 
@@ -26,23 +24,20 @@ interface HistoryLogsProps {
   defaultExpanded?: boolean;
 }
 
-type LogCategory = 'maintenance' | 'expense' | 'vistoria' | 'fuel' | 'trip';
+type LogCategory = 'maintenance' | 'expense' | 'vistoria' | 'fuel';
 
 export function HistoryLogs({
   vehicles,
   fuelLogs = [],
   maintenanceLogs,
-  tripLogs = [],
   expenseLogs,
   vistorias = [],
   onDeleteFuel,
   onDeleteMaintenance,
-  onDeleteTrip,
   onDeleteExpense,
   onDeleteVistoria,
   onUpdateFuel,
   onUpdateMaintenance,
-  onUpdateTrip,
   onUpdateExpense,
   onUpdateVistoria,
   onClearAllVistorias,
@@ -70,6 +65,8 @@ export function HistoryLogs({
   const [editMaintCost, setEditMaintCost] = useState(0);
   const [editMaintBoNumber, setEditMaintBoNumber] = useState('');
   const [editMaintPartsReplaced, setEditMaintPartsReplaced] = useState('');
+  const [editMaintParcelasPagas, setEditMaintParcelasPagas] = useState<number | undefined>(undefined);
+  const [editMaintParcelasTotais, setEditMaintParcelasTotais] = useState<number | undefined>(undefined);
 
   // Inline editing states for fuel
   const [editingFuelId, setEditingFuelId] = useState<string | null>(null);
@@ -80,14 +77,6 @@ export function HistoryLogs({
   const [editFuelTotal, setEditFuelTotal] = useState(0);
   const [editFuelType, setEditFuelType] = useState<FuelLog['fuelType']>('Gasolina');
   const [editFuelStation, setEditFuelStation] = useState('');
-
-  // Inline editing states for trip
-  const [editingTripId, setEditingTripId] = useState<string | null>(null);
-  const [editTripDate, setEditTripDate] = useState('');
-  const [editTripStartKm, setEditTripStartKm] = useState(0);
-  const [editTripEndKm, setEditTripEndKm] = useState(0);
-  const [editTripDriver, setEditTripDriver] = useState('');
-  const [editTripPurpose, setEditTripPurpose] = useState('');
 
   // Inline editing states for vistoria
   const [editingVistoriaId, setEditingVistoriaId] = useState<string | null>(null);
@@ -114,6 +103,8 @@ export function HistoryLogs({
     setEditMaintCost(log.cost);
     setEditMaintBoNumber(log.boNumber || '');
     setEditMaintPartsReplaced(log.partsReplaced || '');
+    setEditMaintParcelasPagas(log.parcelasPagas);
+    setEditMaintParcelasTotais(log.parcelasTotais);
   };
 
   const handleStartEditFuel = (log: FuelLog) => {
@@ -125,15 +116,6 @@ export function HistoryLogs({
     setEditFuelTotal(log.totalCost);
     setEditFuelType(log.fuelType);
     setEditFuelStation(log.station || '');
-  };
-
-  const handleStartEditTrip = (log: TripLog) => {
-    setEditingTripId(log.id);
-    setEditTripDate(log.date);
-    setEditTripStartKm(log.startKm);
-    setEditTripEndKm(log.endKm);
-    setEditTripDriver(log.driver);
-    setEditTripPurpose(log.purpose);
   };
 
   const handleStartEditVistoria = (log: Vistoria) => {
@@ -177,6 +159,8 @@ export function HistoryLogs({
         cost: editMaintCost,
         boNumber: editMaintBoNumber.trim() || undefined,
         partsReplaced: editMaintPartsReplaced.trim() || undefined,
+        parcelasPagas: editMaintParcelasPagas,
+        parcelasTotais: editMaintParcelasTotais
       });
     }
     setEditingMaintId(null);
@@ -196,20 +180,6 @@ export function HistoryLogs({
       });
     }
     setEditingFuelId(null);
-  };
-
-  const handleSaveTripEdit = (log: TripLog) => {
-    if (onUpdateTrip) {
-      onUpdateTrip({
-        ...log,
-        date: editTripDate,
-        startKm: editTripStartKm,
-        endKm: editTripEndKm,
-        driver: editTripDriver.trim(),
-        purpose: editTripPurpose.trim(),
-      });
-    }
-    setEditingTripId(null);
   };
 
   const handleSaveVistoriaEdit = (log: Vistoria) => {
@@ -300,12 +270,6 @@ export function HistoryLogs({
     return null;
   };
 
-  const filteredTrips = filterByCarAndSearch(tripLogs, (item) =>
-    item.purpose.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    item.driver.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    getVehicleName(item.vehicleId).toLowerCase().includes(searchQuery.toLowerCase())
-  );
-
   return (
     <div id="history-section" className="bg-[#111111] border border-white/5 rounded-2xl p-5 sm:p-6 shadow-xl space-y-4">
       {/* Header and Toggle */}
@@ -388,19 +352,6 @@ export function HistoryLogs({
         >
           <Droplets className="w-4 h-4" />
           Abastecimentos ({filteredFuel.length})
-        </button>
-
-        <button
-          onClick={() => setActiveCategory('trip')}
-          className={`flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs font-semibold transition-all shrink-0 ${
-            activeCategory === 'trip'
-              ? 'bg-blue-500/10 text-blue-400 border border-blue-500/20'
-              : 'text-gray-400 hover:bg-white/5 hover:text-white'
-          }`}
-          id="tab-history-trip"
-        >
-          <MapPin className="w-4 h-4" />
-          Viagens ({filteredTrips.length})
         </button>
 
         <button
@@ -536,12 +487,28 @@ export function HistoryLogs({
                                 className="bg-neutral-900 border border-white/10 text-white rounded px-2 py-1 text-[11px] focus:outline-hidden"
                               />
                             </div>
+                            <div className="grid grid-cols-2 gap-1 max-w-[220px]">
+                              <input
+                                type="number"
+                                value={editMaintParcelasPagas ?? ''}
+                                onChange={(e) => setEditMaintParcelasPagas(e.target.value === '' ? undefined : Number(e.target.value))}
+                                placeholder="Parc. Pagas"
+                                className="bg-neutral-900 border border-white/10 text-white rounded px-2 py-1 text-[10px] focus:outline-hidden"
+                              />
+                              <input
+                                type="number"
+                                value={editMaintParcelasTotais ?? ''}
+                                onChange={(e) => setEditMaintParcelasTotais(e.target.value === '' ? undefined : Number(e.target.value))}
+                                placeholder="Parc. Totais"
+                                className="bg-neutral-900 border border-white/10 text-white rounded px-2 py-1 text-[10px] focus:outline-hidden"
+                              />
+                            </div>
                           </div>
                         ) : (
                           <div className="flex flex-col gap-0.5">
                             <span className="font-semibold text-white line-clamp-1">{log.description}</span>
                             <span className="text-[10px] text-gray-400">{log.shopName || 'Oficina não especificada'}</span>
-                            {(log.boNumber || log.partsReplaced) && (
+                            {(log.boNumber || log.partsReplaced || (log.parcelasTotais && log.parcelasTotais > 1)) && (
                               <div className="flex flex-wrap gap-1 mt-0.5">
                                 {log.boNumber && (
                                   <span className="px-1.5 py-0.5 bg-rose-500/10 text-rose-400 border border-rose-500/20 text-[9px] font-mono rounded">
@@ -551,6 +518,11 @@ export function HistoryLogs({
                                 {log.partsReplaced && (
                                   <span className="px-1.5 py-0.5 bg-blue-500/10 text-blue-400 border border-blue-500/20 text-[9px] rounded">
                                     Peças: {log.partsReplaced}
+                                  </span>
+                                )}
+                                {log.parcelasTotais && log.parcelasTotais > 1 && (
+                                  <span className="px-1.5 py-0.5 bg-amber-500/10 text-amber-400 border border-amber-500/20 text-[9px] font-bold rounded">
+                                    Parc: {log.parcelasPagas || 1}/{log.parcelasTotais}
                                   </span>
                                 )}
                               </div>
@@ -583,11 +555,11 @@ export function HistoryLogs({
                         {isEditing ? (
                           <div className="flex items-center justify-end gap-1">
                             <span className="text-gray-500 text-[10px]">R$</span>
-                            <input
-                              type="number"
-                              value={editMaintCost || ''}
-                              onChange={(e) => setEditMaintCost(Number(e.target.value))}
-                              className="bg-neutral-900 border border-white/10 text-white rounded px-1.5 py-1 text-xs focus:outline-hidden w-16 text-right font-mono"
+                            <CurrencyInput
+                              value={editMaintCost}
+                              onChange={setEditMaintCost}
+                              placeholder="0,00"
+                              className="bg-neutral-900 border border-white/10 text-white rounded px-1.5 py-1 text-xs focus:outline-hidden w-20 text-right font-mono"
                             />
                           </div>
                         ) : (
@@ -729,12 +701,11 @@ export function HistoryLogs({
                               placeholder="Lts"
                               className="bg-neutral-900 border border-white/10 text-white rounded px-1.5 py-1 text-xs focus:outline-hidden w-16 text-right font-mono"
                             />
-                            <input
-                              type="number"
-                              value={editFuelPrice || ''}
-                              onChange={(e) => setEditFuelPrice(Number(e.target.value))}
-                              placeholder="R$/L"
-                              className="bg-neutral-900 border border-white/10 text-white rounded px-1.5 py-1 text-xs focus:outline-hidden w-16 text-right font-mono"
+                            <CurrencyInput
+                              value={editFuelPrice}
+                              onChange={setEditFuelPrice}
+                              placeholder="0,00"
+                              className="bg-neutral-900 border border-white/10 text-white rounded px-1.5 py-1 text-xs focus:outline-hidden w-20 text-right font-mono"
                             />
                           </div>
                         ) : (
@@ -748,11 +719,11 @@ export function HistoryLogs({
                         {isEditing ? (
                           <div className="flex items-center justify-end gap-1">
                             <span className="text-gray-500 text-[10px]">R$</span>
-                            <input
-                              type="number"
-                              value={editFuelTotal || ''}
-                              onChange={(e) => setEditFuelTotal(Number(e.target.value))}
-                              className="bg-neutral-900 border border-white/10 text-white rounded px-1.5 py-1 text-xs focus:outline-hidden w-16 text-right font-mono"
+                            <CurrencyInput
+                              value={editFuelTotal}
+                              onChange={setEditFuelTotal}
+                              placeholder="0,00"
+                              className="bg-neutral-900 border border-white/10 text-white rounded px-1.5 py-1 text-xs focus:outline-hidden w-20 text-right font-mono"
                             />
                           </div>
                         ) : (
@@ -790,156 +761,6 @@ export function HistoryLogs({
                               onClick={() => onDeleteFuel && onDeleteFuel(log.id)}
                               className="p-1 text-gray-500 hover:text-rose-400 hover:bg-rose-500/10 rounded-lg transition-colors"
                               title="Excluir abastecimento"
-                            >
-                              <Trash2 className="w-3.5 h-3.5" />
-                            </button>
-                          </div>
-                        )}
-                      </td>
-                    </tr>
-                  )})}
-                </tbody>
-              </table>
-            )}
-          </div>
-        )}
-
-        {/* Tab: Trips */}
-        {activeCategory === 'trip' && (
-          <div className="min-w-[600px] text-gray-300">
-            {filteredTrips.length === 0 ? (
-              <p className="text-center text-gray-500 text-xs py-8">Nenhuma viagem registrada.</p>
-            ) : (
-              <table className="w-full text-left text-xs border-collapse">
-                <thead>
-                  <tr className="border-b border-white/5 text-gray-500 font-semibold uppercase tracking-wider text-[10px]">
-                    <th className="py-3">Data</th>
-                    <th className="py-3">Veículo</th>
-                    <th className="py-3">Motorista</th>
-                    <th className="py-3">Destino / Motivo</th>
-                    <th className="py-3 text-right">Km Início</th>
-                    <th className="py-3 text-right">Km Fim</th>
-                    <th className="py-3 text-right">Distância</th>
-                    <th className="py-3 text-center">Ações</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-white/[0.03]">
-                  {filteredTrips.map((log) => {
-                    const isEditing = editingTripId === log.id;
-                    return (
-                    <tr key={log.id} className={`transition-colors ${isEditing ? 'bg-blue-500/5' : 'hover:bg-white/[0.01]'}`}>
-                      <td className="py-3.5 font-medium text-gray-400 font-mono">
-                        {isEditing ? (
-                          <input
-                            type="date"
-                            value={editTripDate}
-                            onChange={(e) => setEditTripDate(e.target.value)}
-                            className="bg-neutral-900 border border-white/10 text-white rounded px-2 py-1 text-xs focus:outline-hidden font-mono"
-                          />
-                        ) : (
-                          <span className="flex items-center gap-1.5">
-                            <Calendar className="w-3.5 h-3.5 text-gray-600" />
-                            {formatDate(log.date)}
-                          </span>
-                        )}
-                      </td>
-                      <td className="py-3.5">
-                        <button
-                          onClick={() => {
-                            window.dispatchEvent(new CustomEvent('focus-vehicle', { detail: { vehicleId: log.vehicleId } }));
-                          }}
-                          className="font-bold text-blue-400 hover:text-blue-300 hover:underline cursor-pointer text-left focus:outline-hidden"
-                          title="Clique para ir direto para este carro"
-                        >
-                          {getVehiclePlate(log.vehicleId)}
-                        </button>
-                      </td>
-                      <td className="py-3.5">
-                        {isEditing ? (
-                          <input
-                            type="text"
-                            value={editTripDriver}
-                            onChange={(e) => setEditTripDriver(e.target.value)}
-                            className="bg-neutral-900 border border-white/10 text-white rounded px-2 py-1 text-xs focus:outline-hidden w-full max-w-[150px]"
-                          />
-                        ) : (
-                          log.driver || 'Não informado'
-                        )}
-                      </td>
-                      <td className="py-3.5 text-gray-300 max-w-xs">
-                        {isEditing ? (
-                          <input
-                            type="text"
-                            value={editTripPurpose}
-                            onChange={(e) => setEditTripPurpose(e.target.value)}
-                            className="bg-neutral-900 border border-white/10 text-white rounded px-2 py-1 text-xs focus:outline-hidden w-full max-w-[150px]"
-                          />
-                        ) : (
-                          log.purpose
-                        )}
-                      </td>
-                      <td className="py-3.5 text-right font-mono text-gray-400">
-                        {isEditing ? (
-                          <input
-                            type="number"
-                            value={editTripStartKm || ''}
-                            onChange={(e) => setEditTripStartKm(Number(e.target.value))}
-                            className="bg-neutral-900 border border-white/10 text-white rounded px-1.5 py-1 text-xs focus:outline-hidden w-16 text-right font-mono"
-                          />
-                        ) : (
-                          log.startKm.toLocaleString('pt-BR')
-                        )}
-                      </td>
-                      <td className="py-3.5 text-right font-mono text-gray-400">
-                        {isEditing ? (
-                          <input
-                            type="number"
-                            value={editTripEndKm || ''}
-                            onChange={(e) => setEditTripEndKm(Number(e.target.value))}
-                          className="bg-neutral-900 border border-white/10 text-white rounded px-1.5 py-1 text-xs focus:outline-hidden w-16 text-right font-mono"
-                          />
-                        ) : (
-                          log.endKm.toLocaleString('pt-BR')
-                        )}
-                      </td>
-                      <td className="py-3.5 text-right font-mono font-bold text-white">
-                        {isEditing ? (
-                          <span className="text-blue-400">{(editTripEndKm - editTripStartKm).toLocaleString('pt-BR')} km</span>
-                        ) : (
-                          <span className="text-blue-400">{(log.endKm - log.startKm).toLocaleString('pt-BR')} km</span>
-                        )}
-                      </td>
-                      <td className="py-3.5 text-center">
-                        {isEditing ? (
-                          <div className="flex items-center justify-center gap-1">
-                            <button
-                              onClick={() => handleSaveTripEdit(log)}
-                              className="p-1 text-emerald-400 hover:text-emerald-300 hover:bg-emerald-500/10 rounded-lg transition-colors"
-                              title="Salvar viagem"
-                            >
-                              <Check className="w-3.5 h-3.5" />
-                            </button>
-                            <button
-                              onClick={() => setEditingTripId(null)}
-                              className="p-1 text-gray-400 hover:text-white hover:bg-white/5 rounded-lg transition-colors"
-                              title="Cancelar edição"
-                            >
-                              <X className="w-3.5 h-3.5" />
-                            </button>
-                          </div>
-                        ) : (
-                          <div className="flex items-center justify-center gap-1">
-                            <button
-                              onClick={() => handleStartEditTrip(log)}
-                              className="p-1 text-gray-500 hover:text-blue-400 hover:bg-blue-500/10 rounded-lg transition-colors"
-                              title="Editar viagem"
-                            >
-                              <Edit2 className="w-3.5 h-3.5" />
-                            </button>
-                            <button
-                              onClick={() => onDeleteTrip && onDeleteTrip(log.id)}
-                              className="p-1 text-gray-500 hover:text-rose-400 hover:bg-rose-500/10 rounded-lg transition-colors"
-                              title="Excluir viagem"
                             >
                               <Trash2 className="w-3.5 h-3.5" />
                             </button>
@@ -1059,11 +880,11 @@ export function HistoryLogs({
                           {isEditing ? (
                             <div className="flex items-center justify-end gap-1">
                               <span className="text-gray-500 text-[10px]">R$</span>
-                              <input
-                                type="number"
-                                value={editCost || ''}
-                                onChange={(e) => setEditCost(Number(e.target.value))}
-                                className="bg-neutral-900 border border-white/10 text-white rounded px-1.5 py-1 text-xs focus:outline-hidden w-16 text-right font-mono"
+                              <CurrencyInput
+                                value={editCost}
+                                onChange={setEditCost}
+                                placeholder="0,00"
+                                className="bg-neutral-900 border border-white/10 text-white rounded px-1.5 py-1 text-xs focus:outline-hidden w-20 text-right font-mono"
                               />
                             </div>
                           ) : (

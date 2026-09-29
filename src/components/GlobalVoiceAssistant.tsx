@@ -142,7 +142,7 @@ export function GlobalVoiceAssistant({ onDataExtracted }: GlobalVoiceAssistantPr
       if (['vehicle', 'fuel', 'maintenance', 'trip', 'expense'].includes(type)) {
         onDataExtracted(type as any, data);
       } else {
-        setError("Comando não reconhecido. Diga por exemplo: 'Cadastrar veículo GKD Onix placa ABC1D23'.");
+        setError("Comando não reconhecido. Diga por exemplo: 'Cadastrar veículo Onix placa ABC1D23'.");
         setTimeout(() => setError(''), 5000);
       }
     } catch (err: any) {
