@@ -17,6 +17,7 @@ import {
   MessageCircle
 } from 'lucide-react';
 import { Vehicle } from '../types';
+import { requestNotificationPermission, sendAppNotification, checkNotificationPermission } from '../utils/notifications';
 
 interface SettingsModalProps {
   isOpen: boolean;
@@ -39,32 +40,33 @@ export function SettingsModal({
   vehicles,
   onTriggerMaintNotificationCheck
 }: SettingsModalProps) {
-  const [permissionState, setPermissionState] = useState<NotificationPermission>('default');
+  const [permissionState, setPermissionState] = useState<'granted' | 'denied' | 'default'>('default');
 
   useEffect(() => {
-    if (typeof window !== 'undefined' && 'Notification' in window) {
-      setPermissionState(Notification.permission);
+    if (isOpen) {
+      checkNotificationPermission().then((granted) => {
+        setPermissionState(granted ? 'granted' : 'default');
+      });
     }
   }, [isOpen]);
 
   if (!isOpen) return null;
 
   const handleRequestPermission = async () => {
-    if (typeof window !== 'undefined' && 'Notification' in window) {
-      try {
-        const res = await Notification.requestPermission();
-        setPermissionState(res);
-        if (res === 'granted') {
-          onToggleMaintNotifications(true);
-          new Notification('🔔 Notificações Ativadas!', {
-            body: 'Você receberá alertas do navegador quando a quilometragem do veículo atingir o limite de manutenção preventiva.',
-          });
-        }
-      } catch (err) {
-        console.error('Erro ao solicitar permissão de notificação:', err);
+    try {
+      const granted = await requestNotificationPermission();
+      if (granted) {
+        setPermissionState('granted');
+        onToggleMaintNotifications(true);
+        await sendAppNotification('🔔 Notificações Ativadas!', {
+          body: 'Você receberá alertas do aplicativo quando a quilometragem do veículo atingir o limite de manutenção preventiva.',
+        });
+      } else {
+        const check = await checkNotificationPermission();
+        setPermissionState(check ? 'granted' : 'denied');
       }
-    } else {
-      alert('Seu navegador não suporta a API de Notificações nativas.');
+    } catch (err) {
+      console.error('Erro ao solicitar permissão de notificação:', err);
     }
   };
 

@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { Vehicle, ExpenseLog, WeeklyPayment, Vistoria, VehicleDocument, MaintenanceLog, FuelLog } from '../types';
 import { generateVistoriaPDF } from '../utils/pdfGenerator';
+import { sendAppNotification, requestNotificationPermission } from '../utils/notifications';
 import { 
   Calendar, 
   User, 
@@ -2887,34 +2888,26 @@ export const VehicleCard: React.FC<VehicleCardProps> = ({
                       <button
                         type="button"
                         onClick={async () => {
-                          if (typeof window !== 'undefined' && 'Notification' in window) {
-                            let perm = Notification.permission;
-                            if (perm === 'default') {
-                              perm = await Notification.requestPermission();
+                          const granted = await requestNotificationPermission();
+                          if (granted) {
+                            const curKm = vehicle.preventiveMaintCurrentKm || vehicle.currentKm || 0;
+                            const nextKm = vehicle.preventiveMaintNextKm || 0;
+                            const diff = nextKm - curKm;
+                            let msg = `Quilometragem Atual: ${curKm.toLocaleString('pt-BR')} KM. Próxima Manutenção: ${nextKm.toLocaleString('pt-BR')} KM.`;
+                            if (nextKm > 0 && curKm >= nextKm) {
+                              msg = `🚨 ALERTA: MANUTENÇÃO VENCIDA! Veículo com ${curKm.toLocaleString('pt-BR')} KM (ultrapassou ${nextKm.toLocaleString('pt-BR')} KM).`;
+                            } else if (nextKm > 0 && diff <= 500) {
+                              msg = `⚠️ ATENÇÃO: Revisão próxima! Faltam apenas ${diff.toLocaleString('pt-BR')} KM.`;
                             }
-                            if (perm === 'granted') {
-                              const curKm = vehicle.preventiveMaintCurrentKm || vehicle.currentKm || 0;
-                              const nextKm = vehicle.preventiveMaintNextKm || 0;
-                              const diff = nextKm - curKm;
-                              let msg = `Quilometragem Atual: ${curKm.toLocaleString('pt-BR')} KM. Próxima Manutenção: ${nextKm.toLocaleString('pt-BR')} KM.`;
-                              if (nextKm > 0 && curKm >= nextKm) {
-                                msg = `🚨 ALERTA: MANUTENÇÃO VENCIDA! Veículo com ${curKm.toLocaleString('pt-BR')} KM (ultrapassou ${nextKm.toLocaleString('pt-BR')} KM).`;
-                              } else if (nextKm > 0 && diff <= 500) {
-                                msg = `⚠️ ATENÇÃO: Revisão próxima! Faltam apenas ${diff.toLocaleString('pt-BR')} KM.`;
-                              }
-                              new Notification(`🚗 Lembrete de Manutenção: ${vehicle.brand} ${vehicle.model} (${vehicle.plate})`, {
-                                body: msg,
-                              });
-                              alert(`Notificação do navegador agendada/disparada com sucesso para ${vehicle.brand} (${vehicle.plate})!`);
-                            } else {
-                              alert('As notificações foram bloqueadas no seu navegador. Por favor, habilite as permissões de notificação no navegador para receber avisos.');
-                            }
+                            await sendAppNotification(`🚗 Lembrete de Manutenção: ${vehicle.brand} ${vehicle.model} (${vehicle.plate})`, {
+                              body: msg,
+                            });
                           } else {
-                            alert('Seu navegador não suporta notificações nativas.');
+                            alert('Permissão de notificação não concedida. Por favor, habilite as permissões para receber alertas.');
                           }
                         }}
                         className="px-2.5 py-1.5 bg-blue-600 hover:bg-blue-500 text-white font-bold rounded-lg transition-all cursor-pointer shadow-xs flex items-center gap-1"
-                        title="Disparar/Agendar notificação de manutenção preventiva do navegador"
+                        title="Disparar/Agendar notificação de manutenção preventiva"
                       >
                         <Bell className="w-3 h-3" />
                         <span>Agendar Lembrete</span>

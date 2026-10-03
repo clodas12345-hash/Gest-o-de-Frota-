@@ -36,6 +36,7 @@ import { AboutAppModal } from './components/AboutAppModal';
 import { LogoViewerModal } from './components/LogoViewerModal';
 import { GlobalVoiceAssistant } from './components/GlobalVoiceAssistant';
 import { generateVehiclePDF, generateVistoriaPDF } from './utils/pdfGenerator';
+import { sendAppNotification, initAppNotificationsOnFirstLaunch } from './utils/notifications';
 import logoImg from './assets/logo.png';
 
 // Icons
@@ -307,44 +308,40 @@ export default function App() {
   };
 
   React.useEffect(() => {
+    initAppNotificationsOnFirstLaunch();
+  }, []);
+
+  React.useEffect(() => {
     localStorage.setItem('fleet_checklist_config', JSON.stringify(checklistConfig));
   }, [checklistConfig]);
 
-  const triggerMaintNotificationCheck = () => {
-    if (typeof window !== 'undefined' && 'Notification' in window) {
-      if (Notification.permission === 'granted') {
-        const needyVehicles = vehicles.filter((v) => {
-          const cur = v.preventiveMaintCurrentKm || v.currentKm || 0;
-          const next = v.preventiveMaintNextKm || 0;
-          return next > 0 && cur >= (next - 500);
-        });
+  const triggerMaintNotificationCheck = async () => {
+    const needyVehicles = vehicles.filter((v) => {
+      const cur = v.preventiveMaintCurrentKm || v.currentKm || 0;
+      const next = v.preventiveMaintNextKm || 0;
+      return next > 0 && cur >= (next - 500);
+    });
 
-        if (needyVehicles.length === 0) {
-          new Notification('🚗 Frota em Dia com Manutenção', {
-            body: 'Nenhum veículo atingiu o limite de quilometragem para revisão preventiva no momento.',
-          });
-        } else {
-          needyVehicles.forEach((v) => {
-            const cur = v.preventiveMaintCurrentKm || v.currentKm || 0;
-            const next = v.preventiveMaintNextKm || 0;
-            const isOverdue = cur >= next;
-            new Notification(
-              isOverdue
-                ? `🚨 ALERTA: MANUTENÇÃO VENCIDA - ${v.brand} (${v.plate})`
-                : `⚠️ ATENÇÃO: Revisão Próxima - ${v.brand} (${v.plate})`,
-              {
-                body: isOverdue
-                  ? `O veículo atingiu ${cur.toLocaleString('pt-BR')} KM (limite era ${next.toLocaleString('pt-BR')} KM). Providencie a revisão!`
-                  : `Atual: ${cur.toLocaleString('pt-BR')} KM. Próxima revisão: ${next.toLocaleString('pt-BR')} KM (faltam ${ (next - cur).toLocaleString('pt-BR') } KM).`,
-              }
-            );
-          });
-        }
-      } else {
-        alert('As notificações do navegador não estão com permissão concedida. Clique em "Permitir Notificações" nas configurações.');
-      }
+    if (needyVehicles.length === 0) {
+      await sendAppNotification('🚗 Frota em Dia com Manutenção', {
+        body: 'Nenhum veículo atingiu o limite de quilometragem para revisão preventiva no momento.',
+      });
     } else {
-      alert('Seu navegador não suporta notificações nativas.');
+      for (const v of needyVehicles) {
+        const cur = v.preventiveMaintCurrentKm || v.currentKm || 0;
+        const next = v.preventiveMaintNextKm || 0;
+        const isOverdue = cur >= next;
+        await sendAppNotification(
+          isOverdue
+            ? `🚨 ALERTA: MANUTENÇÃO VENCIDA - ${v.brand} (${v.plate})`
+            : `⚠️ ATENÇÃO: Revisão Próxima - ${v.brand} (${v.plate})`,
+          {
+            body: isOverdue
+              ? `O veículo atingiu ${cur.toLocaleString('pt-BR')} KM (limite era ${next.toLocaleString('pt-BR')} KM). Providencie a revisão!`
+              : `Atual: ${cur.toLocaleString('pt-BR')} KM. Próxima revisão: ${next.toLocaleString('pt-BR')} KM (faltam ${ (next - cur).toLocaleString('pt-BR') } KM).`,
+          }
+        );
+      }
     }
   };
 
