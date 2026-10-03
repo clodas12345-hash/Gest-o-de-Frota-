@@ -1,5 +1,5 @@
-import React, { useState, useRef } from 'react';
-import { Camera, Check, X, ShieldCheck, FileCheck2, Trash2, Send, Info, ZoomIn } from 'lucide-react';
+import React, { useState, useRef, useEffect } from 'react';
+import { Camera, Check, X, ShieldCheck, FileCheck2, Trash2, Send, Info, ZoomIn, Gauge } from 'lucide-react';
 import { Vehicle, Vistoria } from '../types';
 import { generateVistoriaPDF } from '../utils/pdfGenerator';
 import { LogoViewerModal } from './LogoViewerModal';
@@ -10,8 +10,10 @@ interface DriverVistoriaFormProps {
   plateRequested: string;
   checklistConfig: string[];
   onSaveVistoria: (v: Vistoria, pdfDataUrl?: string, pdfFileName?: string) => void;
+  onSavePaymentReceipt?: (receipt: { id: string; date: string; amount?: number; photoUrl: string; notes?: string; driverName?: string }) => void;
   onExit: () => void;
   initialType?: 'Entrega de Veículo' | 'Periódica' | 'Devolução de Veículo';
+  isPaymentMode?: boolean;
 }
 
 export function DriverVistoriaForm({ 
@@ -19,8 +21,10 @@ export function DriverVistoriaForm({
   plateRequested, 
   checklistConfig,
   onSaveVistoria, 
+  onSavePaymentReceipt,
   onExit,
-  initialType
+  initialType,
+  isPaymentMode
 }: DriverVistoriaFormProps) {
   
   const [vistoriaType, setVistoriaType] = useState<'Entrega de Veículo' | 'Periódica' | 'Devolução de Veículo'>(() => {
@@ -34,7 +38,18 @@ export function DriverVistoriaForm({
   });
 
   const [checklist, setChecklist] = useState<Record<string, { isOk: boolean, photoUrl: string | null }>>(() => {
+    const params = new URLSearchParams(window.location.search);
+    const itemsFromUrl = params.get('items');
     const initial: Record<string, { isOk: boolean, photoUrl: string | null }> = {};
+    if (itemsFromUrl) {
+      const itemsList = itemsFromUrl.split(',').map(s => decodeURIComponent(s.trim())).filter(Boolean);
+      if (itemsList.length > 0) {
+        itemsList.forEach(item => {
+          initial[item] = { isOk: true, photoUrl: null };
+        });
+        return initial;
+      }
+    }
     if (checklistConfig && checklistConfig.length > 0) {
       checklistConfig.forEach(item => {
         initial[item] = { isOk: true, photoUrl: null };
@@ -47,14 +62,133 @@ export function DriverVistoriaForm({
 
   const [notes, setNotes] = useState('');
   const [photos, setPhotos] = useState<string[]>([]);
+  const [kmOdometer, setKmOdometer] = useState<number | string>(() => {
+    const params = new URLSearchParams(window.location.search);
+    const kmParam = params.get('km');
+    if (kmParam && !isNaN(Number(kmParam))) return Number(kmParam);
+    return vehicle?.currentKm || vehicle?.preventiveMaintCurrentKm || '';
+  });
   const [isSubmitted, setIsSubmitted] = useState(false);
   const [isGeneratingPdf, setIsGeneratingPdf] = useState(false);
   const [generatedPdf, setGeneratedPdf] = useState<{pdfDataUrl: string, fileName: string} | null>(null);
   const [isDragging, setIsDragging] = useState(false);
   const cameraInputRef = useRef<HTMLInputElement>(null);
   const [targetPhotoItem, setTargetPhotoItem] = useState<string | null>(null);
-  const [previewEnlargedPhoto, setPreviewEnlargedPhoto] = useState<{ url: string; title: string } | null>(null);
+  const [previewEnlargedPhoto, setPreviewEnlargedPhoto] = useState<{ photos: string[]; index: number; title: string } | null>(null);
   const [isLogoViewerOpen, setIsLogoViewerOpen] = useState<boolean>(false);
+  
+  const [alreadySubmittedBefore, setAlreadySubmittedBefore] = useState<boolean>(() => {
+    if (!vehicle) return false;
+    const key = isPaymentMode ? `payment_receipt_submitted_${vehicle.plate}` : `vistoria_submitted_${vehicle.plate}`;
+    return localStorage.getItem(key) === 'true';
+  });
+
+  // Payment receipt specific states
+  const [paymentAmount, setPaymentAmount] = useState<number>(() => {
+    const params = new URLSearchParams(window.location.search);
+    return Number(params.get('value')) || vehicle?.valorSemanal || vehicle?.valorRecebido || 0;
+  });
+  const [paymentPhoto, setPaymentPhoto] = useState<string | null>(null);
+
+  // Swipe gesture support for photo gallery
+  const touchStartX = useRef<number | null>(null);
+  const touchStartY = useRef<number | null>(null);
+  const mouseStartX = useRef<number | null>(null);
+
+  const handleTouchStart = (e: React.TouchEvent) => {
+    touchStartX.current = e.touches[0].clientX;
+    touchStartY.current = e.touches[0].clientY;
+  };
+
+  const handleTouchEnd = (e: React.TouchEvent) => {
+    if (touchStartX.current === null || touchStartY.current === null) return;
+    if (!previewEnlargedPhoto || previewEnlargedPhoto.photos.length <= 1) return;
+    const touchEndX = e.changedTouches[0].clientX;
+    const touchEndY = e.changedTouches[0].clientY;
+    const diffX = touchStartX.current - touchEndX;
+    const diffY = touchStartY.current - touchEndY;
+    touchStartX.current = null;
+    touchStartY.current = null;
+    if (Math.abs(diffX) > Math.abs(diffY) && Math.abs(diffX) > 25) {
+      if (diffX > 0) {
+        // Swiped left -> next photo
+        setPreviewEnlargedPhoto(prev => prev ? { 
+          ...prev, 
+          index: (prev.index + 1) % prev.photos.length,
+          title: `Foto ${((prev.index + 1) % prev.photos.length) + 1} de ${prev.photos.length}`
+        } : null);
+      } else {
+        // Swiped right -> previous photo
+        setPreviewEnlargedPhoto(prev => prev ? { 
+          ...prev, 
+          index: (prev.index - 1 + prev.photos.length) % prev.photos.length,
+          title: `Foto ${((prev.index - 1 + prev.photos.length) % prev.photos.length) + 1} de ${prev.photos.length}`
+        } : null);
+      }
+    }
+  };
+
+  const handleMouseDown = (e: React.MouseEvent) => {
+    mouseStartX.current = e.clientX;
+  };
+
+  const handleMouseUp = (e: React.MouseEvent) => {
+    if (mouseStartX.current === null) return;
+    if (!previewEnlargedPhoto || previewEnlargedPhoto.photos.length <= 1) return;
+    const diffX = mouseStartX.current - e.clientX;
+    mouseStartX.current = null;
+    if (Math.abs(diffX) > 30) {
+      if (diffX > 0) {
+        setPreviewEnlargedPhoto(prev => prev ? { 
+          ...prev, 
+          index: (prev.index + 1) % prev.photos.length,
+          title: `Foto ${((prev.index + 1) % prev.photos.length) + 1} de ${prev.photos.length}`
+        } : null);
+      } else {
+        setPreviewEnlargedPhoto(prev => prev ? { 
+          ...prev, 
+          index: (prev.index - 1 + prev.photos.length) % prev.photos.length,
+          title: `Foto ${((prev.index - 1 + prev.photos.length) % prev.photos.length) + 1} de ${prev.photos.length}`
+        } : null);
+      }
+    }
+  };
+
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (!previewEnlargedPhoto) return;
+      if (e.key === 'ArrowRight' && previewEnlargedPhoto.photos.length > 1) {
+        setPreviewEnlargedPhoto(prev => prev ? { 
+          ...prev, 
+          index: (prev.index + 1) % prev.photos.length,
+          title: `Foto ${((prev.index + 1) % prev.photos.length) + 1} de ${prev.photos.length}`
+        } : null);
+      } else if (e.key === 'ArrowLeft' && previewEnlargedPhoto.photos.length > 1) {
+        setPreviewEnlargedPhoto(prev => prev ? { 
+          ...prev, 
+          index: (prev.index - 1 + prev.photos.length) % prev.photos.length,
+          title: `Foto ${((prev.index - 1 + prev.photos.length) % prev.photos.length) + 1} de ${prev.photos.length}`
+        } : null);
+      } else if (e.key === 'Escape') {
+        setPreviewEnlargedPhoto(null);
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [previewEnlargedPhoto]);
+
+  const openEnlargedPhoto = (url: string, title: string) => {
+    const allPhotos = [
+      ...photos,
+      ...Object.values(checklist).map((v: any) => v.photoUrl).filter(Boolean)
+    ] as string[];
+    const idx = allPhotos.indexOf(url);
+    setPreviewEnlargedPhoto({
+      photos: allPhotos.length > 0 ? allPhotos : [url],
+      index: idx >= 0 ? idx : 0,
+      title
+    });
+  };
 
   const checkIsExpired = () => {
     if (!vehicle?.nextVistoriaDate) return false;
@@ -93,7 +227,7 @@ export function DriverVistoriaForm({
               const canvas = document.createElement('canvas');
               let width = img.width;
               let height = img.height;
-              const maxDim = 600;
+              const maxDim = 800;
               if (width > maxDim || height > maxDim) {
                 if (width > height) {
                   height = Math.round((height * maxDim) / width);
@@ -108,7 +242,7 @@ export function DriverVistoriaForm({
               const ctx = canvas.getContext('2d');
               if (ctx) {
                 ctx.drawImage(img, 0, 0, width, height);
-                const compressedDataUrl = canvas.toDataURL('image/jpeg', 0.6);
+                const compressedDataUrl = canvas.toDataURL('image/jpeg', 0.7);
                 if (targetPhotoItem) {
                   setChecklist(prev => ({
                     ...prev,
@@ -128,24 +262,6 @@ export function DriverVistoriaForm({
     });
   };
 
-  const handleDragOver = (e: React.DragEvent) => {
-    e.preventDefault();
-    setIsDragging(true);
-  };
-
-  const handleDragLeave = (e: React.DragEvent) => {
-    e.preventDefault();
-    setIsDragging(false);
-  };
-
-  const handleDrop = (e: React.DragEvent) => {
-    e.preventDefault();
-    setIsDragging(false);
-    if (e.dataTransfer.files) {
-      processFiles(e.dataTransfer.files);
-    }
-  };
-
   const handleRemovePhoto = (index: number) => {
     setPhotos(prev => prev.filter((_, i) => i !== index));
   };
@@ -157,6 +273,10 @@ export function DriverVistoriaForm({
     const combinedPhotos = [...photos, ...Object.values(checklist).map((v: any) => v.photoUrl).filter(Boolean)] as string[];
     const booleanChecklist = Object.fromEntries(Object.entries(checklist).map(([k, v]: [string, any]) => [k, v.isOk]));
 
+    const parsedKm = (kmOdometer !== undefined && kmOdometer !== '' && !isNaN(Number(kmOdometer)) && Number(kmOdometer) >= 0)
+      ? Number(kmOdometer)
+      : undefined;
+
     const newVistoria: Vistoria = {
       id: `vist-pub-${Date.now()}`,
       vehicleId: vehicle?.id || 'unknown',
@@ -164,10 +284,13 @@ export function DriverVistoriaForm({
       type: vistoriaType,
       checklist: booleanChecklist,
       photos: combinedPhotos,
-      notes: notes.trim() || undefined
+      notes: notes.trim() || undefined,
+      km: parsedKm
     };
 
     if (vehicle) {
+      localStorage.setItem(`vistoria_submitted_${vehicle.plate}`, 'true');
+      setAlreadySubmittedBefore(true);
       try {
         const { pdfDataUrl, fileName } = await generateVistoriaPDF(vehicle, newVistoria);
         setGeneratedPdf({ pdfDataUrl, fileName });
@@ -201,6 +324,11 @@ export function DriverVistoriaForm({
     const checklistText = Object.entries(checklist).filter(([_, state]: [string, any]) => state.isOk)
       .map(([key]) => `✅ ${key}`)
       .join('\n') || 'Nenhum item marcado';
+    const parsedKm = (kmOdometer !== undefined && kmOdometer !== '' && !isNaN(Number(kmOdometer)) && Number(kmOdometer) >= 0)
+      ? Number(kmOdometer)
+      : undefined;
+    const kmText = parsedKm ? `${parsedKm.toLocaleString('pt-BR')} KM` : 'Não informado';
+
     const whatsappMessage = 
 `✅ *RETORNO DE VISTORIA CONCLUÍDO*
 📌 *Tipo:* ${vistoriaType}
@@ -209,6 +337,7 @@ export function DriverVistoriaForm({
 🏷️ *Placa:* ${vehicle.plate}
 👤 *Locatário:* ${vehicle.driver || 'Não definido'}
 📅 *Data da Vistoria:* ${new Date().toLocaleDateString('pt-BR')}
+⏱️ *Odômetro / KM Atual:* ${kmText}
 
 *CHECKLIST DE INSPEÇÃO:*
 ${checklistText}
@@ -231,7 +360,8 @@ _Enviado via sistema de vistoria digital._`;
           type: vistoriaType,
           checklist: booleanChecklist,
           photos: combinedPhotos,
-          notes
+          notes,
+          km: parsedKm
         };
         const { pdfDataUrl, fileName } = await generateVistoriaPDF(vehicle, tempVistoria);
         fallbackPdfDataUrl = pdfDataUrl;
@@ -260,10 +390,11 @@ _Enviado via sistema de vistoria digital._`;
     window.open(waUrl, '_blank');
   };
 
-  const allPhotosTaken = Object.values(checklist).every((state: any) => state.photoUrl !== null);
+  const allPhotosTaken = isPaymentMode ? Boolean(paymentPhoto) : Object.values(checklist).every((state: any) => state.photoUrl !== null);
 
   return (
-    <div className="min-h-screen bg-black text-white font-sans flex flex-col fixed inset-0 z-50 overflow-y-auto">
+    <div className="min-h-screen bg-black text-white font-sans flex flex-col fixed inset-0 z-50 overflow-y-auto items-center justify-start sm:py-6 sm:px-4 bg-gradient-to-b from-black via-zinc-950 to-black">
+      <div className="w-full sm:max-w-md sm:min-h-[90vh] sm:rounded-3xl sm:border sm:border-white/15 sm:shadow-2xl sm:overflow-hidden bg-black flex flex-col min-h-screen sm:min-h-0 relative">
       <header className="bg-[#111111] border-b border-white/5 py-3 px-6 flex items-center justify-between sticky top-0 z-10 shadow-md">
         <div className="flex items-center gap-3">
           <button
@@ -283,16 +414,20 @@ _Enviado via sistema de vistoria digital._`;
             </div>
           </button>
           <div>
-            <h1 className="text-sm font-bold text-emerald-400 tracking-wider">VISTORIA DIGITAL</h1>
+            <h1 className="text-sm font-bold text-emerald-400 tracking-wider">
+              {isPaymentMode ? 'COMPROVANTE' : 'VISTORIA DIGITAL'}
+            </h1>
             <p className="text-[10px] text-gray-400 uppercase tracking-widest mt-0.5">Gestão de Frota</p>
           </div>
         </div>
         {vehicle && (
-          <div className="text-right">
-            <span className="text-[10px] text-gray-500 uppercase tracking-widest block">Placa</span>
-            <span className="text-xs font-mono font-bold text-white bg-white/10 px-2 py-0.5 rounded border border-white/20">
-              {vehicle.plate}
-            </span>
+          <div className="flex items-center gap-2.5">
+            <div className="text-right">
+              <span className="text-[10px] text-gray-500 uppercase tracking-widest block">Placa</span>
+              <span className="text-xs font-mono font-bold text-white bg-white/10 px-2 py-0.5 rounded border border-white/20">
+                {vehicle.plate}
+              </span>
+            </div>
           </div>
         )}
       </header>
@@ -305,15 +440,28 @@ _Enviado via sistema de vistoria digital._`;
             <div>
               <h3 className="text-sm font-bold text-white">Veículo Não Encontrado</h3>
               <p className="text-xs text-gray-400 leading-relaxed">
-                Não conseguimos localizar o veículo com a placa <span className="font-mono text-red-400 font-semibold">{plateRequested}</span> em nosso sistema de gestão.
+                Não localizamos o veículo com a placa <span className="font-mono text-red-400 font-semibold">{plateRequested || 'N/A'}</span>.
+              </p>
+              <p className="text-[11px] text-gray-500 italic mt-2">
+                Este link serve exclusivamente para envio de fotos e vistorias. Entre em contato com o responsável pela frota para solicitar um novo link.
               </p>
             </div>
-            <button
-              onClick={onExit}
-              className="px-4 py-2 bg-white/5 hover:bg-white/10 rounded-xl text-xs text-white transition-colors cursor-pointer"
-            >
-              Ver Todos os Veículos
-            </button>
+          </div>
+        ) : (alreadySubmittedBefore && !isSubmitted) ? (
+          <div className="bg-[#111111] border border-amber-500/20 rounded-2xl p-6 text-center shadow-xl space-y-6">
+            <div className="w-16 h-16 bg-amber-500/10 rounded-full flex items-center justify-center mx-auto shadow-[0_0_30px_rgba(245,158,11,0.2)]">
+              <Info className="w-8 h-8 text-amber-400" />
+            </div>
+            
+            <div>
+              <h2 className="text-lg font-bold text-amber-400">Link Já Utilizado</h2>
+              <p className="text-xs text-gray-400 mt-2 leading-relaxed">
+                Este link {isPaymentMode ? 'de comprovante' : 'de vistoria'} já foi enviado anteriormente. Cada link pode ser enviado apenas <strong>1 única vez</strong>.
+              </p>
+              <p className="text-xs text-gray-500 font-medium mt-3">
+                Você já pode fechar esta página no seu navegador.
+              </p>
+            </div>
           </div>
         ) : isSubmitted ? (
           <div className="bg-[#111111] border border-emerald-500/20 rounded-2xl p-6 text-center shadow-xl space-y-6">
@@ -322,38 +470,161 @@ _Enviado via sistema de vistoria digital._`;
             </div>
             
             <div>
-              <h2 className="text-lg font-bold text-emerald-400">Vistoria Concluída!</h2>
+              <h2 className="text-lg font-bold text-emerald-400">
+                {isPaymentMode ? 'Comprovante Enviado!' : 'Vistoria Concluída!'}
+              </h2>
               <p className="text-xs text-gray-400 mt-2 leading-relaxed">
-                As informações foram salvas com sucesso no sistema.
+                {isPaymentMode 
+                  ? 'O comprovante foi enviado com sucesso para o gestor. Após a aprovação, ele será anexado aos documentos do veículo.' 
+                  : 'As informações e fotos foram salvas com sucesso no sistema.'}
               </p>
             </div>
             
             <div className="flex flex-col gap-3 pt-2">
-              <button
-                onClick={handleSendWhatsAppConfirmation}
-                className="w-full py-4 bg-emerald-600 hover:bg-emerald-500 active:bg-emerald-700 text-white font-bold text-sm rounded-xl flex items-center justify-center gap-2.5 transition-all shadow-lg shadow-emerald-500/20 cursor-pointer"
-                id="btn-send-whatsapp-confirm"
-              >
-                <Send className="w-5 h-5" />
-                <span>Compartilhar Relatório + Fotos</span>
-              </button>
-              
-              <div className="p-3 bg-white/5 border border-white/10 rounded-xl text-left">
-                <p className="text-[10px] text-gray-400 leading-relaxed flex items-start gap-2">
-                  <Info className="w-3.5 h-3.5 text-emerald-400 shrink-0 mt-0.5" />
-                  <span>
-                    <strong>Dica:</strong> Ao clicar acima, use a opção <strong>WhatsApp</strong>. O sistema irá gerar um PDF completo da vistoria (incluindo as fotos) e tentará anexá-lo à mensagem automaticamente.
-                  </span>
-                </p>
-              </div>
-              <button
-                onClick={onExit}
-                className="w-full py-3.5 bg-white/5 hover:bg-white/10 text-white font-bold text-xs rounded-xl flex items-center justify-center transition-all cursor-pointer mt-2"
-              >
-                Voltar para Gestão
-              </button>
+              {!isPaymentMode && (
+                <button
+                  onClick={handleSendWhatsAppConfirmation}
+                  className="w-full py-4 bg-emerald-600 hover:bg-emerald-500 active:bg-emerald-700 text-white font-bold text-sm rounded-xl flex items-center justify-center gap-2.5 transition-all shadow-lg shadow-emerald-500/20 cursor-pointer"
+                  id="btn-send-whatsapp-confirm"
+                >
+                  <Send className="w-5 h-5" />
+                  <span>Compartilhar Relatório + Fotos</span>
+                </button>
+              )}
+              <p className="text-xs text-gray-400 mt-2">
+                Obrigado! O envio foi concluído e você já pode fechar esta página com segurança.
+              </p>
             </div>
           </div>
+        ) : isPaymentMode ? (
+          <form onSubmit={(e) => {
+            e.preventDefault();
+            if (!paymentPhoto) {
+              alert('Por favor, tire ou envie a foto do comprovante.');
+              return;
+            }
+            if (vehicle) {
+              localStorage.setItem(`payment_receipt_submitted_${vehicle.plate}`, 'true');
+              setAlreadySubmittedBefore(true);
+              if (onSavePaymentReceipt) {
+                onSavePaymentReceipt({
+                  id: `rec-${Date.now()}`,
+                  date: new Date().toISOString().split('T')[0],
+                  amount: paymentAmount,
+                  photoUrl: paymentPhoto,
+                  notes: notes.trim(),
+                  driverName: vehicle.driver
+                });
+              }
+            }
+            setIsSubmitted(true);
+          }} className="space-y-6">
+            <div className="bg-[#111111] border border-emerald-500/20 rounded-2xl p-4 shadow-xl flex items-center justify-between gap-3">
+              <div className="flex items-center gap-3">
+                <div className="p-2.5 bg-emerald-500/10 text-emerald-400 rounded-xl border border-emerald-500/20">
+                  <Check className="w-5 h-5" />
+                </div>
+                <div>
+                  <span className="text-[10px] text-gray-400 uppercase tracking-wider block font-semibold">
+                    Envio de Comprovante de Pagamento
+                  </span>
+                  <h3 className="text-sm font-bold text-emerald-400 mt-0.5">
+                    Aluguel Semanal
+                  </h3>
+                </div>
+              </div>
+            </div>
+
+            <div className="bg-[#111111] border border-white/10 rounded-2xl p-5 space-y-4 shadow-xl">
+              <h3 className="text-xs font-bold text-white uppercase tracking-wider border-b border-white/5 pb-2">
+                Valor do Pagamento (R$)
+              </h3>
+              <input
+                type="number"
+                step="0.01"
+                value={paymentAmount || ''}
+                onChange={(e) => setPaymentAmount(Number(e.target.value))}
+                className="w-full text-sm bg-black/40 border border-white/10 rounded-xl px-3 py-2.5 text-white focus:outline-hidden font-mono font-bold"
+                placeholder="0,00"
+              />
+            </div>
+
+            <div className="bg-[#111111] border border-white/10 rounded-2xl p-5 space-y-4 shadow-xl">
+              <div className="flex justify-between items-center border-b border-white/5 pb-2">
+                <h3 className="text-xs font-bold text-white uppercase tracking-wider flex items-center gap-2">
+                  <Camera className="w-4.5 h-4.5 text-emerald-400" />
+                  Foto do Comprovante *
+                </h3>
+              </div>
+              <input
+                type="file"
+                accept="image/*"
+                capture="environment"
+                ref={cameraInputRef}
+                onChange={(e) => {
+                  const file = e.target.files?.[0];
+                  if (file) {
+                    const reader = new FileReader();
+                    reader.onload = (ev) => {
+                      if (ev.target?.result) setPaymentPhoto(ev.target.result as string);
+                    };
+                    reader.readAsDataURL(file);
+                  }
+                }}
+                className="hidden"
+              />
+              {!paymentPhoto ? (
+                <button
+                  type="button"
+                  onClick={() => cameraInputRef.current?.click()}
+                  className="w-full flex items-center justify-center gap-2 p-5 bg-white/5 border border-white/10 rounded-xl hover:bg-white/10 transition-all text-center cursor-pointer text-emerald-400 text-xs font-bold uppercase tracking-wider"
+                >
+                  <Camera className="w-5 h-5 text-emerald-400" />
+                  Tirar Foto ou Enviar Comprovante
+                </button>
+              ) : (
+                <div 
+                  className="relative group rounded-xl overflow-hidden border border-emerald-500/20 w-full h-48 cursor-pointer"
+                  onClick={() => openEnlargedPhoto(paymentPhoto, 'Comprovante de Pagamento')}
+                >
+                  <img src={paymentPhoto} alt="Comprovante" className="w-full h-full object-cover" />
+                  <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-2">
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        cameraInputRef.current?.click();
+                      }}
+                      className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold rounded-lg flex items-center gap-1.5 cursor-pointer"
+                    >
+                      <Camera className="w-4 h-4" /> Alterar Foto
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            <div className="bg-[#111111] border border-white/10 rounded-2xl p-5 space-y-4 shadow-xl">
+              <h3 className="text-xs font-bold text-white uppercase tracking-wider border-b border-white/5 pb-2">
+                Observações (Opcional)
+              </h3>
+              <textarea
+                value={notes}
+                onChange={e => setNotes(e.target.value)}
+                placeholder="Insira detalhes do pagamento..."
+                className="w-full text-xs bg-black/40 border border-white/10 rounded-xl px-3 py-2.5 text-white focus:outline-hidden h-20 resize-none font-sans"
+              />
+            </div>
+
+            <button
+              type="submit"
+              disabled={!paymentPhoto}
+              className={`w-full py-3.5 ${!paymentPhoto ? 'opacity-50 grayscale' : 'bg-emerald-600 hover:bg-emerald-500 active:bg-emerald-700'} text-white font-bold text-xs rounded-xl flex items-center justify-center gap-2 transition-all shadow-lg shadow-emerald-500/10 cursor-pointer`}
+            >
+              <Check className="w-4 h-4" />
+              <span>Enviar Comprovante de Pagamento</span>
+            </button>
+          </form>
         ) : (
           <form onSubmit={handleSubmit} className="space-y-6">
             <div className="bg-[#111111] border border-emerald-500/20 rounded-2xl p-4 shadow-xl flex items-center justify-between gap-3">
@@ -373,6 +644,38 @@ _Enviado via sistema de vistoria digital._`;
               <span className="text-[10px] bg-emerald-500/10 text-emerald-300 font-bold px-2.5 py-1 rounded-full border border-emerald-500/20 uppercase tracking-wider shrink-0">
                 Seleção do Gestor
               </span>
+            </div>
+
+            {/* Campo para Adicionar os KM / Odômetro do Veículo */}
+            <div className="bg-[#111111] border border-emerald-500/20 rounded-2xl p-4 shadow-xl space-y-2.5">
+              <div className="flex items-center justify-between">
+                <label className="text-xs font-bold text-white uppercase tracking-wider flex items-center gap-2">
+                  <Gauge className="w-4 h-4 text-emerald-400" />
+                  <span>Odômetro / Quilometragem Atual (KM) *</span>
+                </label>
+                {vehicle?.currentKm ? (
+                  <span className="text-[10px] text-gray-400 font-mono">
+                    Último: {vehicle.currentKm.toLocaleString('pt-BR')} KM
+                  </span>
+                ) : null}
+              </div>
+              <p className="text-[10px] text-gray-400 leading-relaxed">
+                Informe a quilometragem exata marcada no painel do veículo. Esse valor atualizará o odômetro e a manutenção preventiva do carro.
+              </p>
+              <div className="relative flex items-center">
+                <input
+                  type="number"
+                  min="0"
+                  placeholder="Ex: 48500"
+                  value={kmOdometer}
+                  onChange={(e) => setKmOdometer(e.target.value)}
+                  className="w-full text-sm bg-black/60 border border-white/15 rounded-xl pl-3.5 pr-14 py-2.5 text-white font-mono font-bold focus:outline-hidden focus:border-emerald-500 transition-colors"
+                  required
+                />
+                <span className="absolute right-3.5 text-xs font-mono font-bold text-emerald-400 select-none">
+                  KM
+                </span>
+              </div>
             </div>
             
             <div className="bg-[#111111] border border-white/10 rounded-2xl p-5 space-y-4 shadow-xl">
@@ -413,7 +716,7 @@ _Enviado via sistema de vistoria digital._`;
                       ) : (
                         <div 
                           className="relative group rounded-lg overflow-hidden border border-emerald-500/20 w-full h-32 cursor-pointer"
-                          onClick={() => state.photoUrl && setPreviewEnlargedPhoto({ url: state.photoUrl, title: `Foto: ${key}` })}
+                          onClick={() => state.photoUrl && openEnlargedPhoto(state.photoUrl, `Foto: ${key}`)}
                           title="Clique para ver foto grande"
                         >
                           <img src={state.photoUrl} alt={key} className="w-full h-full object-cover group-hover:scale-105 transition-transform" />
@@ -471,7 +774,7 @@ _Enviado via sistema de vistoria digital._`;
                     <div 
                       key={idx} 
                       className="relative group rounded-xl overflow-hidden border border-white/10 aspect-video bg-black/50 cursor-pointer"
-                      onClick={() => setPreviewEnlargedPhoto({ url: photo, title: `Foto Extra #${idx + 1}` })}
+                      onClick={() => openEnlargedPhoto(photo, `Foto Extra #${idx + 1}`)}
                       title="Clique para ver foto grande"
                     >
                       <img
@@ -545,18 +848,20 @@ _Enviado via sistema de vistoria digital._`;
         <p>© 2026 Gestão de Frota • Plataforma de Vistoria de Veículos Alugados.</p>
       </footer>
 
-      {/* Enlarged Photo Modal */}
+      {/* Enlarged Photo Modal with Swipe / Arrows */}
       {previewEnlargedPhoto && (
         <div 
-          className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/95 backdrop-blur-md animate-in fade-in duration-200"
+          className="fixed inset-0 z-[100] flex items-center justify-center p-3 sm:p-4 bg-black/95 backdrop-blur-md animate-in fade-in duration-200 select-none"
           onClick={() => setPreviewEnlargedPhoto(null)}
         >
           <div 
-            className="relative max-w-3xl w-full max-h-[90vh] flex flex-col items-center justify-center p-4 bg-zinc-950 rounded-2xl border border-white/20 shadow-2xl"
+            className="relative max-w-3xl w-full max-h-[92vh] flex flex-col items-center justify-center p-3 sm:p-4 bg-zinc-950 rounded-2xl border border-white/20 shadow-2xl"
             onClick={(e) => e.stopPropagation()}
           >
-            <div className="w-full flex items-center justify-between pb-3 mb-2 border-b border-white/10 text-white">
-              <span className="font-bold text-sm tracking-wide text-emerald-400">{previewEnlargedPhoto.title}</span>
+            <div className="w-full flex items-center justify-between pb-2.5 mb-2 border-b border-white/10 text-white">
+              <span className="font-bold text-sm tracking-wide text-emerald-400">
+                {previewEnlargedPhoto.title || 'Foto'} ({previewEnlargedPhoto.index + 1} de {previewEnlargedPhoto.photos.length})
+              </span>
               <button
                 type="button"
                 onClick={() => setPreviewEnlargedPhoto(null)}
@@ -566,15 +871,84 @@ _Enviado via sistema de vistoria digital._`;
                 <X className="w-5 h-5" />
               </button>
             </div>
-            <div className="w-full flex items-center justify-center p-2 bg-black rounded-xl overflow-hidden">
+            
+            <div 
+              className="relative w-full flex items-center justify-center p-2 bg-black rounded-xl overflow-hidden min-h-[300px] max-h-[70vh] touch-pan-y cursor-grab active:cursor-grabbing select-none"
+              onTouchStart={handleTouchStart}
+              onTouchEnd={handleTouchEnd}
+              onMouseDown={handleMouseDown}
+              onMouseUp={handleMouseUp}
+            >
+              {previewEnlargedPhoto.photos.length > 1 && (
+                <>
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setPreviewEnlargedPhoto(prev => prev ? { 
+                        ...prev, 
+                        index: (prev.index - 1 + prev.photos.length) % prev.photos.length,
+                        title: `Foto ${((prev.index - 1 + prev.photos.length) % prev.photos.length) + 1} de ${prev.photos.length}`
+                      } : null);
+                    }}
+                    className="absolute left-2 sm:left-4 z-40 w-11 h-11 bg-black/85 hover:bg-emerald-600 active:bg-emerald-700 text-white rounded-full border border-white/30 shadow-2xl flex items-center justify-center text-lg font-bold transition-all cursor-pointer"
+                    title="Foto Anterior"
+                  >
+                    ❮
+                  </button>
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setPreviewEnlargedPhoto(prev => prev ? { 
+                        ...prev, 
+                        index: (prev.index + 1) % prev.photos.length,
+                        title: `Foto ${((prev.index + 1) % prev.photos.length) + 1} de ${prev.photos.length}`
+                      } : null);
+                    }}
+                    className="absolute right-2 sm:right-4 z-40 w-11 h-11 bg-black/85 hover:bg-emerald-600 active:bg-emerald-700 text-white rounded-full border border-white/30 shadow-2xl flex items-center justify-center text-lg font-bold transition-all cursor-pointer"
+                    title="Próxima Foto"
+                  >
+                    ❯
+                  </button>
+                </>
+              )}
               <img
-                src={previewEnlargedPhoto.url}
+                src={previewEnlargedPhoto.photos[previewEnlargedPhoto.index]}
                 alt={previewEnlargedPhoto.title}
-                className="max-h-[70vh] w-auto max-w-full object-contain rounded-lg"
+                className="max-h-[65vh] w-auto max-w-full object-contain rounded-lg select-none pointer-events-none"
+                draggable={false}
               />
             </div>
-            <div className="mt-2 text-center text-xs text-gray-400">
-              Toque fora da foto ou no X para fechar
+
+            {/* Pagination dots */}
+            {previewEnlargedPhoto.photos.length > 1 && (
+              <div className="flex items-center justify-center gap-1.5 mt-2.5 overflow-x-auto max-w-full py-1">
+                {previewEnlargedPhoto.photos.map((_, dotIdx) => (
+                  <button
+                    key={dotIdx}
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setPreviewEnlargedPhoto(prev => prev ? { 
+                        ...prev, 
+                        index: dotIdx,
+                        title: `Foto ${dotIdx + 1} de ${prev.photos.length}`
+                      } : null);
+                    }}
+                    className={`h-2 rounded-full transition-all cursor-pointer ${
+                      dotIdx === previewEnlargedPhoto.index 
+                        ? 'w-6 bg-emerald-400' 
+                        : 'w-2 bg-white/20 hover:bg-white/40'
+                    }`}
+                    title={`Ir para foto ${dotIdx + 1}`}
+                  />
+                ))}
+              </div>
+            )}
+
+            <div className="mt-1.5 text-center text-[11px] text-gray-400 font-medium">
+              👆 Arraste para o lado ou use as setas ❮ ❯ para navegar entre as fotos
             </div>
           </div>
         </div>
@@ -585,6 +959,7 @@ _Enviado via sistema de vistoria digital._`;
         isOpen={isLogoViewerOpen}
         onClose={() => setIsLogoViewerOpen(false)}
       />
+      </div>
     </div>
   );
 }

@@ -43,10 +43,33 @@ export function DashboardStats({
   }, 0);
 
   // 2. Total Despesas Fixas (Financiamento, Seguro, IPVA, Manutenção Preventiva, Custo Extra)
-  const totalFinanciamento = vehicles.reduce((sum, v) => sum + (v.financiamento || 0), 0);
-  const totalSeguro = vehicles.reduce((sum, v) => sum + (v.seguro || 0), 0);
-  const totalIpva = vehicles.reduce((sum, v) => sum + (v.ipva || 0), 0);
-  const totalManutencaoPreventiva = vehicles.reduce((sum, v) => sum + (v.manutencaoPreventiva || 0), 0);
+  const totalFinanciamento = vehicles.reduce((sum, v) => {
+    if (v.financiamentoParcelasTotais && v.financiamentoParcelasTotais > 0) {
+      if ((v.financiamentoParcelasPagas || 0) >= v.financiamentoParcelasTotais) return sum;
+    }
+    return sum + (v.financiamento || 0);
+  }, 0);
+
+  const totalSeguro = vehicles.reduce((sum, v) => {
+    if (v.seguroParcelasTotais && v.seguroParcelasTotais > 0) {
+      if ((v.seguroParcelasPagas || 0) >= v.seguroParcelasTotais) return sum;
+    }
+    return sum + (v.seguro || 0);
+  }, 0);
+
+  const totalIpva = vehicles.reduce((sum, v) => {
+    if (v.ipvaParcelasTotais && v.ipvaParcelasTotais > 0) {
+      if ((v.ipvaParcelasPagas || 0) >= v.ipvaParcelasTotais) return sum;
+    }
+    return sum + (v.ipva || 0);
+  }, 0);
+
+  const totalManutencaoPreventiva = vehicles.reduce((sum, v) => {
+    if (v.manutencaoParcelasTotais && v.manutencaoParcelasTotais > 0) {
+      if ((v.manutencaoParcelasPagas || 0) >= v.manutencaoParcelasTotais) return sum;
+    }
+    return sum + (v.manutencaoPreventiva || 0);
+  }, 0);
   
   const totalCustoExtra = vehicles.reduce((sum, v) => {
     if (!v.extraExpenses || v.extraExpenses.length === 0) {

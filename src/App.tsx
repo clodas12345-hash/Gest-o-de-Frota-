@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
-import { Vehicle, FuelLog, MaintenanceLog, ExpenseLog, AgendaContact, Vistoria, VehicleDocument, FinalizedContract } from './types';
+import { Vehicle, FuelLog, MaintenanceLog, ExpenseLog, AgendaContact, Vistoria, VehicleDocument, FinalizedContract, SinistroLog } from './types';
 import { 
   INITIAL_VEHICLES, 
   INITIAL_FUEL_LOGS, 
@@ -228,6 +228,17 @@ export default function App() {
     return INITIAL_VISTORIAS;
   });
 
+  const [sinistroLogs, setSinistroLogs] = useState<SinistroLog[]>(() => {
+    const saved = localStorage.getItem('fleet_sinistro_logs');
+    if (saved) {
+      try {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed)) return parsed;
+      } catch (e) {}
+    }
+    return [];
+  });
+
   const [selectedMonth, setSelectedMonth] = useState<number>(() => new Date().getMonth());
   const [selectedYear, setSelectedYear] = useState<number>(() => new Date().getFullYear());
   
@@ -425,6 +436,7 @@ export default function App() {
   const cloudSyncTimerRef = useRef<NodeJS.Timeout | null>(null);
 
   const saveToCloud = (field: string, data: any) => {
+    if (!Capacitor.isNativePlatform()) return;
     if (!isCloudLoadedRef.current || isRemoteUpdateRef.current) return;
     
     try {
@@ -455,6 +467,11 @@ export default function App() {
 
   // Load initial data from Firestore and setup real-time listener for instant cloud saving & sync
   useEffect(() => {
+    if (!Capacitor.isNativePlatform()) {
+      isCloudLoadedRef.current = true;
+      return;
+    }
+
     const docRef = doc(db, 'fleetData', 'main');
     
     getDoc(docRef).then((snap) => {
@@ -512,9 +529,26 @@ export default function App() {
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
-    if (params.get('mode') === 'vistoria_retorno' || params.has('vistoria')) {
+    const path = window.location.pathname;
+    if (
+      params.get('mode') === 'vistoria_retorno' ||
+      params.get('mode') === 'vistoria' ||
+      params.has('vistoria') ||
+      params.has('placa') ||
+      params.has('car') ||
+      params.has('veiculo') ||
+      path.includes('/upload-receipt') ||
+      path.includes('/vistoria')
+    ) {
       setIsVistoriaMode(true);
-      setVistoriaPlateParam(params.get('placa') || params.get('vistoria') || '');
+      setVistoriaPlateParam(
+        params.get('placa') ||
+        params.get('vistoria') ||
+        params.get('car') ||
+        params.get('veiculo') ||
+        params.get('v') ||
+        ''
+      );
     }
   }, []);
 
@@ -586,6 +620,14 @@ export default function App() {
 
     saveToCloud('vistorias', vistorias);
   }, [vistorias]);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem('fleet_sinistro_logs', JSON.stringify(sinistroLogs));
+    } catch (e) { console.warn('Storage quota exceeded', e); }
+
+    saveToCloud('sinistroLogs', sinistroLogs);
+  }, [sinistroLogs]);
 
   useEffect(() => {
     try {
@@ -996,8 +1038,14 @@ export default function App() {
           // Instead of updating by id which might have changed, just prepend
           const updatedDocs = [vistoriaDoc, ...existingDocs];
 
+          const kmUpdate = (vistoria.km && vistoria.km > 0) ? {
+            currentKm: vistoria.km,
+            preventiveMaintCurrentKm: vistoria.km
+          } : {};
+
           return {
             ...v,
+            ...kmUpdate,
             nextVistoriaDate: undefined, // Clear next vistoria date
             documents: updatedDocs
           };
@@ -1460,11 +1508,32 @@ export default function App() {
       };
     }
 
+    const isPaymentMode = params.get('mode') === 'pagamento';
+
     return (
       <DriverVistoriaForm
         vehicle={targetVehicle}
         plateRequested={vistoriaPlateParam}
         checklistConfig={checklistConfig}
+        isPaymentMode={isPaymentMode}
+        onSavePaymentReceipt={(receipt) => {
+          setVehicles(prev => {
+            const targetPlateSanitized = targetVehicle.plate.replace(/[^A-Z0-9]/gi, '').toUpperCase();
+            const found = prev.some(v => v.id === targetVehicle.id || v.plate.replace(/[^A-Z0-9]/gi, '').toUpperCase() === targetPlateSanitized);
+            if (!found) {
+              return [{ ...targetVehicle, pendingReceipts: [receipt, ...(targetVehicle.pendingReceipts || [])] }, ...prev];
+            }
+            return prev.map(v => {
+              if (v.id === targetVehicle.id || v.plate.replace(/[^A-Z0-9]/gi, '').toUpperCase() === targetPlateSanitized) {
+                return {
+                  ...v,
+                  pendingReceipts: [receipt, ...(v.pendingReceipts || [])]
+                };
+              }
+              return v;
+            });
+          });
+        }}
         onSaveVistoria={(newVistoria, pdfDataUrl, pdfFileName) => {
           setVistorias(prev => [newVistoria, ...prev]);
           
@@ -1480,16 +1549,24 @@ export default function App() {
               fileType: type || 'pdf',
               contentUrl: url
             };
+            const kmUpdate = (newVistoria.km && newVistoria.km > 0) ? {
+              currentKm: newVistoria.km,
+              preventiveMaintCurrentKm: newVistoria.km
+            } : {};
+
             setVehicles(prev => {
-              const found = prev.some(v => v.id === targetVehicle.id || v.plate.toUpperCase() === targetVehicle.plate.toUpperCase());
+              const targetPlateSanitized = targetVehicle.plate.replace(/[^A-Z0-9]/gi, '').toUpperCase();
+              const found = prev.some(v => v.id === targetVehicle.id || v.plate.replace(/[^A-Z0-9]/gi, '').toUpperCase() === targetPlateSanitized);
               if (!found) {
-                return [{ ...targetVehicle, documents: [vistoriaDoc, ...(targetVehicle.documents || [])] }, ...prev];
+                return [{ ...targetVehicle, ...kmUpdate, documents: [vistoriaDoc, ...(targetVehicle.documents || [])] }, ...prev];
               }
               return prev.map(v => {
-                if (v.id === targetVehicle.id || v.plate.toUpperCase() === targetVehicle.plate.toUpperCase()) {
+                if (v.id === targetVehicle.id || v.plate.replace(/[^A-Z0-9]/gi, '').toUpperCase() === targetPlateSanitized) {
                   return {
                     ...v,
-                    documents: [vistoriaDoc, ...(v.documents || [])]
+                    ...kmUpdate,
+                    nextVistoriaDate: undefined,
+                    documents: [vistoriaDoc, ...(v.documents || []).filter(d => d.id !== vistoriaDoc.id)]
                   };
                 }
                 return v;
@@ -1509,9 +1586,7 @@ export default function App() {
           }
         }}
         onExit={() => {
-          setIsVistoriaMode(false);
-          // Clean up the URL query params so they don't lock the browser back button or refresh in public mode
-          window.history.replaceState({}, document.title, window.location.pathname);
+          // Public mode does not give access to the management app
         }}
       />
     );
@@ -1730,6 +1805,10 @@ export default function App() {
                     }
                     setIsAgendaOpen(true);
                   }}
+                  sinistroLogs={sinistroLogs.filter((s) => s.vehicleId === car.id)}
+                  onAddSinistro={(sinistro) => setSinistroLogs((prev) => [sinistro, ...prev])}
+                  onDeleteSinistro={(id) => setSinistroLogs((prev) => prev.filter((s) => s.id !== id))}
+                  onOpenLogForm={handleOpenForm}
                 />
               ))}
             </div>
@@ -1812,6 +1891,7 @@ export default function App() {
         onSaveFuel={handleSaveFuel}
         onSaveMaintenance={handleSaveMaintenance}
         onSaveExpense={handleSaveExpense}
+        onSaveSinistro={(s) => setSinistroLogs(prev => [s, ...prev])}
         onSaveContact={handleSaveContact}
       />
 

@@ -62,6 +62,40 @@ export interface Vehicle {
   tenantCnh?: string;
   tenantEmail?: string;
   tenantAddress?: string;
+  pendingReceipts?: PendingReceipt[];
+  // New fields for Suggestions 1, 2, 6
+  driverCnhExpiration?: string;
+  driverCnhPhotoUrl?: string;
+  tires?: TireState[];
+}
+
+export interface TireState {
+  id: string;
+  position: 'Frontal Esquerdo' | 'Frontal Direito' | 'Traseiro Esquerdo' | 'Traseiro Direito' | 'Estepe';
+  brand: string;
+  installedKm: number;
+  expectedLifeKm: number; // e.g. 40000
+  status: 'Good' | 'Warning' | 'Replace';
+}
+
+export interface SinistroLog {
+  id: string;
+  vehicleId: string;
+  date: string;
+  description: string;
+  repairCost: number;
+  photos: string[];
+  boUrl?: string;
+  location?: string;
+}
+
+export interface PendingReceipt {
+  id: string;
+  date: string;
+  amount?: number;
+  photoUrl: string;
+  notes?: string;
+  driverName?: string;
 }
 
 export interface VehicleDocument {
@@ -100,6 +134,8 @@ export interface MaintenanceLog {
   partsReplaced?: string;
   parcelasPagas?: number;
   parcelasTotais?: number;
+  // Related to sinistro if applicable
+  sinistroId?: string;
 }
 
 export interface ExpenseLog {
@@ -126,6 +162,7 @@ export interface Vistoria {
   checklist: Record<string, boolean>;
   photos: string[];
   notes?: string;
+  km?: number;
 }
 
 export interface FinalizedContract {

@@ -1,5 +1,5 @@
-import React, { useState } from 'react';
-import { Vehicle, ExpenseLog, WeeklyPayment, Vistoria, VehicleDocument, MaintenanceLog, FuelLog } from '../types';
+import React, { useState, useRef, useEffect } from 'react';
+import { Vehicle, ExpenseLog, WeeklyPayment, Vistoria, VehicleDocument, MaintenanceLog, FuelLog, SinistroLog } from '../types';
 import { generateVistoriaPDF } from '../utils/pdfGenerator';
 import { sendAppNotification, requestNotificationPermission } from '../utils/notifications';
 import { PdfViewer } from './PdfViewer';
@@ -41,7 +41,12 @@ import {
   Building2,
   Lock,
   Archive,
-  Layers
+  Layers,
+  ListChecks,
+  History,
+  AlertTriangle,
+  BarChart3,
+  Smartphone
 } from 'lucide-react';
 import CurrencyInput from './CurrencyInput';
 
@@ -287,6 +292,18 @@ const DEFAULT_SHARE_TEMPLATE = `📋 *LAUDO DE VISTORIA*
 Para nos enviar fotos das pendências ou de retorno, responda diretamente a esta mensagem anexando as fotos no WhatsApp ou utilize o link abaixo para enviá-las de forma estruturada:
 🔗 {link_retorno}`;
 
+const DEFAULT_CHECKLIST_ITEMS = [
+  'Estepe',
+  'Chaves de roda',
+  'Frente do carro',
+  'Fundo do carro',
+  'Lateral direita',
+  'Lateral esquerda',
+  'Estofados frente',
+  'Estofados trás',
+  'Nível de combustivel'
+];
+
 const DEFAULT_REQUEST_TEMPLATE = `🔔 *SOLICITAÇÃO DE VISTORIA DO VEÍCULO*
 
 Olá, *{locatario}*!
@@ -295,25 +312,16 @@ Por favor, realize a vistoria (*{tipo}*) do veículo *{veiculo}* (Placa: *{placa
 📌 *Lembrete:* Vistoria semanal obrigatória (toda Sexta-Feira).
 {prazo}
 *Itens a serem inspecionados:*
-- Pneus e estepe
-- Faróis e lanternas
-- Estofados e bancos
-- Pintura e lataria
-- Documentos no veículo (CRLV)
-- Nível de combustível
-- Limpeza interna e externa
-- Triângulo e macaco
-- Painel sem luzes de alerta
-- Chaves e controles
+{itens_inspecao}
 
 📸 *RETORNO COM FOTOS:*
-Por favor, responda a esta mensagem enviando fotos do painel (odômetro), nível de combustível e das 4 laterais do carro, ou clique no link abaixo para preencher a vistoria e enviar as fotos:
+Por favor, responda a esta mensagem enviando fotos dos itens inspecionados e do painel (odômetro), ou clique no link abaixo para preencher a vistoria e enviar as fotos:
 🔗 {link_retorno}`;
 
 const DEFAULT_PAYMENT_TEMPLATES = {
-  lembrete: `Olá, *{driver}*! Tudo bem? 😊\n\nPassando para lembrar do pagamento semanal referente ao veículo *{brand} {model}* ({plate}).\n\n💵 *Valor:* R$ {valor}\n📅 *Vencimento:* {data_vencimento}\n\nQualquer dúvida ou caso precise da chave Pix, estou à disposição! Abraços.`,
-  hoje: `Olá, *{driver}*! Tudo bem?\n\nLembrete: *Hoje* é o dia do pagamento semanal referente ao veículo *{brand} {model}* ({plate}).\n\n💵 *Valor:* R$ {valor}\n🗓️ *Vencimento:* Hoje ({data_vencimento})\n\nPor favor, envie o comprovante assim que realizar a transferência. Agradeço a parceria! 👍`,
-  atrasado: `Olá, *{driver}*.\n\nIdentificamos que o pagamento semanal referente ao veículo *{brand} {model}* ({plate}) com vencimento em *{data_vencimento}* consta em **atraso**.\n\n⚠️ *Valor em aberto:* R$ {valor}\n\nPedimos a gentileza de regularizar o pagamento ou entrar em contato conosco o quanto antes para evitarmos pendências.\n\nFicamos no aguardo do comprovante. Obrigado!`
+  lembrete: `Olá, *{driver}*! Tudo bem? 😊\n\nPassando para lembrar do pagamento semanal referente ao veículo *{brand} {model}* ({plate}).\n\n💵 *Valor:* R$ {valor}\n📅 *Vencimento:* {data_vencimento}\n\nEnvie o comprovante de pagamento pelo link:\n🔗 {link_comprovante}\n\nAbraços!`,
+  hoje: `Olá, *{driver}*! Tudo bem?\n\nLembrete: *Hoje* é o dia do pagamento semanal referente ao veículo *{brand} {model}* ({plate}).\n\n💵 *Valor:* R$ {valor}\n🗓️ *Vencimento:* Hoje ({data_vencimento})\n\nEnvie o comprovante pelo link:\n🔗 {link_comprovante}\n\nAgradeço a parceria! 👍`,
+  atrasado: `Olá, *{driver}*.\n\nIdentificamos que o pagamento semanal referente ao veículo *{brand} {model}* ({plate}) com vencimento em *{data_vencimento}* consta em **atraso**.\n\n⚠️ *Valor em aberto:* R$ {valor}\n\nRegularize e envie o comprovante pelo link:\n🔗 {link_comprovante}\n\nFicamos no aguardo. Obrigado!`
 };
 
 const formatPaymentTemplateText = (
@@ -323,7 +331,8 @@ const formatPaymentTemplateText = (
   model: string,
   plate: string,
   amount: number,
-  dueDateStr: string
+  dueDateStr: string,
+  returnLink?: string
 ) => {
   const formattedAmount = amount ? amount.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : '0,00';
   let formattedDate = 'Hoje';
@@ -340,7 +349,8 @@ const formatPaymentTemplateText = (
     .replace(/\{model\}/g, model || '')
     .replace(/\{plate\}/g, plate || '')
     .replace(/\{valor\}/g, formattedAmount)
-    .replace(/\{data_vencimento\}/g, formattedDate);
+    .replace(/\{data_vencimento\}/g, formattedDate)
+    .replace(/\{link_comprovante\}/g, returnLink || `${window.location.origin}/upload-receipt?mode=pagamento&placa=${encodeURIComponent(plate)}`);
 };
 
 interface VehicleCardProps {
@@ -357,12 +367,16 @@ interface VehicleCardProps {
   vistorias?: Vistoria[];
   checklistConfig?: string[];
   onUpdateChecklistConfig?: (config: string[]) => void;
-  onSaveVistoria?: (vistoria: Vistoria) => void;
+  onSaveVistoria?: (vistoria: Vistoria, pdfDataUrl?: string, pdfFileName?: string) => void;
   onDeleteVistoria?: (id: string) => void;
   onDeleteAllVistorias?: (vehicleId: string) => void;
   onOpenAgenda?: (defaultName?: string, defaultPhone?: string) => void;
   onOpenRentalContract?: (vehicle: Vehicle) => void;
   onFinalizeContract?: (vehicle: Vehicle) => void;
+  sinistroLogs?: SinistroLog[];
+  onAddSinistro?: (sinistro: SinistroLog) => void;
+  onDeleteSinistro?: (id: string) => void;
+  onOpenLogForm?: (type: 'vehicle' | 'fuel' | 'maintenance' | 'expense' | 'sinistro', vehicleId?: string) => void;
 }
 
 export const VehicleCard: React.FC<VehicleCardProps> = ({
@@ -385,14 +399,35 @@ export const VehicleCard: React.FC<VehicleCardProps> = ({
   onOpenAgenda,
   onOpenRentalContract,
   onFinalizeContract,
+  sinistroLogs = [],
+  onAddSinistro,
+  onDeleteSinistro,
+  onOpenLogForm,
 }) => {
   const [isExpanded, setIsExpanded] = useState(false); // Default to collapsed/closed as requested by user
-  const [activeTab, setActiveTab] = useState<'financeiro' | 'pagamentos' | 'manutencao' | 'vistorias' | 'documentos'>('financeiro');
+  const [activeTab, setActiveTab] = useState<'financeiro' | 'pagamentos' | 'manutencao' | 'vistorias' | 'documentos' | 'pneus' | 'sinistros'>('financeiro');
   const [isCaucaoExpanded, setIsCaucaoExpanded] = useState(true);
   const [isContractExpanded, setIsContractExpanded] = useState(true);
   const [isAgendaExpanded, setIsAgendaExpanded] = useState(true);
   const [isVistoriaExpanded, setIsVistoriaExpanded] = useState(true);
   const [isDocExpanded, setIsDocExpanded] = useState(true);
+  const [showHistoryPopover, setShowHistoryPopover] = useState(false);
+  const historyRef = useRef<HTMLDivElement>(null);
+
+  // Close history popover when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (historyRef.current && !historyRef.current.contains(event.target as Node)) {
+        setShowHistoryPopover(false);
+      }
+    };
+    if (showHistoryPopover) {
+      document.addEventListener('mousedown', handleClickOutside);
+    }
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+    };
+  }, [showHistoryPopover]);
   
   // Custom event listener to expand and focus vehicle when clicked anywhere
   React.useEffect(() => {
@@ -585,6 +620,7 @@ export const VehicleCard: React.FC<VehicleCardProps> = ({
 
   const [newVistoriaPhotos, setNewVistoriaPhotos] = useState<string[]>([]);
   const [newVistoriaNotes, setNewVistoriaNotes] = useState('');
+  const [newVistoriaKm, setNewVistoriaKm] = useState<number | string>(() => vehicle.currentKm || vehicle.preventiveMaintCurrentKm || '');
   const [isDraggingPhoto, setIsDraggingPhoto] = useState(false);
 
   // Live timer ticker for countdowns
@@ -599,6 +635,94 @@ export const VehicleCard: React.FC<VehicleCardProps> = ({
   const [whatsappPhone, setWhatsappPhone] = useState<string>('');
   const [customMsgText, setCustomMsgText] = useState<string>('');
   const [previewDoc, setPreviewDoc] = useState<any | null>(null);
+  const [previewEnlargedPhoto, setPreviewEnlargedPhoto] = useState<{ photos: string[]; index: number; title: string } | null>(null);
+
+  // Swipe gesture support for photo gallery
+  const touchStartX = useRef<number | null>(null);
+  const touchStartY = useRef<number | null>(null);
+  const mouseStartX = useRef<number | null>(null);
+
+  const handleTouchStart = (e: React.TouchEvent) => {
+    touchStartX.current = e.touches[0].clientX;
+    touchStartY.current = e.touches[0].clientY;
+  };
+
+  const handleTouchEnd = (e: React.TouchEvent) => {
+    if (touchStartX.current === null || touchStartY.current === null) return;
+    if (!previewEnlargedPhoto || previewEnlargedPhoto.photos.length <= 1) return;
+    const touchEndX = e.changedTouches[0].clientX;
+    const touchEndY = e.changedTouches[0].clientY;
+    const diffX = touchStartX.current - touchEndX;
+    const diffY = touchStartY.current - touchEndY;
+    touchStartX.current = null;
+    touchStartY.current = null;
+    if (Math.abs(diffX) > Math.abs(diffY) && Math.abs(diffX) > 25) {
+      if (diffX > 0) {
+        // Swiped left -> next photo
+        setPreviewEnlargedPhoto(prev => prev ? { 
+          ...prev, 
+          index: (prev.index + 1) % prev.photos.length,
+          title: `Foto ${((prev.index + 1) % prev.photos.length) + 1} de ${prev.photos.length}`
+        } : null);
+      } else {
+        // Swiped right -> prev photo
+        setPreviewEnlargedPhoto(prev => prev ? { 
+          ...prev, 
+          index: (prev.index - 1 + prev.photos.length) % prev.photos.length,
+          title: `Foto ${((prev.index - 1 + prev.photos.length) % prev.photos.length) + 1} de ${prev.photos.length}`
+        } : null);
+      }
+    }
+  };
+
+  const handleMouseDown = (e: React.MouseEvent) => {
+    mouseStartX.current = e.clientX;
+  };
+
+  const handleMouseUp = (e: React.MouseEvent) => {
+    if (mouseStartX.current === null) return;
+    if (!previewEnlargedPhoto || previewEnlargedPhoto.photos.length <= 1) return;
+    const diffX = mouseStartX.current - e.clientX;
+    mouseStartX.current = null;
+    if (Math.abs(diffX) > 30) {
+      if (diffX > 0) {
+        setPreviewEnlargedPhoto(prev => prev ? { 
+          ...prev, 
+          index: (prev.index + 1) % prev.photos.length,
+          title: `Foto ${((prev.index + 1) % prev.photos.length) + 1} de ${prev.photos.length}`
+        } : null);
+      } else {
+        setPreviewEnlargedPhoto(prev => prev ? { 
+          ...prev, 
+          index: (prev.index - 1 + prev.photos.length) % prev.photos.length,
+          title: `Foto ${((prev.index - 1 + prev.photos.length) % prev.photos.length) + 1} de ${prev.photos.length}`
+        } : null);
+      }
+    }
+  };
+
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (!previewEnlargedPhoto) return;
+      if (e.key === 'ArrowRight' && previewEnlargedPhoto.photos.length > 1) {
+        setPreviewEnlargedPhoto(prev => prev ? { 
+          ...prev, 
+          index: (prev.index + 1) % previewEnlargedPhoto.photos.length,
+          title: `Foto ${((prev.index + 1) % previewEnlargedPhoto.photos.length) + 1} de ${previewEnlargedPhoto.photos.length}`
+        } : null);
+      } else if (e.key === 'ArrowLeft' && previewEnlargedPhoto.photos.length > 1) {
+        setPreviewEnlargedPhoto(prev => prev ? { 
+          ...prev, 
+          index: (prev.index - 1 + previewEnlargedPhoto.photos.length) % previewEnlargedPhoto.photos.length,
+          title: `Foto ${((prev.index - 1 + previewEnlargedPhoto.photos.length) % previewEnlargedPhoto.photos.length) + 1} de ${previewEnlargedPhoto.photos.length}`
+        } : null);
+      } else if (e.key === 'Escape') {
+        setPreviewEnlargedPhoto(null);
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [previewEnlargedPhoto]);
 
   // WhatsApp share Vistoria states
   const [sharingVistoria, setSharingVistoria] = useState<Vistoria | null>(null);
@@ -609,16 +733,34 @@ export const VehicleCard: React.FC<VehicleCardProps> = ({
   const [vistoriaReturnLink, setVistoriaReturnLink] = useState<string>(() => {
     const saved = localStorage.getItem('fleet_vistoria_return_link');
     if (saved && !saved.includes('jotform.com') && !saved.includes('sua-vistoria')) return saved;
-    // Default to this application's domain with the vistoria_retorno mode parameter
-    const base = window.location.origin + window.location.pathname;
-    const defaultUrl = `${base}?mode=vistoria_retorno`;
+    const defaultUrl = `${window.location.origin}/upload-receipt`;
     localStorage.setItem('fleet_vistoria_return_link', defaultUrl);
     return defaultUrl;
   });
 
+  const availableChecklistItems = (checklistConfig && checklistConfig.length > 0)
+    ? checklistConfig
+    : DEFAULT_CHECKLIST_ITEMS;
+
+  const [selectedRequestItems, setSelectedRequestItems] = useState<string[]>(() => {
+    return (checklistConfig && checklistConfig.length > 0) ? [...checklistConfig] : [...DEFAULT_CHECKLIST_ITEMS];
+  });
+
+  useEffect(() => {
+    if (checklistConfig && checklistConfig.length > 0) {
+      setSelectedRequestItems(prev => prev.length === 0 ? [...checklistConfig] : prev);
+    }
+  }, [checklistConfig]);
+
   const [templateSavedStatus, setTemplateSavedStatus] = useState<string | null>(null);
 
-  const formatTemplateText = (templateText: string, isShare: boolean, v: Vistoria | null, reqType?: string) => {
+  const formatTemplateText = (
+    templateText: string,
+    isShare: boolean,
+    v: Vistoria | null,
+    reqType?: string,
+    itemsParam?: string[]
+  ) => {
     let text = templateText;
     const typeToUse = reqType || requestVistoriaType || 'Periódica';
     
@@ -626,8 +768,13 @@ export const VehicleCard: React.FC<VehicleCardProps> = ({
     const plateStr = vehicle.plate;
     const driverStr = vehicle.driver || (isShare ? 'Não definido' : 'Locatário');
     
+    const itemsToUse = itemsParam !== undefined ? itemsParam : selectedRequestItems;
+    const itemsQueryParam = itemsToUse && itemsToUse.length > 0
+      ? `&items=${encodeURIComponent(itemsToUse.join(','))}`
+      : '';
+
     const separator = vistoriaReturnLink.includes('?') ? '&' : '?';
-    const returnUrlWithPlaca = `${vistoriaReturnLink}${separator}placa=${encodeURIComponent(vehicle.plate)}&brand=${encodeURIComponent(vehicle.brand)}&model=${encodeURIComponent(vehicle.model)}&driver=${encodeURIComponent(vehicle.driver || '')}&type=${encodeURIComponent(typeToUse)}&deadline=${encodeURIComponent(vehicle.nextVistoriaDate || '')}`;
+    const returnUrlWithPlaca = `${vistoriaReturnLink}${separator}placa=${encodeURIComponent(vehicle.plate)}&brand=${encodeURIComponent(vehicle.brand)}&model=${encodeURIComponent(vehicle.model)}&driver=${encodeURIComponent(vehicle.driver || '')}&type=${encodeURIComponent(typeToUse)}&deadline=${encodeURIComponent(vehicle.nextVistoriaDate || '')}${itemsQueryParam}`;
 
     text = text.replace(/{veiculo}/g, veiculoStr);
     text = text.replace(/{placa}/g, plateStr);
@@ -636,21 +783,10 @@ export const VehicleCard: React.FC<VehicleCardProps> = ({
     text = text.replace(/{link_retorno}/g, returnUrlWithPlaca);
     
     if (isShare && v) {
-      const checklistText = Object.entries({
-        pneusEstepe: 'Pneus e estepe',
-        faroisLanternas: 'Faróis e lanternas',
-        estofadosBancos: 'Estofados e bancos',
-        pinturaLataria: 'Pintura e lataria',
-        documentosVeiculo: 'Documentos no veículo (CRLV)',
-        nivelBateria: 'Nível de combustível',
-        limpeza: 'Limpeza interna e externa',
-        trianguloMacaco: 'Triângulo e macaco',
-        painelLuzes: 'Painel sem luzes de alerta',
-        chavesControles: 'Chaves e controles',
-      })
-      .filter(([key]) => Boolean(v.checklist[key as keyof typeof v.checklist]))
-      .map(([_, label]) => `✅ ${label}`)
-      .join('\n') || 'Nenhum item marcado';
+      const checklistText = Object.entries(v.checklist || {})
+        .filter(([_, isOk]) => Boolean(isOk))
+        .map(([label]) => `✅ ${label}`)
+        .join('\n') || 'Nenhum item marcado';
       
       const formattedDate = new Date(v.date + 'T12:00:00').toLocaleDateString('pt-BR');
       const notesText = v.notes || 'Nenhuma';
@@ -665,6 +801,21 @@ export const VehicleCard: React.FC<VehicleCardProps> = ({
         ? `📅 *Realizar até a data:* ${new Date(vehicle.nextVistoriaDate + 'T12:00:00').toLocaleDateString('pt-BR')}`
         : '';
       text = text.replace(/{prazo}/g, deadlineStr ? `\n⚠️ *Atenção:* ${deadlineStr}\n` : '');
+
+      const itemsListFormatted = (itemsToUse && itemsToUse.length > 0)
+        ? itemsToUse.map(item => `- ${item}`).join('\n')
+        : '- (Nenhum item específico marcado)';
+
+      if (text.includes('{itens_inspecao}')) {
+        text = text.replace(/{itens_inspecao}/g, itemsListFormatted);
+      } else if (text.includes('*Itens a serem inspecionados:*')) {
+        text = text.replace(
+          /\*Itens a serem inspecionados:\*[\s\S]*?(?=\n\s*📸|\n\s*---|\n\s*🔗|$)/,
+          `*Itens a serem inspecionados:*\n${itemsListFormatted}\n`
+        );
+      } else if (text.includes('📸 *RETORNO COM FOTOS:*')) {
+        text = text.replace('📸 *RETORNO COM FOTOS:*', `*Itens a serem inspecionados:*\n${itemsListFormatted}\n\n📸 *RETORNO COM FOTOS:*`);
+      }
     }
     
     return text;
@@ -681,8 +832,12 @@ export const VehicleCard: React.FC<VehicleCardProps> = ({
     const plateStr = vehicle.plate;
     const driverStr = vehicle.driver || (isShare ? 'Não definido' : 'Locatário');
     
+    const itemsQueryParam = selectedRequestItems && selectedRequestItems.length > 0
+      ? `&items=${encodeURIComponent(selectedRequestItems.join(','))}`
+      : '';
+
     const separator = vistoriaReturnLink.includes('?') ? '&' : '?';
-    const returnUrlWithPlaca = `${vistoriaReturnLink}${separator}placa=${encodeURIComponent(vehicle.plate)}&brand=${encodeURIComponent(vehicle.brand)}&model=${encodeURIComponent(vehicle.model)}&driver=${encodeURIComponent(vehicle.driver || '')}&type=${encodeURIComponent(requestVistoriaType)}&deadline=${encodeURIComponent(vehicle.nextVistoriaDate || '')}`;
+    const returnUrlWithPlaca = `${vistoriaReturnLink}${separator}placa=${encodeURIComponent(vehicle.plate)}&brand=${encodeURIComponent(vehicle.brand)}&model=${encodeURIComponent(vehicle.model)}&driver=${encodeURIComponent(vehicle.driver || '')}&type=${encodeURIComponent(requestVistoriaType)}&deadline=${encodeURIComponent(vehicle.nextVistoriaDate || '')}${itemsQueryParam}`;
 
     // Replace return URL first
     template = template.replace(new RegExp(escapeRegExp(returnUrlWithPlaca), 'g'), '{link_retorno}');
@@ -706,21 +861,8 @@ export const VehicleCard: React.FC<VehicleCardProps> = ({
       template = template.replace(new RegExp(escapeRegExp(formattedDate), 'g'), '{data}');
       template = template.replace(new RegExp(escapeRegExp(notesText), 'g'), '{observacoes}');
       
-      // Replace checklist
-      const checklistText = Object.entries({
-        pneusEstepe: 'Pneus e estepe',
-        faroisLanternas: 'Faróis e lanternas',
-        estofadosBancos: 'Estofados e bancos',
-        pinturaLataria: 'Pintura e lataria',
-        documentosVeiculo: 'Documentos no veículo (CRLV)',
-        nivelBateria: 'Nível de combustível',
-        limpeza: 'Limpeza interna e externa',
-        trianguloMacaco: 'Triângulo e macaco',
-        painelLuzes: 'Painel sem luzes de alerta',
-        chavesControles: 'Chaves e controles',
-      }).map(([key, label]) => {
-        const isOk = v.checklist[key as keyof typeof v.checklist];
-        return `${isOk ? '✅' : '❌'} ${label}`;
+      const checklistText = Object.entries(v.checklist || {}).map(([key, isOk]) => {
+        return `${isOk ? '✅' : '❌'} ${key}`;
       }).join('\n');
       
       template = template.replace(new RegExp(escapeRegExp(checklistText), 'g'), '{checklist}');
@@ -734,6 +876,13 @@ export const VehicleCard: React.FC<VehicleCardProps> = ({
         template = template.replace(new RegExp(escapeRegExp(`\n⚠️ *Atenção:* ${deadlineStr}\n`), 'g'), '{prazo}');
         template = template.replace(new RegExp(escapeRegExp(deadlineStr), 'g'), '{prazo}');
       }
+
+      const itemsFormatted = (selectedRequestItems && selectedRequestItems.length > 0)
+        ? selectedRequestItems.map(i => `- ${i}`).join('\n')
+        : '';
+      if (itemsFormatted && template.includes(itemsFormatted)) {
+        template = template.replace(new RegExp(escapeRegExp(itemsFormatted), 'g'), '{itens_inspecao}');
+      }
     }
     
     const key = isShare ? 'fleet_vistoria_share_template' : 'fleet_vistoria_request_template';
@@ -741,6 +890,32 @@ export const VehicleCard: React.FC<VehicleCardProps> = ({
     
     setTemplateSavedStatus('Modelo salvo como padrão!');
     setTimeout(() => setTemplateSavedStatus(null), 3000);
+  };
+
+  const handleToggleRequestItem = (item: string) => {
+    const nextSelected = selectedRequestItems.includes(item)
+      ? selectedRequestItems.filter(i => i !== item)
+      : [...selectedRequestItems, item];
+    
+    setSelectedRequestItems(nextSelected);
+
+    const savedTemplate = localStorage.getItem('fleet_vistoria_request_template') || DEFAULT_REQUEST_TEMPLATE;
+    const formatted = formatTemplateText(savedTemplate, false, null, requestVistoriaType, nextSelected);
+    setCustomVistoriaMsgText(formatted);
+  };
+
+  const handleSelectAllRequestItems = () => {
+    setSelectedRequestItems([...availableChecklistItems]);
+    const savedTemplate = localStorage.getItem('fleet_vistoria_request_template') || DEFAULT_REQUEST_TEMPLATE;
+    const formatted = formatTemplateText(savedTemplate, false, null, requestVistoriaType, availableChecklistItems);
+    setCustomVistoriaMsgText(formatted);
+  };
+
+  const handleDeselectAllRequestItems = () => {
+    setSelectedRequestItems([]);
+    const savedTemplate = localStorage.getItem('fleet_vistoria_request_template') || DEFAULT_REQUEST_TEMPLATE;
+    const formatted = formatTemplateText(savedTemplate, false, null, requestVistoriaType, []);
+    setCustomVistoriaMsgText(formatted);
   };
 
   // Formatter for Currency
@@ -869,6 +1044,24 @@ export const VehicleCard: React.FC<VehicleCardProps> = ({
 
   // Handle inline updates
   const handleUpdateField = (field: keyof Vehicle, val: any) => {
+    if (field === 'preventiveMaintCurrentKm') {
+      const numVal = Number(val) || 0;
+      onUpdateVehicle({
+        ...vehicle,
+        preventiveMaintCurrentKm: numVal,
+        currentKm: numVal
+      });
+      return;
+    }
+    if (field === 'currentKm') {
+      const numVal = Number(val) || 0;
+      onUpdateVehicle({
+        ...vehicle,
+        currentKm: numVal,
+        preventiveMaintCurrentKm: numVal
+      });
+      return;
+    }
     onUpdateVehicle({
       ...vehicle,
       [field]: val,
@@ -895,6 +1088,41 @@ export const VehicleCard: React.FC<VehicleCardProps> = ({
 
     setNewPaymentAmount(0);
     setShowAddPayment(false);
+  };
+
+  const handleApproveReceipt = (receipt: { id: string; date: string; amount?: number; photoUrl: string; notes?: string; driverName?: string }) => {
+    const amountToUse = receipt.amount || vehicle.valorSemanal || 0;
+    const newPayment = {
+      id: `pay-${Date.now()}`,
+      date: receipt.date || new Date().toISOString().split('T')[0],
+      amount: amountToUse
+    };
+    const newDoc = {
+      id: `doc-receipt-${Date.now()}`,
+      name: `Comprovante Pix - ${new Date(receipt.date + 'T12:00:00').toLocaleDateString('pt-BR')} (R$ ${amountToUse.toLocaleString('pt-BR', {minimumFractionDigits: 2})})`,
+      category: 'Comprovante de Pagamento',
+      uploadDate: receipt.date,
+      fileSize: 'Comprovante Digital',
+      fileType: 'image',
+      contentUrl: receipt.photoUrl
+    };
+
+    const updatedPayments = [...(vehicle.weeklyPayments || []), newPayment];
+    const updatedDocs = [newDoc, ...(vehicle.documents || [])];
+    const updatedPending = (vehicle.pendingReceipts || []).filter(r => r.id !== receipt.id);
+    const updatedValorRecebido = vehicle.valorRecebido + amountToUse;
+
+    onUpdateVehicle({
+      ...vehicle,
+      weeklyPayments: updatedPayments,
+      documents: updatedDocs,
+      pendingReceipts: updatedPending,
+      valorRecebido: updatedValorRecebido
+    });
+
+    sendAppNotification(`✅ Comprovante Aprovado: ${vehicle.brand} (${vehicle.plate})`, {
+      body: `Pagamento de R$ ${amountToUse.toLocaleString('pt-BR', { minimumFractionDigits: 2 })} aprovado e anexado aos documentos.`,
+    });
   };
 
   const handleDeletePayment = (id: string) => {
@@ -961,20 +1189,42 @@ export const VehicleCard: React.FC<VehicleCardProps> = ({
         return;
       }
       const finalDesc = newExpenseDesc.trim() || 'Despesa Fixa';
+      const dateToUse = newExpenseDate || new Date().toISOString().split('T')[0];
+      const monthToUse = dateToUse.slice(0, 7);
+
       let monthlyVal = newExpenseAmount;
+      let parcelasTotais: number | undefined = undefined;
+      let parcelasPagas: number | undefined = undefined;
+
       if (isExpenseParcelado && expenseInstallments > 1) {
+        parcelasTotais = Math.min(Math.max(Number(expenseInstallments) || 2, 2), 60);
+        parcelasPagas = 1;
         monthlyVal = expenseInstallmentMode === 'total'
-          ? Math.round((newExpenseAmount / expenseInstallments) * 100) / 100
+          ? Math.round((newExpenseAmount / parcelasTotais) * 100) / 100
           : newExpenseAmount;
       }
+
+      const newExtraItem = {
+        id: 'exp_' + Date.now(),
+        label: finalDesc,
+        value: monthlyVal,
+        parcelasPagas,
+        parcelasTotais,
+        startDate: monthToUse,
+      };
+
+      const updatedExtraExpenses = [...(vehicle.extraExpenses || []), newExtraItem];
+
       onUpdateVehicle({
         ...vehicle,
-        custoExtra: monthlyVal,
-        custoExtraLabel: finalDesc,
+        extraExpenses: updatedExtraExpenses,
+        custoExtra: updatedExtraExpenses.reduce((sum, exp) => sum + (exp.value || 0), 0),
+        custoExtraLabel: updatedExtraExpenses[0]?.label || 'Outras Despesas',
       });
       setNewExpenseDesc('');
       setNewExpenseAmount(0);
       setIsExpenseParcelado(false);
+      setExpenseInstallments(2);
       setShowAddExpense(false);
     } else {
       handleAddExpense();
@@ -1156,8 +1406,13 @@ export const VehicleCard: React.FC<VehicleCardProps> = ({
       }
       setWhatsappVistoriaPhone(rawPhone);
 
+      const itemsToUse = selectedRequestItems.length > 0 ? selectedRequestItems : availableChecklistItems;
+      if (selectedRequestItems.length === 0) {
+        setSelectedRequestItems([...availableChecklistItems]);
+      }
+
       const savedTemplate = localStorage.getItem('fleet_vistoria_request_template') || DEFAULT_REQUEST_TEMPLATE;
-      const formatted = formatTemplateText(savedTemplate, false, null, requestVistoriaType);
+      const formatted = formatTemplateText(savedTemplate, false, null, requestVistoriaType, itemsToUse);
       setCustomVistoriaMsgText(formatted);
     }
   };
@@ -1272,8 +1527,42 @@ export const VehicleCard: React.FC<VehicleCardProps> = ({
   };
 
   // Vistoria operations
-  const handleAddVistoriaSubmit = () => {
+  const handleSendVistoriaWhatsApp = (v: Vistoria) => {
+    const checklistText = Object.entries(v.checklist)
+      .map(([key, isOk]) => `${isOk ? '✅' : '❌'} ${key}`)
+      .join('\n') || 'Nenhum item registrado';
+    
+    const kmText = v.km ? `${v.km.toLocaleString('pt-BR')} KM` : 'Não informado';
+    
+    const message = `✅ *LAUDO DE VISTORIA CONCLUÍDO*
+📌 *Tipo:* ${v.type || 'Vistoria'}
+
+🚗 *Veículo:* ${vehicle.brand} ${vehicle.model}
+🏷️ *Placa:* ${vehicle.plate}
+👤 *Motorista:* ${vehicle.driver || 'Não definido'}
+📅 *Data:* ${new Date(v.date + 'T12:00:00').toLocaleDateString('pt-BR')}
+⏱️ *Odômetro:* ${kmText}
+
+*RESULTADO DO CHECKLIST:*
+${checklistText}
+
+⚠️ *Observações:* ${v.notes || 'Nenhuma'}
+📸 *Fotos:* ${v.photos?.length || 0} fotos registradas no laudo.
+
+---
+_Enviado via sistema de gestão de frota._`;
+
+    const phone = vehicle.driverPhone?.replace(/\D/g, '') || '';
+    const encodedMessage = encodeURIComponent(message);
+    window.open(`https://wa.me/${phone ? `55${phone}` : ''}?text=${encodedMessage}`, '_blank');
+  };
+
+  const handleAddVistoriaSubmit = async () => {
     if (!onSaveVistoria) return;
+    const parsedKm = (newVistoriaKm !== undefined && newVistoriaKm !== '' && !isNaN(Number(newVistoriaKm)) && Number(newVistoriaKm) >= 0)
+      ? Number(newVistoriaKm)
+      : undefined;
+
     const newVistoria: Vistoria = {
       id: `vistoria-${Date.now()}`,
       vehicleId: vehicle.id,
@@ -1282,25 +1571,43 @@ export const VehicleCard: React.FC<VehicleCardProps> = ({
       checklist: { ...newVistoriaChecklist },
       photos: [...newVistoriaPhotos],
       notes: newVistoriaNotes,
+      km: parsedKm
     };
-    onSaveVistoria(newVistoria);
+
+    // Generate PDF for manual vistoria too
+    let pdfUrl = '';
+    let pdfName = '';
+    try {
+      const { pdfDataUrl, fileName } = await generateVistoriaPDF(vehicle, newVistoria);
+      pdfUrl = pdfDataUrl;
+      pdfName = fileName;
+    } catch (err) {
+      console.error('Error generating PDF for manual vistoria:', err);
+    }
+
+    onSaveVistoria(newVistoria, pdfUrl, pdfName);
+
+    // After saving, send via WhatsApp
+    handleSendVistoriaWhatsApp(newVistoria);
+
+    if (parsedKm !== undefined && parsedKm > 0 && onUpdateVehicle) {
+      onUpdateVehicle({
+        ...vehicle,
+        currentKm: parsedKm,
+        preventiveMaintCurrentKm: parsedKm
+      });
+    }
 
     // Reset form
     setShowAddVistoria(false);
     setNewVistoriaPhotos([]);
     setNewVistoriaNotes('');
-    setNewVistoriaChecklist({
-      pneusEstepe: true,
-      faroisLanternas: true,
-      estofadosBancos: true,
-      pinturaLataria: true,
-      documentosVeiculo: true,
-      nivelBateria: true,
-      limpeza: true,
-      trianguloMacaco: true,
-      painelLuzes: true,
-      chavesControles: true,
+    setNewVistoriaKm(parsedKm || vehicle.currentKm || '');
+    const resetChecklist: Record<string, boolean> = {};
+    availableChecklistItems.forEach(item => {
+      resetChecklist[item] = true;
     });
+    setNewVistoriaChecklist(resetChecklist);
   };
 
   // Determine colors based on fuel levels
@@ -1315,6 +1622,65 @@ export const VehicleCard: React.FC<VehicleCardProps> = ({
   const maintNextKm = vehicle.preventiveMaintNextKm || 0;
   const isMaintClose = maintNextKm > 0 && (maintNextKm - maintCurrentKm <= 1000);
   const isMaintOverdue = maintNextKm > 0 && (maintCurrentKm >= maintNextKm);
+
+  // Indicador de Saúde do Veículo baseado na proximidade da quilometragem da próxima revisão preventiva
+  const getVehicleHealth = () => {
+    if (!maintNextKm || maintNextKm <= 0) {
+      return {
+        status: 'green' as const,
+        colorClass: 'bg-emerald-500',
+        glowClass: 'shadow-[0_0_8px_rgba(16,185,129,0.7)]',
+        borderClass: 'border-emerald-500/30',
+        bgClass: 'bg-emerald-500/10 text-emerald-400',
+        dotRing: 'ring-emerald-500/25',
+        titleText: 'Saúde: Boa',
+        detailText: 'Em dia',
+        tooltip: 'Revisão preventiva em dia (sem pendências cadastradas)'
+      };
+    }
+
+    const diffKm = maintNextKm - maintCurrentKm;
+
+    if (diffKm <= 0) {
+      return {
+        status: 'red' as const,
+        colorClass: 'bg-rose-500',
+        glowClass: 'shadow-[0_0_10px_rgba(244,63,94,0.9)]',
+        borderClass: 'border-rose-500/40',
+        bgClass: 'bg-rose-500/15 text-rose-300',
+        dotRing: 'ring-rose-500/40',
+        titleText: 'Saúde: Crítica',
+        detailText: `Vencida há ${Math.abs(diffKm).toLocaleString('pt-BR')} KM`,
+        tooltip: `🚨 Revisão preventiva VENCIDA há ${Math.abs(diffKm).toLocaleString('pt-BR')} KM! Limite era ${maintNextKm.toLocaleString('pt-BR')} KM e atual é ${maintCurrentKm.toLocaleString('pt-BR')} KM.`
+      };
+    } else if (diffKm <= 1000) {
+      return {
+        status: 'yellow' as const,
+        colorClass: 'bg-amber-400',
+        glowClass: 'shadow-[0_0_10px_rgba(251,191,36,0.8)]',
+        borderClass: 'border-amber-500/40',
+        bgClass: 'bg-amber-500/15 text-amber-300',
+        dotRing: 'ring-amber-500/40',
+        titleText: 'Saúde: Atenção',
+        detailText: `Faltam ${diffKm.toLocaleString('pt-BR')} KM`,
+        tooltip: `⚠️ Revisão preventiva PRÓXIMA! Faltam apenas ${diffKm.toLocaleString('pt-BR')} KM para atingir o limite de ${maintNextKm.toLocaleString('pt-BR')} KM.`
+      };
+    } else {
+      return {
+        status: 'green' as const,
+        colorClass: 'bg-emerald-500',
+        glowClass: 'shadow-[0_0_8px_rgba(16,185,129,0.7)]',
+        borderClass: 'border-emerald-500/30',
+        bgClass: 'bg-emerald-500/10 text-emerald-400',
+        dotRing: 'ring-emerald-500/25',
+        titleText: 'Saúde: Boa',
+        detailText: `Faltam ${diffKm.toLocaleString('pt-BR')} KM`,
+        tooltip: `✅ Revisão preventiva EM DIA! Faltam ${diffKm.toLocaleString('pt-BR')} KM para a próxima revisão em ${maintNextKm.toLocaleString('pt-BR')} KM.`
+      };
+    }
+  };
+
+  const vehicleHealth = getVehicleHealth();
 
   // Vistoria deadline warning calculation
   const getVistoriaDaysStatus = () => {
@@ -1337,6 +1703,35 @@ export const VehicleCard: React.FC<VehicleCardProps> = ({
     };
   };
 
+  const getCnhStatus = () => {
+    if (!vehicle.driverCnhExpiration) return null;
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const expDate = new Date(vehicle.driverCnhExpiration + 'T12:00:00');
+    expDate.setHours(0, 0, 0, 0);
+    
+    const diffTime = expDate.getTime() - today.getTime();
+    const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+    
+    return {
+      days: diffDays,
+      isExpired: diffDays <= 0,
+      isWarning: diffDays > 0 && diffDays <= 30,
+      formattedDate: expDate.toLocaleDateString('pt-BR')
+    };
+  };
+
+  const getTireStatus = (installedKm: number) => {
+    const diff = (vehicle.currentKm || 0) - installedKm;
+    return {
+      kmTraveled: diff,
+      needsRotation: diff >= 10000,
+      needsReplacement: diff >= 40000,
+      isWarning: diff >= 35000
+    };
+  };
+
+  const cnhStatus = getCnhStatus();
   const vistoriaStatus = getVistoriaDaysStatus();
 
   const handleNavToAgenda = (e: React.MouseEvent) => {
@@ -1367,6 +1762,26 @@ export const VehicleCard: React.FC<VehicleCardProps> = ({
         <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 min-w-0">
           <div className="flex-1 min-w-0 w-full sm:w-auto">
             <div className="flex items-center gap-2 flex-wrap">
+              {/* Indicador Visual de 'Saúde' (Círculo colorido: verde, amarelo, vermelho) */}
+              <button
+                type="button"
+                onClick={handleNavToAgenda}
+                className={`flex items-center gap-1.5 px-2.5 py-0.5 rounded-full border text-[11px] font-semibold transition-all cursor-pointer shadow-xs ${vehicleHealth.bgClass} ${vehicleHealth.borderClass} hover:brightness-125`}
+                title={`${vehicleHealth.tooltip} (Clique para abrir a Agenda de Revisão)`}
+              >
+                <span className="relative flex h-2.5 w-2.5 shrink-0 items-center justify-center">
+                  {vehicleHealth.status === 'red' && (
+                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-rose-400 opacity-75"></span>
+                  )}
+                  {vehicleHealth.status === 'yellow' && (
+                    <span className="animate-pulse absolute inline-flex h-full w-full rounded-full bg-amber-400 opacity-75"></span>
+                  )}
+                  <span className={`relative inline-flex rounded-full h-2.5 w-2.5 ${vehicleHealth.colorClass} ${vehicleHealth.glowClass} ring-2 ${vehicleHealth.dotRing}`}></span>
+                </span>
+                <span className="font-bold">{vehicleHealth.titleText}</span>
+                <span className="opacity-80 text-[10px] font-mono font-normal hidden sm:inline">({vehicleHealth.detailText})</span>
+              </button>
+
               <span className="text-xs font-semibold px-2 py-0.5 bg-zinc-800 text-zinc-200 rounded-md tracking-wider font-mono border border-zinc-700/60">
                 {vehicle.plate}
               </span>
@@ -1406,6 +1821,37 @@ export const VehicleCard: React.FC<VehicleCardProps> = ({
                   </span>
                 </button>
               )}
+              {cnhStatus && (cnhStatus.isExpired || cnhStatus.isWarning) && (
+                <div 
+                  className={`flex items-center gap-1 text-[10px] font-semibold ${cnhStatus.isExpired ? 'bg-rose-500/15 text-rose-400 border-rose-500/30' : 'bg-amber-500/10 text-amber-300 border-amber-500/25'} px-2 py-0.5 rounded-md border transition-all animate-pulse`}
+                  title={cnhStatus.isExpired ? `CNH VENCIDA em ${cnhStatus.formattedDate}!` : `CNH Vence em ${cnhStatus.days} dias (${cnhStatus.formattedDate})`}
+                >
+                  <ShieldCheck className="w-3 h-3 shrink-0" />
+                  <span>CNH {cnhStatus.isExpired ? 'VENCIDA' : 'EXPIRANDO'}</span>
+                </div>
+              )}
+              {(() => {
+                const tireIssues = (vehicle.tires || []).map(t => getTireStatus(t.installedKm));
+                const needsReplacement = tireIssues.some(s => s.needsReplacement);
+                const needsRotation = tireIssues.some(s => s.needsRotation);
+                if (!needsReplacement && !needsRotation) return null;
+                
+                return (
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setIsExpanded(true);
+                      setActiveTab('pneus');
+                    }}
+                    className={`flex items-center gap-1 text-[10px] font-semibold ${needsReplacement ? 'bg-rose-500/15 text-rose-400 border-rose-500/30' : 'bg-amber-500/10 text-amber-300 border-amber-500/25'} px-2 py-0.5 rounded-md border transition-all cursor-pointer`}
+                    title={needsReplacement ? 'Pneus precisam de TROCA!' : 'Pneus precisam de RODÍZIO!'}
+                  >
+                    <Gauge className="w-3 h-3 shrink-0" />
+                    <span>PNEUS: {needsReplacement ? 'TROCAR' : 'RODÍZIO'}</span>
+                  </button>
+                );
+              })()}
               {revCountdown && revCountdown.isWithin3Days && (
                 <button
                   type="button"
@@ -1476,6 +1922,98 @@ export const VehicleCard: React.FC<VehicleCardProps> = ({
                 <span className="hidden sm:inline">Finalizar Contrato</span>
               </button>
             )}
+
+            {/* History Popover Button */}
+            <div className="relative" ref={historyRef}>
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setShowHistoryPopover(!showHistoryPopover);
+                }}
+                className={`p-2 rounded-xl transition-all cursor-pointer ${showHistoryPopover ? 'bg-blue-500/20 text-blue-400' : 'text-gray-400 hover:text-blue-400 hover:bg-blue-500/10'}`}
+                title="Ver últimas vistorias"
+                id={`btn-history-${vehicle.id}`}
+              >
+                <History className="w-4 h-4" />
+              </button>
+              
+              {showHistoryPopover && (
+                <div 
+                  className="absolute right-0 top-full mt-2 w-64 bg-[#1a1a1a] border border-white/10 rounded-xl shadow-2xl z-[60] p-3 overflow-hidden animate-in fade-in zoom-in duration-200"
+                  onClick={(e) => e.stopPropagation()}
+                >
+                  <div className="flex items-center justify-between mb-3 px-1">
+                    <h4 className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">Últimas 3 Vistorias</h4>
+                    <History className="w-3 h-3 text-gray-600" />
+                  </div>
+                  
+                  <div className="space-y-2">
+                    {vehicleVistorias && vehicleVistorias.length > 0 ? (
+                      [...vehicleVistorias]
+                        .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
+                        .slice(0, 3)
+                        .map((v) => (
+                          <div 
+                            key={v.id} 
+                            className="p-2 bg-white/[0.03] border border-white/5 rounded-lg hover:bg-white/[0.06] hover:border-blue-500/30 transition-all cursor-pointer group"
+                            onClick={() => {
+                              setIsExpanded(true);
+                              setActiveTab('vistorias');
+                              setExpandedVistoriaId(v.id);
+                              setShowHistoryPopover(false);
+                              // Smooth scroll to vistorias section after expansion
+                              setTimeout(() => {
+                                const el = document.getElementById(`vistoria-item-${v.id}`);
+                                if (el) el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                              }, 300);
+                            }}
+                          >
+                            <div className="flex justify-between items-center mb-1">
+                              <span className="text-[10px] font-bold text-blue-400">{v.type || 'Vistoria'}</span>
+                              <span className="text-[9px] text-gray-500 font-mono">
+                                {new Date(v.date + 'T12:00:00').toLocaleDateString('pt-BR')}
+                              </span>
+                            </div>
+                            <div className="flex items-center gap-1.5">
+                              <Gauge className="w-3 h-3 text-gray-500" />
+                              <span className="text-[11px] text-gray-300 font-medium">
+                                {v.km ? `${v.km.toLocaleString('pt-BR')} KM` : 'KM não inf.'}
+                              </span>
+                            </div>
+                            <div className="mt-1.5 flex items-center justify-between">
+                              <span className="text-[9px] text-gray-500 group-hover:text-blue-400/70 transition-colors">Ver detalhes</span>
+                              {v.photos && v.photos.length > 0 && (
+                                <span className="text-[9px] px-1.5 py-0.5 bg-zinc-800 text-zinc-400 rounded-md border border-zinc-700/50">
+                                  {v.photos.length} fotos
+                                </span>
+                              )}
+                            </div>
+                          </div>
+                        ))
+                    ) : (
+                      <div className="py-4 text-center">
+                        <p className="text-xs text-gray-500 italic">Nenhuma vistoria realizada.</p>
+                      </div>
+                    )}
+                  </div>
+                  
+                  {vehicleVistorias && vehicleVistorias.length > 3 && (
+                    <button 
+                      className="w-full mt-3 py-2 text-[10px] text-blue-400 hover:text-blue-300 font-bold border-t border-white/5 pt-3 transition-colors flex items-center justify-center gap-1.5"
+                      onClick={() => {
+                        setIsExpanded(true);
+                        setActiveTab('vistorias');
+                        setShowHistoryPopover(false);
+                      }}
+                    >
+                      <span>Ver histórico completo ({vehicleVistorias.length})</span>
+                      <ChevronDown className="w-3 h-3" />
+                    </button>
+                  )}
+                </div>
+              )}
+            </div>
 
             {/* Edit button */}
             <button
@@ -1611,6 +2149,35 @@ export const VehicleCard: React.FC<VehicleCardProps> = ({
                 {(vehicle.documents || []).length > 0 && (
                   <span className="text-[10px] bg-zinc-700 text-zinc-300 px-1.5 py-0.2 rounded-full font-mono">
                     {(vehicle.documents || []).length}
+                  </span>
+                )}
+              </button>
+              <button
+                type="button"
+                onClick={() => setActiveTab('pneus')}
+                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all whitespace-nowrap cursor-pointer ${
+                  activeTab === 'pneus'
+                    ? 'bg-zinc-800 text-white shadow-xs border border-zinc-700'
+                    : 'text-zinc-400 hover:text-zinc-200 hover:bg-white/5'
+                }`}
+              >
+                <Gauge className="w-3.5 h-3.5 text-orange-400/80" />
+                <span>Pneus</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setActiveTab('sinistros')}
+                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all whitespace-nowrap cursor-pointer ${
+                  activeTab === 'sinistros'
+                    ? 'bg-zinc-800 text-white shadow-xs border border-zinc-700'
+                    : 'text-zinc-400 hover:text-zinc-200 hover:bg-white/5'
+                }`}
+              >
+                <AlertTriangle className="w-3.5 h-3.5 text-rose-400/80" />
+                <span>Sinistros</span>
+                {sinistroLogs.length > 0 && (
+                  <span className="text-[10px] bg-zinc-700 text-zinc-300 px-1.5 py-0.2 rounded-full font-mono">
+                    {sinistroLogs.length}
                   </span>
                 )}
               </button>
@@ -1916,6 +2483,21 @@ export const VehicleCard: React.FC<VehicleCardProps> = ({
                             <span className="text-gray-300 text-xs font-bold">
                               {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(exp.value || 0)}
                             </span>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                const updated = (vehicle.extraExpenses || []).filter((e) => e.id !== exp.id);
+                                onUpdateVehicle({
+                                  ...vehicle,
+                                  extraExpenses: updated,
+                                  custoExtra: updated.reduce((s, e) => s + (e.value || 0), 0),
+                                });
+                              }}
+                              className="text-gray-500 hover:text-rose-400 transition-colors p-0.5 rounded cursor-pointer"
+                              title="Excluir esta despesa"
+                            >
+                              <Trash2 className="w-3 h-3" />
+                            </button>
                           </div>
                         </div>
                       </div>
@@ -2220,6 +2802,66 @@ export const VehicleCard: React.FC<VehicleCardProps> = ({
                   {formatBRL(sobra)}
                 </span>
               </div>
+
+              {/* Sugestão 3: Rentabilidade & ROI (Histórico Acumulado) */}
+              <div className="bg-blue-600/5 border border-blue-500/20 rounded-xl p-4 space-y-3 mt-4">
+                <div className="flex justify-between items-center border-b border-blue-500/10 pb-2">
+                  <span className="text-[10px] font-bold text-blue-400 uppercase tracking-wider flex items-center gap-1.5">
+                    <BarChart3 className="w-3.5 h-3.5" /> Rentabilidade & ROI (Total)
+                  </span>
+                </div>
+                
+                {(() => {
+                  const lifetimeRevenue = (vehicle.weeklyPayments || []).reduce((sum, p) => sum + (p.amount || 0), 0);
+                  const lifetimeMaint = maintenanceLogs.reduce((sum, log) => sum + (log.cost || 0), 0);
+                  const lifetimeExp = vehicleExpenses.reduce((sum, exp) => sum + (exp.cost || 0), 0);
+                  const lifetimeSinistro = sinistroLogs.reduce((sum, s) => sum + (s.repairCost || 0), 0);
+                  
+                  // Simple monthly cost projection for ROI (Fixed costs * months active)
+                  const start = new Date(vehicle.startDate || '2026-01-01');
+                  const now = new Date();
+                  const monthsDiff = Math.max(1, (now.getFullYear() - start.getFullYear()) * 12 + (now.getMonth() - start.getMonth()));
+                  
+                  const lifetimeFixedCosts = (financiamento + seguro + ipva + manutencaoPreventiva) * monthsDiff;
+                  const totalLifetimeCosts = lifetimeMaint + lifetimeExp + lifetimeSinistro + lifetimeFixedCosts;
+                  const netLifetimeProfit = lifetimeRevenue - totalLifetimeCosts;
+                  const roiPercent = totalLifetimeCosts > 0 ? (netLifetimeProfit / totalLifetimeCosts) * 100 : 0;
+
+                  return (
+                    <div className="space-y-3">
+                      <div className="grid grid-cols-2 gap-3">
+                        <div className="space-y-1">
+                          <p className="text-[9px] text-gray-500 uppercase font-bold">Receita Total</p>
+                          <p className="text-xs font-mono text-emerald-400 font-bold">{formatBRL(lifetimeRevenue)}</p>
+                        </div>
+                        <div className="space-y-1 text-right">
+                          <p className="text-[9px] text-gray-500 uppercase font-bold">Custo Total</p>
+                          <p className="text-xs font-mono text-rose-400 font-bold">{formatBRL(totalLifetimeCosts)}</p>
+                        </div>
+                      </div>
+                      
+                      <div className="p-2.5 bg-black/40 rounded-lg border border-white/5 flex justify-between items-center">
+                        <div className="space-y-0.5">
+                          <p className="text-[9px] text-gray-400 uppercase font-bold">ROI Acumulado</p>
+                          <p className={`text-sm font-black font-mono ${roiPercent >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
+                            {roiPercent.toFixed(1)}%
+                          </p>
+                        </div>
+                        <div className="text-right space-y-0.5">
+                          <p className="text-[9px] text-gray-400 uppercase font-bold">Lucro Líquido</p>
+                          <p className={`text-sm font-black font-mono ${netLifetimeProfit >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
+                            {formatBRL(netLifetimeProfit)}
+                          </p>
+                        </div>
+                      </div>
+                      
+                      <p className="text-[8px] text-gray-500 leading-tight italic">
+                        * O ROI é calculado somando todas as receitas (aluguéis) e subtraindo todos os custos (manutenção, fixos mensais e sinistros) desde {formatDateBR(vehicle.startDate)}.
+                      </p>
+                    </div>
+                  );
+                })()}
+              </div>
             </div>
 
             {/* Caução de Garantia Section (Escondido por padrão, expande ao clicar) */}
@@ -2333,6 +2975,50 @@ export const VehicleCard: React.FC<VehicleCardProps> = ({
           {/* TAB 2: Pagamentos Semanais */}
           {activeTab === 'pagamentos' && (
             <div className="space-y-4 animate-in fade-in duration-150">
+              {/* Comprovantes de Pagamento Pendentes */}
+              {vehicle.pendingReceipts && vehicle.pendingReceipts.length > 0 && (
+                <div className="p-3 bg-amber-950/20 border border-amber-500/30 rounded-xl space-y-2 mb-4">
+                  <div className="flex items-center justify-between pb-1.5 border-b border-amber-500/20">
+                    <span className="text-xs font-bold text-amber-300 flex items-center gap-1.5">
+                      <FileText className="w-3.5 h-3.5" />
+                      Comprovantes Pendentes de Aprovação ({vehicle.pendingReceipts.length})
+                    </span>
+                  </div>
+                  <div className="space-y-2">
+                    {vehicle.pendingReceipts.map(rec => (
+                      <div key={rec.id} className="bg-black/60 p-2.5 rounded-lg border border-amber-500/20 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2">
+                        <div className="flex items-center gap-2.5">
+                          {rec.photoUrl && (
+                            <img 
+                              src={rec.photoUrl} 
+                              alt="Comprovante" 
+                              className="w-12 h-12 object-cover rounded-md border border-white/20 cursor-pointer hover:scale-105 transition-transform"
+                              onClick={() => setPreviewEnlargedPhoto({ photos: [rec.photoUrl], index: 0, title: `Comprovante - ${rec.date}` })}
+                              title="Clique para ampliar"
+                            />
+                          )}
+                          <div>
+                            <p className="text-xs font-bold text-white">
+                              {rec.driverName || vehicle.driver || 'Locatário'} • R$ {(rec.amount || vehicle.valorSemanal || 0).toLocaleString('pt-BR', {minimumFractionDigits: 2})}
+                            </p>
+                            <p className="text-[10px] text-gray-400">
+                              Enviado em {new Date(rec.date + 'T12:00:00').toLocaleDateString('pt-BR')} {rec.notes ? `• "${rec.notes}"` : ''}
+                            </p>
+                          </div>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => handleApproveReceipt(rec)}
+                          className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg text-[11px] font-bold flex items-center gap-1 shadow-md shadow-emerald-500/20 transition-all cursor-pointer w-full sm:w-auto justify-center"
+                        >
+                          <Check className="w-3.5 h-3.5" /> Aprovar Comprovante
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
               {/* Weekly Payments Section */}
               <div className="bg-white/[0.02] p-4 rounded-xl border border-white/5 space-y-3 mb-4">
                 <div className="flex justify-between items-center text-xs pb-1.5 border-b border-white/5 flex-wrap gap-2">
@@ -3344,7 +4030,7 @@ export const VehicleCard: React.FC<VehicleCardProps> = ({
 
               {showAddVistoria && (
                 <div className="p-3 bg-neutral-900 rounded-lg border border-white/10 space-y-3 animate-in slide-in-from-top-1 duration-150">
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
                     <div>
                       <label className="text-[9px] text-gray-400 block mb-1 font-semibold uppercase tracking-wider">Tipo de Vistoria *</label>
                       <select
@@ -3366,30 +4052,33 @@ export const VehicleCard: React.FC<VehicleCardProps> = ({
                         className="w-full text-xs bg-black border border-white/10 rounded-md px-2.5 py-1.5 text-white focus:outline-hidden focus:border-purple-500/50 font-mono"
                       />
                     </div>
+                    <div>
+                      <label className="text-[9px] text-gray-400 block mb-1 font-semibold uppercase tracking-wider">Odômetro / KM *</label>
+                      <div className="relative flex items-center">
+                        <input
+                          type="number"
+                          min="0"
+                          placeholder="Ex: 50000"
+                          value={newVistoriaKm}
+                          onChange={(e) => setNewVistoriaKm(e.target.value)}
+                          className="w-full text-xs bg-black border border-white/10 rounded-md pl-2.5 pr-8 py-1.5 text-white focus:outline-hidden focus:border-emerald-500/50 font-mono font-bold"
+                        />
+                        <span className="absolute right-2 text-[10px] font-mono text-gray-500 font-bold select-none">KM</span>
+                      </div>
+                    </div>
                   </div>
 
                   {/* Checklist Items */}
                   <div className="space-y-1.5">
                     <label className="text-[9px] text-gray-400 block font-semibold uppercase tracking-wider">Itens de Inspeção</label>
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                      {Object.entries({
-                        pneusEstepe: 'Pneus e estepe',
-                        faroisLanternas: 'Faróis e lanternas',
-                        estofadosBancos: 'Estofados e bancos',
-                        pinturaLataria: 'Pintura e lataria',
-                        documentosVeiculo: 'Documentos no veículo (CRLV)',
-                        nivelBateria: 'Nível de combustível',
-                        limpeza: 'Limpeza interna e externa',
-                        trianguloMacaco: 'Triângulo e macaco',
-                        painelLuzes: 'Painel sem luzes de alerta',
-                        chavesControles: 'Chaves e controles',
-                      }).map(([key, label]) => {
-                        const isChecked = newVistoriaChecklist[key as keyof typeof newVistoriaChecklist];
+                      {availableChecklistItems.map((item) => {
+                        const isChecked = newVistoriaChecklist[item] ?? true;
                         return (
                           <button
-                            key={key}
+                            key={item}
                             type="button"
-                            onClick={() => setNewVistoriaChecklist(prev => ({ ...prev, [key]: !isChecked }))}
+                            onClick={() => setNewVistoriaChecklist(prev => ({ ...prev, [item]: !isChecked }))}
                             className={`flex items-center gap-2 p-2 rounded-lg border text-left transition-all ${
                               isChecked 
                                 ? 'bg-emerald-500/5 text-emerald-400 border-emerald-500/10' 
@@ -3401,7 +4090,7 @@ export const VehicleCard: React.FC<VehicleCardProps> = ({
                             ) : (
                               <Square className="w-4 h-4 shrink-0 text-rose-400" />
                             )}
-                            <span className="text-[11px] font-medium leading-none">{label}</span>
+                            <span className="text-[11px] font-medium leading-none">{item}</span>
                           </button>
                         );
                       })}
@@ -3480,18 +4169,11 @@ export const VehicleCard: React.FC<VehicleCardProps> = ({
                         setShowAddVistoria(false);
                         setNewVistoriaPhotos([]);
                         setNewVistoriaNotes('');
-                        setNewVistoriaChecklist({
-                          pneusEstepe: true,
-                          faroisLanternas: true,
-                          estofadosBancos: true,
-                          pinturaLataria: true,
-                          documentosVeiculo: true,
-                          nivelBateria: true,
-                          limpeza: true,
-                          trianguloMacaco: true,
-                          painelLuzes: true,
-                          chavesControles: true,
+                        const resetChecklist: Record<string, boolean> = {};
+                        availableChecklistItems.forEach(item => {
+                          resetChecklist[item] = true;
                         });
+                        setNewVistoriaChecklist(resetChecklist);
                       }}
                       className="px-2.5 py-1.5 text-gray-400 hover:text-white transition-colors"
                     >
@@ -3564,6 +4246,12 @@ export const VehicleCard: React.FC<VehicleCardProps> = ({
                                     {v.type}
                                   </span>
                                 )}
+                                {v.km !== undefined && v.km > 0 && (
+                                  <span className="text-[9px] font-mono font-bold px-1.5 py-0.5 rounded-sm bg-zinc-800 text-zinc-200 border border-zinc-700/60 flex items-center gap-1" title="Quilometragem registrada nesta vistoria">
+                                    <Gauge className="w-2.5 h-2.5 text-emerald-400" />
+                                    <span>{v.km.toLocaleString('pt-BR')} KM</span>
+                                  </span>
+                                )}
                                 <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded-sm ${
                                   isFullApproved 
                                     ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/10' 
@@ -3585,6 +4273,18 @@ export const VehicleCard: React.FC<VehicleCardProps> = ({
                                     <span>{v.photos.length} foto(s)</span>
                                   </button>
                                 )}
+                                <button
+                                  type="button"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    handleSendVistoriaWhatsApp(v);
+                                  }}
+                                  className="text-[9px] font-bold px-1.5 py-0.5 rounded-sm bg-emerald-500/15 text-emerald-400 border border-emerald-500/20 flex items-center gap-1 hover:bg-emerald-500/25 transition-colors cursor-pointer"
+                                  title="Enviar resumo desta vistoria via WhatsApp para o motorista"
+                                >
+                                  <MessageCircle className="w-2.5 h-2.5 text-emerald-400" />
+                                  <span>WhatsApp</span>
+                                </button>
                               </div>
                               {v.notes && (
                                 <p className="text-gray-400 text-[10px] mt-1 line-clamp-1 italic">{v.notes}</p>
@@ -3670,13 +4370,10 @@ export const VehicleCard: React.FC<VehicleCardProps> = ({
                                         key={pIdx} 
                                         className="w-16 h-16 rounded-md overflow-hidden border border-white/10 cursor-pointer hover:border-blue-400 hover:scale-105 transition-all relative group"
                                         onClick={() => {
-                                          setPreviewDoc({
-                                            id: `vistoria-photo-${pIdx}-${v.id}`,
-                                            name: `Foto de Vistoria (${v.type || 'Geral'}) - ${new Date(v.date + 'T12:00:00').toLocaleDateString('pt-BR')}`,
-                                            category: 'Vistoria',
-                                            uploadDate: v.date,
-                                            contentUrl: ph,
-                                            fileType: 'image'
+                                          setPreviewEnlargedPhoto({
+                                            photos: v.photos,
+                                            index: pIdx,
+                                            title: `Vistoria (${v.type || 'Geral'}) - ${new Date(v.date + 'T12:00:00').toLocaleDateString('pt-BR')}`
                                           });
                                         }}
                                       >
@@ -3745,29 +4442,87 @@ export const VehicleCard: React.FC<VehicleCardProps> = ({
 
                   <div className="space-y-2.5 text-xs text-white">
                     {isRequestingNewVistoria && (
-                      <div className="bg-emerald-900/30 border border-emerald-500/30 p-2.5 rounded-lg space-y-1">
-                        <label className="text-[10px] text-emerald-300 block font-bold uppercase tracking-wider">
-                          1. Selecione o Tipo de Vistoria *
-                        </label>
-                        <select
-                          value={requestVistoriaType}
-                          onChange={(e) => {
-                            const newType = e.target.value as 'Entrega de Veículo' | 'Periódica' | 'Devolução de Veículo';
-                            setRequestVistoriaType(newType);
-                            const savedTemplate = localStorage.getItem('fleet_vistoria_request_template') || DEFAULT_REQUEST_TEMPLATE;
-                            const formatted = formatTemplateText(savedTemplate, false, null, newType);
-                            setCustomVistoriaMsgText(formatted);
-                          }}
-                          className="w-full text-xs bg-black border border-emerald-500/40 rounded-md px-2.5 py-1.5 text-white focus:outline-hidden focus:border-emerald-400 font-semibold cursor-pointer"
-                          id={`select-request-vistoria-type-${vehicle.id}`}
-                        >
-                          <option value="Entrega de Veículo">Entrega do Carro</option>
-                          <option value="Periódica">Periódica (Rotina)</option>
-                          <option value="Devolução de Veículo">Devolução do Carro</option>
-                        </select>
-                        <p className="text-[9px] text-emerald-400/80 italic">
-                          O tipo escolhido será preenchido na mensagem e incorporado no link enviado ao locatário.
-                        </p>
+                      <div className="space-y-3">
+                        <div className="bg-emerald-900/30 border border-emerald-500/30 p-2.5 rounded-lg space-y-1">
+                          <label className="text-[10px] text-emerald-300 block font-bold uppercase tracking-wider">
+                            1. Selecione o Tipo de Vistoria *
+                          </label>
+                          <select
+                            value={requestVistoriaType}
+                            onChange={(e) => {
+                              const newType = e.target.value as 'Entrega de Veículo' | 'Periódica' | 'Devolução de Veículo';
+                              setRequestVistoriaType(newType);
+                              const savedTemplate = localStorage.getItem('fleet_vistoria_request_template') || DEFAULT_REQUEST_TEMPLATE;
+                              const formatted = formatTemplateText(savedTemplate, false, null, newType, selectedRequestItems);
+                              setCustomVistoriaMsgText(formatted);
+                            }}
+                            className="w-full text-xs bg-black border border-emerald-500/40 rounded-md px-2.5 py-1.5 text-white focus:outline-hidden focus:border-emerald-400 font-semibold cursor-pointer"
+                            id={`select-request-vistoria-type-${vehicle.id}`}
+                          >
+                            <option value="Periódica">Periódica (Rotina)</option>
+                            <option value="Entrega de Veículo">Entrega do Carro</option>
+                            <option value="Devolução de Veículo">Devolução do Carro</option>
+                          </select>
+                          <p className="text-[9px] text-emerald-400/80 italic">
+                            O tipo escolhido será preenchido na mensagem e incorporado no link enviado ao locatário.
+                          </p>
+                        </div>
+
+                        {/* 2. Seleção dos Itens a Vistoriar */}
+                        <div className="bg-neutral-900/90 border border-emerald-500/25 p-3 rounded-lg space-y-2.5">
+                          <div className="flex flex-wrap items-center justify-between gap-2 pb-1.5 border-b border-white/10">
+                            <div>
+                              <span className="text-[10px] font-bold text-emerald-400 uppercase tracking-wider flex items-center gap-1.5">
+                                <ListChecks className="w-3.5 h-3.5" />
+                                <span>2. Escolha os Itens para Vistoriar ({selectedRequestItems.length}/{availableChecklistItems.length})</span>
+                              </span>
+                              <p className="text-[9px] text-gray-400 mt-0.5">
+                                Marque os itens que deseja vistoriar nesta vistoria periódica. A mensagem e o link do motorista serão atualizados instantaneamente.
+                              </p>
+                            </div>
+                            <div className="flex items-center gap-1.5">
+                              <button
+                                type="button"
+                                onClick={handleSelectAllRequestItems}
+                                className="px-2 py-0.5 text-[9px] font-bold bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-300 rounded border border-emerald-500/20 transition-colors cursor-pointer"
+                              >
+                                Marcar Todos
+                              </button>
+                              <button
+                                type="button"
+                                onClick={handleDeselectAllRequestItems}
+                                className="px-2 py-0.5 text-[9px] font-bold bg-white/5 hover:bg-white/10 text-gray-400 hover:text-white rounded border border-white/10 transition-colors cursor-pointer"
+                              >
+                                Desmarcar Todos
+                              </button>
+                            </div>
+                          </div>
+
+                          <div className="grid grid-cols-2 sm:grid-cols-3 gap-1.5 max-h-48 overflow-y-auto pr-1">
+                            {availableChecklistItems.map((item) => {
+                              const isSelected = selectedRequestItems.includes(item);
+                              return (
+                                <button
+                                  key={item}
+                                  type="button"
+                                  onClick={() => handleToggleRequestItem(item)}
+                                  className={`flex items-center gap-2 p-2 rounded-md border text-left transition-all text-xs cursor-pointer ${
+                                    isSelected
+                                      ? 'bg-emerald-500/15 border-emerald-500/35 text-emerald-300 font-semibold shadow-xs'
+                                      : 'bg-white/[0.02] border-white/10 text-gray-400 hover:bg-white/[0.05] hover:text-gray-200'
+                                  }`}
+                                >
+                                  {isSelected ? (
+                                    <CheckSquare className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
+                                  ) : (
+                                    <Square className="w-3.5 h-3.5 text-gray-500 shrink-0" />
+                                  )}
+                                  <span className="text-[11px] truncate leading-tight">{item}</span>
+                                </button>
+                              );
+                            })}
+                          </div>
+                        </div>
                       </div>
                     )}
 
@@ -3853,9 +4608,6 @@ export const VehicleCard: React.FC<VehicleCardProps> = ({
                   </div>
                 </div>
               )}
-                </div>
-              )}
-            </div>
             </div>
           )}
 
@@ -4361,22 +5113,226 @@ export const VehicleCard: React.FC<VehicleCardProps> = ({
               </div>
             </div>
           )}
+
+          {/* TAB 6: Pneus */}
+          {activeTab === 'pneus' && (
+            <div className="space-y-4 animate-in fade-in duration-150">
+              <div className="bg-white/[0.02] p-4 rounded-xl border border-white/5 space-y-4">
+                <div className="flex justify-between items-center border-b border-white/5 pb-2">
+                  <span className="font-bold text-gray-300 flex items-center gap-1.5 uppercase tracking-wider text-[10px]">
+                    <Gauge className="w-3.5 h-3.5 text-orange-400" /> Gestão de Pneus
+                  </span>
+                  <span className="text-[10px] text-gray-500 italic">Controle de troca e desgaste</span>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div className="space-y-3">
+                    <h4 className="text-[10px] font-bold text-gray-400 uppercase">Eixo Dianteiro</h4>
+                    <div className="space-y-2">
+                      {['Frontal Esquerdo', 'Frontal Direito'].map(pos => {
+                        const tire = (vehicle.tires || []).find(t => t.position === pos);
+                        return (
+                          <div key={pos} className="p-2.5 bg-black/40 border border-white/5 rounded-lg flex justify-between items-center">
+                            <div className="min-w-0">
+                              <p className="text-[10px] font-bold text-white">{pos}</p>
+                              <p className="text-[9px] text-gray-500 truncate">{tire ? `${tire.brand} • ${tire.installedKm.toLocaleString('pt-BR')} KM` : 'Não registrado'}</p>
+                            </div>
+                            <div className="flex items-center gap-2">
+                              {tire && (() => {
+                                const status = getTireStatus(tire.installedKm);
+                                return (
+                                  <div className="flex items-center gap-1.5">
+                                    {status.needsRotation && !status.needsReplacement && (
+                                      <span className="text-[8px] bg-amber-500/20 text-amber-300 px-1 rounded border border-amber-500/20 font-bold animate-pulse">
+                                        RODÍZIO
+                                      </span>
+                                    )}
+                                    <div className={`w-2 h-2 rounded-full ${status.needsReplacement ? 'bg-rose-500' : status.isWarning || status.needsRotation ? 'bg-amber-500' : 'bg-emerald-500'}`} />
+                                  </div>
+                                );
+                              })()}
+                              <button 
+                                onClick={() => {
+                                  const brand = prompt(`Marca do pneu (${pos}):`, tire?.brand || '');
+                                  if (brand === null) return;
+                                  const km = prompt(`KM de instalação (${pos}):`, String(tire?.installedKm || vehicle.currentKm || 0));
+                                  if (km === null) return;
+                                  
+                                  const newTires = [...(vehicle.tires || []).filter(t => t.position !== pos)];
+                                  newTires.push({
+                                    id: `tire-${Date.now()}-${pos}`,
+                                    position: pos as any,
+                                    brand,
+                                    installedKm: Number(km) || 0,
+                                    expectedLifeKm: 40000,
+                                    status: 'Good'
+                                  });
+                                  onUpdateVehicle({ ...vehicle, tires: newTires });
+                                }}
+                                className="p-1.5 bg-white/5 hover:bg-white/10 rounded-md transition-colors"
+                              >
+                                <Edit3 className="w-3 h-3 text-blue-400" />
+                              </button>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+
+                  <div className="space-y-3">
+                    <h4 className="text-[10px] font-bold text-gray-400 uppercase">Eixo Traseiro & Estepe</h4>
+                    <div className="space-y-2">
+                      {['Traseiro Esquerdo', 'Traseiro Direito', 'Estepe'].map(pos => {
+                        const tire = (vehicle.tires || []).find(t => t.position === pos);
+                        return (
+                          <div key={pos} className="p-2.5 bg-black/40 border border-white/5 rounded-lg flex justify-between items-center">
+                            <div className="min-w-0">
+                              <p className="text-[10px] font-bold text-white">{pos}</p>
+                              <p className="text-[9px] text-gray-500 truncate">{tire ? `${tire.brand} • ${tire.installedKm.toLocaleString('pt-BR')} KM` : 'Não registrado'}</p>
+                            </div>
+                            <div className="flex items-center gap-2">
+                              {tire && (() => {
+                                const status = getTireStatus(tire.installedKm);
+                                return (
+                                  <div className="flex items-center gap-1.5">
+                                    {status.needsRotation && !status.needsReplacement && (
+                                      <span className="text-[8px] bg-amber-500/20 text-amber-300 px-1 rounded border border-amber-500/20 font-bold animate-pulse">
+                                        RODÍZIO
+                                      </span>
+                                    )}
+                                    <div className={`w-2 h-2 rounded-full ${status.needsReplacement ? 'bg-rose-500' : status.isWarning || status.needsRotation ? 'bg-amber-500' : 'bg-emerald-500'}`} />
+                                  </div>
+                                );
+                              })()}
+                              <button 
+                                onClick={() => {
+                                  const brand = prompt(`Marca do pneu (${pos}):`, tire?.brand || '');
+                                  if (brand === null) return;
+                                  const km = prompt(`KM de instalação (${pos}):`, String(tire?.installedKm || vehicle.currentKm || 0));
+                                  if (km === null) return;
+                                  
+                                  const newTires = [...(vehicle.tires || []).filter(t => t.position !== pos)];
+                                  newTires.push({
+                                    id: `tire-${Date.now()}-${pos}`,
+                                    position: pos as any,
+                                    brand,
+                                    installedKm: Number(km) || 0,
+                                    expectedLifeKm: 40000,
+                                    status: 'Good'
+                                  });
+                                  onUpdateVehicle({ ...vehicle, tires: newTires });
+                                }}
+                                className="p-1.5 bg-white/5 hover:bg-white/10 rounded-md transition-colors"
+                              >
+                                <Edit3 className="w-3 h-3 text-blue-400" />
+                              </button>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                </div>
+
+                <div className="p-3 bg-blue-500/10 border border-blue-500/20 rounded-lg">
+                  <p className="text-[10px] text-blue-300 leading-relaxed">
+                    <strong>Dica:</strong> O rodízio de pneus é recomendado a cada 10.000 KM para garantir um desgaste uniforme e aumentar a vida útil da frota.
+                  </p>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* TAB 7: Sinistros */}
+          {activeTab === 'sinistros' && (
+            <div className="space-y-4 animate-in fade-in duration-150">
+              <div className="bg-white/[0.02] p-4 rounded-xl border border-white/5 space-y-4">
+                <div className="flex justify-between items-center border-b border-white/5 pb-2">
+                  <span className="font-bold text-gray-300 flex items-center gap-1.5 uppercase tracking-wider text-[10px]">
+                    <AlertTriangle className="w-3.5 h-3.5 text-rose-400" /> Registro de Sinistros
+                  </span>
+                  <button 
+                    onClick={() => onOpenLogForm?.('sinistro', vehicle.id)}
+                    className="flex items-center gap-1 text-[10px] bg-rose-500/20 text-rose-300 hover:bg-rose-500/30 px-2.5 py-1 rounded-md border border-rose-500/30 font-bold transition-all cursor-pointer"
+                  >
+                    <Plus className="w-3 h-3" /> Novo Sinistro
+                  </button>
+                </div>
+
+                <div className="space-y-3">
+                  {sinistroLogs.length === 0 ? (
+                    <div className="text-center py-8 bg-black/20 rounded-lg border border-dashed border-white/5">
+                      <AlertTriangle className="w-8 h-8 text-gray-700 mx-auto mb-2" />
+                      <p className="text-xs text-gray-500">Nenhum sinistro registrado para este veículo.</p>
+                    </div>
+                  ) : (
+                    sinistroLogs.map(log => (
+                      <div key={log.id} className="p-3 bg-black/40 border border-white/5 rounded-xl space-y-2 group relative">
+                        <div className="flex justify-between items-start">
+                          <div>
+                            <span className="text-[10px] font-mono text-gray-500">{new Date(log.date + 'T12:00:00').toLocaleDateString('pt-BR')}</span>
+                            <h5 className="text-xs font-bold text-white mt-0.5">{log.description}</h5>
+                            {log.location && (
+                              <p className="text-[10px] text-gray-400 flex items-center gap-1 mt-0.5">
+                                <Smartphone className="w-3 h-3" /> {log.location}
+                              </p>
+                            )}
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <span className="text-xs font-bold text-rose-400 font-mono">{formatBRL(log.repairCost)}</span>
+                            <button 
+                              onClick={() => onDeleteSinistro?.(log.id)}
+                              className="p-1.5 text-gray-600 hover:text-rose-400 opacity-0 group-hover:opacity-100 transition-all"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                          </div>
+                        </div>
+                        
+                        {log.photos && log.photos.length > 0 && (
+                          <div className="flex gap-1.5 overflow-x-auto py-1 scrollbar-hide">
+                            {log.photos.map((ph, idx) => (
+                              <img 
+                                key={idx} 
+                                src={ph} 
+                                alt="sinistro" 
+                                className="w-14 h-14 rounded-md object-cover border border-white/10 hover:border-white/30 cursor-pointer"
+                                onClick={() => setPreviewEnlargedPhoto({ photos: log.photos, index: idx, title: `Sinistro - ${log.date}` })}
+                              />
+                            ))}
+                          </div>
+                        )}
+
+                        {log.boUrl && (
+                          <a 
+                            href={log.boUrl} 
+                            target="_blank" 
+                            rel="noopener noreferrer"
+                            className="inline-flex items-center gap-1.5 text-[10px] text-blue-400 hover:underline font-semibold"
+                          >
+                            <FileText className="w-3 h-3" /> Ver Boletim de Ocorrência
+                          </a>
+                        )}
+                      </div>
+                    ))
+                  )}
+                </div>
+              </div>
+            </div>
+          )}
         </div>
       </div>
     )}
-  </div>
-</div>
-)}
-
 
       {/* Document Preview Modal */}
       {previewDoc && (
         <div 
-          className="fixed inset-0 bg-black/90 backdrop-blur-xs flex items-center justify-center z-50 p-4" 
+          className="fixed inset-0 bg-black/95 backdrop-blur-xs flex items-center justify-center z-50 p-0 sm:p-4" 
           onClick={() => setPreviewDoc(null)}
         >
           <div 
-            className="bg-[#0f0f0f] border border-white/10 rounded-2xl w-full max-w-2xl overflow-hidden flex flex-col max-h-[85vh] shadow-2xl animate-in zoom-in-95 duration-150"
+            className="bg-[#0f0f0f] border border-white/10 sm:rounded-2xl w-full h-full sm:h-auto sm:max-w-4xl sm:max-h-[92vh] overflow-hidden flex flex-col shadow-2xl animate-in zoom-in-95 duration-150"
             onClick={(e) => e.stopPropagation()}
           >
             {/* Header */}
@@ -4392,17 +5348,17 @@ export const VehicleCard: React.FC<VehicleCardProps> = ({
               </div>
               <button
                 onClick={() => setPreviewDoc(null)}
-                className="text-gray-400 hover:text-white p-1 rounded-lg hover:bg-white/5 transition-colors"
+                className="text-gray-400 hover:text-white p-1.5 rounded-lg hover:bg-white/5 transition-colors cursor-pointer"
               >
                 <X className="w-5 h-5" />
               </button>
             </div>
 
             {/* Content Preview Body */}
-            <div className="overflow-y-auto flex-1 bg-black/40 flex items-center justify-center min-h-[300px]">
+            <div className="overflow-y-auto flex-1 bg-black/60 flex items-center justify-center p-2 sm:p-4 min-h-[300px]">
               {previewDoc.contentUrl ? (
                 previewDoc.contentUrl.startsWith('data:application/pdf') || previewDoc.fileType === 'pdf' || previewDoc.name.toLowerCase().endsWith('.pdf') ? (
-                  <div className="w-full h-[65vh]">
+                  <div className="w-full h-[82vh]">
                     <PdfViewer 
                       pdfDataUrl={previewDoc.contentUrl} 
                       fileName={previewDoc.name} 
@@ -4413,7 +5369,7 @@ export const VehicleCard: React.FC<VehicleCardProps> = ({
                     src={previewDoc.contentUrl} 
                     alt={previewDoc.name} 
                     referrerPolicy="no-referrer"
-                    className="max-w-full max-h-[55vh] object-contain rounded-lg border border-white/5 shadow-lg p-4"
+                    className="w-full h-full max-h-[82vh] object-contain rounded-lg border border-white/5 shadow-lg"
                   />
                 ) : previewDoc.contentUrl.startsWith('data:text/') || previewDoc.name.toLowerCase().endsWith('.txt') ? (
                   <pre className="text-xs text-gray-300 font-mono p-4 bg-zinc-900 border border-white/5 rounded-xl w-full whitespace-pre-wrap select-all max-h-[50vh] overflow-y-auto m-4">
@@ -4594,6 +5550,110 @@ export const VehicleCard: React.FC<VehicleCardProps> = ({
           </div>
         </div>
       )}
+      {/* Enlarged Photo Modal with Swipe / Arrows */}
+      {previewEnlargedPhoto && (
+        <div 
+          className="fixed inset-0 z-[100] flex items-center justify-center p-3 sm:p-4 bg-black/95 backdrop-blur-md animate-in fade-in duration-200 select-none"
+          onClick={() => setPreviewEnlargedPhoto(null)}
+        >
+          <div 
+            className="relative max-w-3xl w-full max-h-[92vh] flex flex-col items-center justify-center p-3 sm:p-4 bg-zinc-950 rounded-2xl border border-white/20 shadow-2xl"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="w-full flex items-center justify-between pb-2.5 mb-2 border-b border-white/10 text-white">
+              <span className="font-bold text-sm tracking-wide text-emerald-400">
+                {previewEnlargedPhoto.title || 'Foto'} ({previewEnlargedPhoto.index + 1} de {previewEnlargedPhoto.photos.length})
+              </span>
+              <button
+                type="button"
+                onClick={() => setPreviewEnlargedPhoto(null)}
+                className="p-2 bg-white/10 hover:bg-white/20 text-white rounded-full transition-colors cursor-pointer"
+                title="Fechar visualização"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            
+            <div 
+              className="relative w-full flex items-center justify-center p-2 bg-black rounded-xl overflow-hidden min-h-[300px] max-h-[70vh] touch-pan-y cursor-grab active:cursor-grabbing select-none"
+              onTouchStart={handleTouchStart}
+              onTouchEnd={handleTouchEnd}
+              onMouseDown={handleMouseDown}
+              onMouseUp={handleMouseUp}
+            >
+              {previewEnlargedPhoto.photos.length > 1 && (
+                <>
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setPreviewEnlargedPhoto(prev => prev ? { 
+                        ...prev, 
+                        index: (prev.index - 1 + prev.photos.length) % prev.photos.length,
+                        title: `Foto ${((prev.index - 1 + prev.photos.length) % prev.photos.length) + 1} de ${prev.photos.length}`
+                      } : null);
+                    }}
+                    className="absolute left-2 sm:left-4 z-40 w-11 h-11 bg-black/85 hover:bg-emerald-600 active:bg-emerald-700 text-white rounded-full border border-white/30 shadow-2xl flex items-center justify-center text-lg font-bold transition-all cursor-pointer"
+                    title="Foto Anterior"
+                  >
+                    ❮
+                  </button>
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setPreviewEnlargedPhoto(prev => prev ? { 
+                        ...prev, 
+                        index: (prev.index + 1) % prev.photos.length,
+                        title: `Foto ${((prev.index + 1) % prev.photos.length) + 1} de ${prev.photos.length}`
+                      } : null);
+                    }}
+                    className="absolute right-2 sm:right-4 z-40 w-11 h-11 bg-black/85 hover:bg-emerald-600 active:bg-emerald-700 text-white rounded-full border border-white/30 shadow-2xl flex items-center justify-center text-lg font-bold transition-all cursor-pointer"
+                    title="Próxima Foto"
+                  >
+                    ❯
+                  </button>
+                </>
+              )}
+              <img
+                src={previewEnlargedPhoto.photos[previewEnlargedPhoto.index]}
+                alt={previewEnlargedPhoto.title}
+                className="max-h-[65vh] w-auto max-w-full object-contain rounded-lg select-none pointer-events-none"
+                draggable={false}
+              />
+            </div>
+
+            {/* Pagination dots */}
+            {previewEnlargedPhoto.photos.length > 1 && (
+              <div className="flex items-center justify-center gap-1.5 mt-2.5 overflow-x-auto max-w-full py-1">
+                {previewEnlargedPhoto.photos.map((_, dotIdx) => (
+                  <button
+                    key={dotIdx}
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setPreviewEnlargedPhoto(prev => prev ? { 
+                        ...prev, 
+                        index: dotIdx,
+                        title: `Foto ${dotIdx + 1} de ${prev.photos.length}`
+                      } : null);
+                    }}
+                    className={`h-2 rounded-full transition-all cursor-pointer ${
+                      dotIdx === previewEnlargedPhoto.index 
+                        ? 'w-6 bg-emerald-400' 
+                        : 'w-2 bg-white/20 hover:bg-white/40'
+                    }`}
+                    title={`Ir para foto ${dotIdx + 1}`}
+                  />
+                ))}
+              </div>
+            )}
+
+            <div className="mt-1.5 text-center text-[11px] text-gray-400 font-medium">
+              👆 Arraste para o lado ou use as setas ❮ ❯ para navegar entre as fotos
+            </div>
+          </div>
+      )}
     </div>
   );
-}
+};

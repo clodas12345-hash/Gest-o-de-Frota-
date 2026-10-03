@@ -467,8 +467,14 @@ export async function generateVistoriaPDF(
   doc.setFontSize(15);
   doc.text('LAUDO DE VISTORIA DO VEÍCULO', 14, 12);
   doc.setFontSize(9);
-  doc.setFont('helvetica', 'normal');
-  doc.text(`Veículo: ${vehicle.brand} ${vehicle.model} (${vehicle.plate}) | Data: ${formattedNow}`, 14, 20);
+  const kmToDisplay = vistoria.km
+    ? `${vistoria.km.toLocaleString('pt-BR')} KM`
+    : (vehicle.currentKm ? `${vehicle.currentKm.toLocaleString('pt-BR')} KM` : null);
+
+  const headerInfo = kmToDisplay
+    ? `Veículo: ${vehicle.brand} ${vehicle.model} (${vehicle.plate}) | Odômetro: ${kmToDisplay} | Data: ${formattedNow}`
+    : `Veículo: ${vehicle.brand} ${vehicle.model} (${vehicle.plate}) | Data: ${formattedNow}`;
+  doc.text(headerInfo, 14, 20);
 
   y = 36;
   doc.setTextColor(textColor[0], textColor[1], textColor[2]);

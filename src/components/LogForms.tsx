@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Vehicle, FuelLog, MaintenanceLog, ExpenseLog, AgendaContact } from '../types';
-import { X, Save, AlertCircle, Users, BookOpen, Sparkles, Mic, MicOff, Calculator, Plus, Trash2, User, Phone, Search, Smartphone, Check, Upload, ExternalLink, AlertTriangle, Car } from 'lucide-react';
+import { Vehicle, FuelLog, MaintenanceLog, ExpenseLog, AgendaContact, SinistroLog, TireState } from '../types';
+import { X, Save, AlertCircle, Users, BookOpen, Sparkles, Mic, MicOff, Calculator, Plus, Trash2, User, Phone, Search, Smartphone, Check, Upload, ExternalLink, AlertTriangle, Car, Calendar, Camera } from 'lucide-react';
 import { generateNextContractNumber } from '../utils/contractHelper';
 import CurrencyInput from './CurrencyInput';
 
@@ -52,7 +52,7 @@ const formatDateBR = (dateStr?: string): string => {
 interface LogFormsProps {
   isOpen: boolean;
   onClose: () => void;
-  formType: 'vehicle' | 'fuel' | 'maintenance' | 'expense' | null;
+  formType: 'vehicle' | 'fuel' | 'maintenance' | 'expense' | 'sinistro' | null;
   vehicles: Vehicle[];
   selectedVehicleId?: string;
   vehicleToEdit?: Vehicle | null;
@@ -63,6 +63,7 @@ interface LogFormsProps {
   onSaveFuel: (log: Omit<FuelLog, 'id'>) => void;
   onSaveMaintenance: (log: Omit<MaintenanceLog, 'id'>) => void;
   onSaveExpense: (log: Omit<ExpenseLog, 'id'>) => void;
+  onSaveSinistro?: (sinistro: SinistroLog) => void;
   onSaveContact?: (contact: AgendaContact) => void;
 }
 
@@ -81,6 +82,7 @@ export function LogForms({
   onSaveFuel,
   onSaveMaintenance,
   onSaveExpense,
+  onSaveSinistro,
   onSaveContact,
 }: LogFormsProps) {
   // Selected vehicle id state
@@ -109,9 +111,13 @@ export function LogForms({
   const [ipvaParcelas, setIpvaParcelas] = useState<number>(10);
   const [manutencaoPreventiva, setManutencaoPreventiva] = useState(0);
   const [currentKm, setCurrentKm] = useState(0);
+  const [preventiveMaintNextKm, setPreventiveMaintNextKm] = useState<number | undefined>(undefined);
   const [fuelLevel, setFuelLevel] = useState(8);
   const [driver, setDriver] = useState('');
   const [driverPhone, setDriverPhone] = useState('');
+  const [driverCnhExpiration, setDriverCnhExpiration] = useState('');
+  const [driverCnhPhotoUrl, setDriverCnhPhotoUrl] = useState('');
+  const [tires, setTires] = useState<TireState[]>([]);
   const [caucaoValor, setCaucaoValor] = useState(0);
   const [caucaoData, setCaucaoData] = useState('');
   const [caucaoObservacoes, setCaucaoObservacoes] = useState('');
@@ -144,6 +150,14 @@ export function LogForms({
   const [maintPartsReplaced, setMaintPartsReplaced] = useState('');
   const [maintParcelasPagas, setMaintParcelasPagas] = useState<number | undefined>(undefined);
   const [maintParcelasTotais, setMaintParcelasTotais] = useState<number | undefined>(undefined);
+  
+  // 5. Sinistro Form State
+  const [sinistroDate, setSinistroDate] = useState(getTodayStr);
+  const [sinistroDescription, setSinistroDescription] = useState('');
+  const [sinistroRepairCost, setSinistroRepairCost] = useState(0);
+  const [sinistroPhotos, setSinistroPhotos] = useState<string[]>([]);
+  const [sinistroBoUrl, setSinistroBoUrl] = useState('');
+  const [sinistroLocation, setSinistroLocation] = useState('');
 
   // 4. Expense Form State
   const [expDate, setExpDate] = useState(getTodayStr);
@@ -377,6 +391,7 @@ export function LogForms({
     setIpva(150);
     setManutencaoPreventiva(200);
     setCurrentKm(0);
+    setPreventiveMaintNextKm(undefined);
     setFuelLevel(8);
     setDriver('');
     setDriverPhone('');
@@ -423,6 +438,7 @@ export function LogForms({
         if (extracted.ipva !== undefined) setIpva(extracted.ipva);
         if (extracted.manutencaoPreventiva !== undefined) setManutencaoPreventiva(extracted.manutencaoPreventiva);
         if (extracted.currentKm !== undefined) setCurrentKm(extracted.currentKm);
+        if (extracted.preventiveMaintNextKm !== undefined) setPreventiveMaintNextKm(extracted.preventiveMaintNextKm);
         if (extracted.fuelLevel !== undefined) setFuelLevel(extracted.fuelLevel);
         if (extracted.driver) setDriver(extracted.driver);
         if (extracted.driverPhone) setDriverPhone(extracted.driverPhone);
@@ -486,6 +502,7 @@ export function LogForms({
         if (extracted.ipva !== undefined) setIpva(extracted.ipva);
         if (extracted.manutencaoPreventiva !== undefined) setManutencaoPreventiva(extracted.manutencaoPreventiva);
         if (extracted.currentKm !== undefined) setCurrentKm(extracted.currentKm);
+        if (extracted.preventiveMaintNextKm !== undefined) setPreventiveMaintNextKm(extracted.preventiveMaintNextKm);
         if (extracted.fuelLevel !== undefined) setFuelLevel(extracted.fuelLevel);
         if (extracted.driver) setDriver(extracted.driver);
         if (extracted.driverPhone) setDriverPhone(extracted.driverPhone);
@@ -548,6 +565,7 @@ export function LogForms({
         setIpva(vehicleToEdit.ipva || 0);
         setManutencaoPreventiva(vehicleToEdit.manutencaoPreventiva || 0);
         setCurrentKm(vehicleToEdit.currentKm);
+        setPreventiveMaintNextKm(vehicleToEdit.preventiveMaintNextKm);
         setFuelLevel(vehicleToEdit.fuelLevel);
         setDriver(vehicleToEdit.driver);
         setDriverPhone(vehicleToEdit.driverPhone || '');
@@ -555,6 +573,9 @@ export function LogForms({
         setCaucaoData(vehicleToEdit.caucaoData || '2026-08-01');
         setCaucaoObservacoes(vehicleToEdit.caucaoObservacoes || '');
         setNextVistoriaDate(vehicleToEdit.nextVistoriaDate || '');
+        setDriverCnhExpiration(vehicleToEdit.driverCnhExpiration || '');
+        setDriverCnhPhotoUrl(vehicleToEdit.driverCnhPhotoUrl || '');
+        setTires(vehicleToEdit.tires || []);
         setCustoExtra(vehicleToEdit.custoExtra || 0);
         setCustoExtraLabel(vehicleToEdit.custoExtraLabel || 'Outras Despesas');
         setExtraExpenses(vehicleToEdit.extraExpenses || (vehicleToEdit.custoExtra ? [{ id: 'default', label: vehicleToEdit.custoExtraLabel || 'Outras Despesas', value: vehicleToEdit.custoExtra, parcelasPagas: vehicleToEdit.custoExtraParcelasPagas, parcelasTotais: vehicleToEdit.custoExtraParcelasTotais }] : []));
@@ -585,9 +606,13 @@ export function LogForms({
             setIpva(draft.ipva ?? 150);
             setManutencaoPreventiva(draft.manutencaoPreventiva ?? 200);
             setCurrentKm(draft.currentKm ?? 0);
+            setPreventiveMaintNextKm(draft.preventiveMaintNextKm);
             setFuelLevel(draft.fuelLevel ?? 8);
             setDriver(draft.driver ?? '');
             setDriverPhone(draft.driverPhone ?? '');
+            setDriverCnhExpiration(draft.driverCnhExpiration ?? '');
+            setDriverCnhPhotoUrl(draft.driverCnhPhotoUrl ?? '');
+            setTires(draft.tires ?? []);
             setCaucaoValor(draft.caucaoValor ?? 1500);
             setCaucaoData(draft.caucaoData ?? new Date().toISOString().split('T')[0]);
             setCaucaoObservacoes(draft.caucaoObservacoes ?? '');
@@ -615,6 +640,7 @@ export function LogForms({
           setIpva(0);
           setManutencaoPreventiva(0);
           setCurrentKm(0);
+          setPreventiveMaintNextKm(undefined);
           setFuelLevel(8);
           setDriver('');
           setDriverPhone('');
@@ -678,6 +704,7 @@ export function LogForms({
         caucaoData,
         caucaoObservacoes,
         nextVistoriaDate,
+        preventiveMaintNextKm,
         extraExpenses
       };
       localStorage.setItem(VEHICLE_DRAFT_KEY, JSON.stringify(draftData));
@@ -685,7 +712,7 @@ export function LogForms({
   }, [
     isOpen, formType, vehicleToEdit, brand, model, plate, color, yearFab, yearModel, rentalCompany,
     startDate, endDate, initialKm, contractNumber, valorRecebido, valorSemanal,
-    financiamento, seguro, ipva, manutencaoPreventiva, currentKm, fuelLevel,
+    financiamento, seguro, ipva, manutencaoPreventiva, currentKm, preventiveMaintNextKm, fuelLevel,
     driver, driverPhone, caucaoValor, caucaoData, caucaoObservacoes, nextVistoriaDate, extraExpenses
   ]);
 
@@ -756,9 +783,12 @@ export function LogForms({
         custoExtra: extraExpenses.reduce((sum, exp) => sum + (exp.value || 0), 0),
         custoExtraLabel: extraExpenses.length > 0 ? extraExpenses[0].label : 'Outras Despesas',
         preventiveMaintCurrentKm: vehicleToEdit ? (vehicleToEdit.preventiveMaintCurrentKm ?? (Number(currentKm) || 0)) : (Number(currentKm) || 0),
-        preventiveMaintNextKm: vehicleToEdit ? (vehicleToEdit.preventiveMaintNextKm ?? ((Number(currentKm) || 0) + 10000)) : ((Number(currentKm) || 0) + 10000),
+        preventiveMaintNextKm: preventiveMaintNextKm !== undefined ? Number(preventiveMaintNextKm) : (vehicleToEdit ? (vehicleToEdit.preventiveMaintNextKm ?? ((Number(currentKm) || 0) + 10000)) : ((Number(currentKm) || 0) + 10000)),
         preventiveMaintDate: vehicleToEdit ? (vehicleToEdit.preventiveMaintDate || getTodayStr()) : getTodayStr(),
         nextVistoriaDate: nextVistoriaDate || '',
+        driverCnhExpiration: driverCnhExpiration || '',
+        driverCnhPhotoUrl: driverCnhPhotoUrl || '',
+        tires: tires || [],
         extraExpenses,
         documents: vehicleToEdit?.documents || []
       };
@@ -827,6 +857,26 @@ export function LogForms({
       });
       onClose();
     }
+
+    else if (formType === 'sinistro') {
+      if (!sinistroDescription.trim()) {
+        setError('Por favor, descreva o ocorrido.');
+        return;
+      }
+      if (onSaveSinistro) {
+        onSaveSinistro({
+          id: `sin-${Date.now()}`,
+          vehicleId,
+          date: sinistroDate,
+          description: sinistroDescription,
+          repairCost: Number(sinistroRepairCost),
+          photos: [...sinistroPhotos],
+          boUrl: sinistroBoUrl.trim() || undefined,
+          location: sinistroLocation.trim() || undefined,
+        });
+      }
+      onClose();
+    }
   };
 
   if (!isOpen || !formType) return null;
@@ -844,6 +894,7 @@ export function LogForms({
             {formType === 'fuel' && 'Registrar Abastecimento'}
             {formType === 'maintenance' && 'Registrar Manutenção ou Conserto'}
             {formType === 'expense' && 'Registrar Outra Despesa'}
+            {formType === 'sinistro' && 'Registrar Sinistro / Colisão'}
           </h2>
           <button 
             onClick={onClose}
@@ -1015,6 +1066,31 @@ export function LogForms({
                     placeholder="Ex: Prata Metálico"
                     className="w-full text-xs bg-white/[0.03] border border-white/10 rounded-xl px-3 py-2 text-white placeholder-gray-500 focus:outline-hidden focus:border-blue-500/50 focus:bg-[#1a1a1a]"
                   />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-1">
+                  <label className="font-semibold text-emerald-400">Odômetro Atual (KM)</label>
+                  <input 
+                    type="number" 
+                    value={currentKm} 
+                    onChange={e => setCurrentKm(Number(e.target.value))}
+                    placeholder="Ex: 45000"
+                    className="w-full text-xs bg-emerald-500/5 border border-emerald-500/20 rounded-xl px-3 py-2 text-white placeholder-gray-500 focus:outline-hidden focus:border-emerald-500 font-mono"
+                  />
+                  <span className="text-[9px] text-gray-500 block">Km atual marcado no painel.</span>
+                </div>
+                <div className="space-y-1">
+                  <label className="font-semibold text-amber-400">Próxima Revisão (KM)</label>
+                  <input 
+                    type="number" 
+                    value={preventiveMaintNextKm !== undefined ? preventiveMaintNextKm : ''} 
+                    onChange={e => setPreventiveMaintNextKm(e.target.value !== '' ? Number(e.target.value) : undefined)}
+                    placeholder="Ex: 55000"
+                    className="w-full text-xs bg-amber-500/5 border border-amber-500/20 rounded-xl px-3 py-2 text-white placeholder-gray-500 focus:outline-hidden focus:border-amber-500 font-mono"
+                  />
+                  <span className="text-[9px] text-gray-500 block">KM alvo para o próximo alerta de revisão.</span>
                 </div>
               </div>
 
@@ -1292,6 +1368,32 @@ export function LogForms({
                     className="w-full text-xs bg-black/40 border border-white/10 rounded-xl px-3 py-2 text-white placeholder-gray-500 focus:outline-hidden focus:border-blue-500/50 focus:bg-[#1a1a1a] font-mono"
                     id="input-driver-phone"
                   />
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div className="space-y-1">
+                    <label className="font-semibold text-gray-400 text-xs flex items-center gap-1.5">
+                      <Calendar className="w-3.5 h-3.5 text-blue-400" /> Vencimento da CNH
+                    </label>
+                    <input 
+                      type="date" 
+                      value={driverCnhExpiration} 
+                      onChange={e => setDriverCnhExpiration(e.target.value)}
+                      className="w-full text-xs bg-black/40 border border-white/10 rounded-xl px-3 py-2 text-white focus:outline-hidden focus:border-blue-500/50 focus:bg-[#1a1a1a]"
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <label className="font-semibold text-gray-400 text-xs flex items-center gap-1.5">
+                      <Camera className="w-3.5 h-3.5 text-blue-400" /> Foto da CNH (URL)
+                    </label>
+                    <input 
+                      type="text" 
+                      value={driverCnhPhotoUrl} 
+                      onChange={e => setDriverCnhPhotoUrl(e.target.value)}
+                      placeholder="https://..."
+                      className="w-full text-xs bg-black/40 border border-white/10 rounded-xl px-3 py-2 text-white placeholder-gray-500 focus:outline-hidden focus:border-blue-500/50 focus:bg-[#1a1a1a]"
+                    />
+                  </div>
                 </div>
 
                 {(driver || driverPhone) ? (
@@ -1626,6 +1728,77 @@ export function LogForms({
               </div>
             </div>
           )}
+
+          {/* ----------------- SINISTRO FORM ----------------- */}
+          {formType === 'sinistro' && (
+            <div className="space-y-4 text-white text-xs">
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-1">
+                  <label className="font-semibold text-gray-400">Data do Ocorrido</label>
+                  <input 
+                    type="date" 
+                    value={sinistroDate} 
+                    onChange={e => setSinistroDate(e.target.value)}
+                    className="w-full text-xs bg-white/[0.03] border border-white/10 rounded-xl px-3 py-2 text-white focus:outline-hidden focus:border-blue-500/50 focus:bg-[#1a1a1a] scheme-dark"
+                  />
+                </div>
+                <div className="space-y-1">
+                  <label className="font-semibold text-gray-400">Local (Opcional)</label>
+                  <input 
+                    type="text" 
+                    value={sinistroLocation} 
+                    onChange={e => setSinistroLocation(e.target.value)}
+                    placeholder="Ex: Av. Paulista, 1000"
+                    className="w-full text-xs bg-white/[0.03] border border-white/10 rounded-xl px-3 py-2 text-white placeholder-gray-500 focus:outline-hidden focus:border-blue-500/50 focus:bg-[#1a1a1a]"
+                  />
+                </div>
+              </div>
+
+              <div className="space-y-1">
+                <label className="font-semibold text-gray-400">Descrição do Ocorrido *</label>
+                <textarea 
+                  value={sinistroDescription} 
+                  onChange={e => setSinistroDescription(e.target.value)}
+                  placeholder="Descreva como foi a colisão, danos aparentes..."
+                  className="w-full text-xs bg-white/[0.03] border border-white/10 rounded-xl px-3 py-2 text-white placeholder-gray-500 focus:outline-hidden focus:border-blue-500/50 focus:bg-[#1a1a1a] h-20 resize-none"
+                />
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div className="space-y-1">
+                  <label className="font-semibold text-gray-400">Custo do Reparo (R$)</label>
+                  <CurrencyInput 
+                    value={sinistroRepairCost} 
+                    onChange={setSinistroRepairCost}
+                    placeholder="0,00"
+                    className="w-full text-xs bg-white/[0.03] border border-white/10 rounded-xl px-3 py-2 text-white focus:outline-hidden focus:border-blue-500/50 focus:bg-[#1a1a1a] font-mono font-bold"
+                  />
+                </div>
+                <div className="space-y-1">
+                  <label className="font-semibold text-gray-400">Link BO (Opcional)</label>
+                  <input 
+                    type="text" 
+                    value={sinistroBoUrl} 
+                    onChange={e => setSinistroBoUrl(e.target.value)}
+                    placeholder="https://..."
+                    className="w-full text-xs bg-white/[0.03] border border-white/10 rounded-xl px-3 py-2 text-white placeholder-gray-500 focus:outline-hidden focus:border-blue-500/50 focus:bg-[#1a1a1a]"
+                  />
+                </div>
+              </div>
+
+              <div className="space-y-1">
+                <label className="font-semibold text-gray-400 flex items-center gap-2">
+                  <Camera className="w-3.5 h-3.5" /> Fotos do Sinistro (Múltiplas URLs)
+                </label>
+                <textarea 
+                  value={sinistroPhotos.join('\n')} 
+                  onChange={e => setSinistroPhotos(e.target.value.split('\n').filter(s => s.trim() !== ''))}
+                  placeholder="Cole as URLs das fotos (uma por linha)..."
+                  className="w-full text-[10px] bg-white/[0.03] border border-white/10 rounded-xl px-3 py-2 text-white placeholder-gray-500 focus:outline-hidden focus:border-blue-500/50 focus:bg-[#1a1a1a] h-16 resize-none font-mono"
+                />
+              </div>
+            </div>
+          )}
         </form>
 
         {/* Footer */}
@@ -1656,6 +1829,8 @@ export function LogForms({
               <span>
                 {formType === 'vehicle'
                   ? (vehicleToEdit ? 'Salvar Alterações' : 'Salvar Veículo')
+                  : formType === 'sinistro'
+                  ? 'Registrar Sinistro'
                   : 'Salvar Registro'}
               </span>
             </button>

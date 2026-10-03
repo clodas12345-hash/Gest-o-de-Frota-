@@ -37,10 +37,12 @@ export function VisualCharts({
     const vehicle = vehicles.find((v) => v.id === vId);
     if (!vehicle) return { rental: 0, maintenance: 0, other: 0, total: 0 };
 
-    const rental = (vehicle.financiamento || 0) + 
-                   (vehicle.seguro || 0) + 
-                   (vehicle.ipva || 0) + 
-                   (vehicle.manutencaoPreventiva || 0);
+    const fin = (vehicle.financiamentoParcelasTotais && vehicle.financiamentoParcelasTotais > 0 && (vehicle.financiamentoParcelasPagas || 0) >= vehicle.financiamentoParcelasTotais) ? 0 : (vehicle.financiamento || 0);
+    const seg = (vehicle.seguroParcelasTotais && vehicle.seguroParcelasTotais > 0 && (vehicle.seguroParcelasPagas || 0) >= vehicle.seguroParcelasTotais) ? 0 : (vehicle.seguro || 0);
+    const ipv = (vehicle.ipvaParcelasTotais && vehicle.ipvaParcelasTotais > 0 && (vehicle.ipvaParcelasPagas || 0) >= vehicle.ipvaParcelasTotais) ? 0 : (vehicle.ipva || 0);
+    const man = (vehicle.manutencaoParcelasTotais && vehicle.manutencaoParcelasTotais > 0 && (vehicle.manutencaoParcelasPagas || 0) >= vehicle.manutencaoParcelasTotais) ? 0 : (vehicle.manutencaoPreventiva || 0);
+
+    const rental = fin + seg + ipv + man;
 
     const maintenance = maintenanceLogs
       .filter((log) => log.vehicleId === vId)

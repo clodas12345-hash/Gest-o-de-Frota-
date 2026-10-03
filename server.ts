@@ -26,7 +26,7 @@ async function startServer() {
         JSON format: {
           "type": "vehicle" | "fuel" | "maintenance" | "trip" | "expense" | "unknown",
           "data": { 
-            // If vehicle: { brand?, model?, plate?, color?, rentalCompany?, startDate?, endDate?, initialKm?, contractNumber?, valorRecebido?, valorSemanal?, financiamento?, seguro?, ipva?, manutencaoPreventiva?, currentKm?, fuelLevel?, driver?, driverPhone?, caucaoValor?, caucaoData?, caucaoObservacoes?, nextVistoriaDate? }
+            // If vehicle: { brand?, model?, plate?, color?, rentalCompany?, startDate?, endDate?, initialKm?, contractNumber?, valorRecebido?, valorSemanal?, financiamento?, seguro?, ipva?, manutencaoPreventiva?, currentKm?, preventiveMaintNextKm?, fuelLevel?, driver?, driverPhone?, caucaoValor?, caucaoData?, caucaoObservacoes?, nextVistoriaDate? }
             // If fuel: { fuelDate?, fuelKm?, fuelLiters?, fuelPricePerLiter?, fuelTotalCost?, fuelType?, fuelStation? }
             // If maintenance: { maintDate?, maintType?, maintDescription?, maintCost?, maintShop?, maintNextKm? }
             // If trip: { tripDate?, tripDriver?, tripStartKm?, tripEndKm?, tripPurpose? }
@@ -34,7 +34,7 @@ async function startServer() {
           }
         }`;
       } else if (formType === "vehicle") {
-        schemaText = `Extract vehicle details. JSON format: { brand?: string, model?: string, plate?: string, color?: string, rentalCompany?: string, startDate?: string (YYYY-MM-DD), endDate?: string (YYYY-MM-DD), initialKm?: number, contractNumber?: string, valorRecebido?: number, valorSemanal?: number, financiamento?: number, seguro?: number, ipva?: number, manutencaoPreventiva?: number, currentKm?: number, fuelLevel?: number, driver?: string, driverPhone?: string, caucaoValor?: number, caucaoData?: string (YYYY-MM-DD), caucaoObservacoes?: string, nextVistoriaDate?: string (YYYY-MM-DD) }`;
+        schemaText = `Extract vehicle details. JSON format: { brand?: string, model?: string, plate?: string, color?: string, rentalCompany?: string, startDate?: string (YYYY-MM-DD), endDate?: string (YYYY-MM-DD), initialKm?: number, contractNumber?: string, valorRecebido?: number, valorSemanal?: number, financiamento?: number, seguro?: number, ipva?: number, manutencaoPreventiva?: number, currentKm?: number, preventiveMaintNextKm?: number, fuelLevel?: number, driver?: string, driverPhone?: string, caucaoValor?: number, caucaoData?: string (YYYY-MM-DD), caucaoObservacoes?: string, nextVistoriaDate?: string (YYYY-MM-DD) }`;
       } else if (formType === "fuel") {
         schemaText = `Extract fuel log details. JSON format: { fuelDate?: string (YYYY-MM-DD), fuelKm?: number, fuelLiters?: number, fuelPricePerLiter?: number, fuelTotalCost?: number, fuelType?: "Gasolina" | "Etanol" | "Diesel" | "Flex", fuelStation?: string }`;
       } else if (formType === "maintenance") {
