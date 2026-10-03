@@ -36,7 +36,7 @@ import { AboutAppModal } from './components/AboutAppModal';
 import { LogoViewerModal } from './components/LogoViewerModal';
 import { GlobalVoiceAssistant } from './components/GlobalVoiceAssistant';
 import { generateVehiclePDF, generateVistoriaPDF } from './utils/pdfGenerator';
-import { sendAppNotification, initAppNotificationsOnFirstLaunch } from './utils/notifications';
+import { sendAppNotification, requestNotificationPermission } from './utils/notifications';
 import logoImg from './assets/logo.png';
 
 // Icons
@@ -308,7 +308,7 @@ export default function App() {
   };
 
   React.useEffect(() => {
-    initAppNotificationsOnFirstLaunch();
+    requestNotificationPermission();
   }, []);
 
   React.useEffect(() => {
