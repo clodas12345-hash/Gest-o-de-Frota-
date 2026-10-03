@@ -3897,6 +3897,7 @@ _Enviado via sistema de gestão de frota._`;
                   </button>
                 </div>
               </div>
+            </div>
 
               {isVistoriaExpanded && (
                 <div className="space-y-3 pt-1 animate-in slide-in-from-top-1 duration-150">
@@ -4610,6 +4611,8 @@ _Enviado via sistema de gestão de frota._`;
               )}
             </div>
           )}
+        </div>
+      )}
 
           {/* TAB 5: Contrato & Documentos */}
           {activeTab === 'documentos' && (
@@ -5113,6 +5116,9 @@ _Enviado via sistema de gestão de frota._`;
               </div>
             </div>
           )}
+        </div>
+      </div>
+    )}
 
           {/* TAB 6: Pneus */}
           {activeTab === 'pneus' && (
@@ -5653,6 +5659,7 @@ _Enviado via sistema de gestão de frota._`;
               👆 Arraste para o lado ou use as setas ❮ ❯ para navegar entre as fotos
             </div>
           </div>
+        </div>
       )}
     </div>
   );
