@@ -1,6 +1,28 @@
 import { Capacitor } from '@capacitor/core';
 import { LocalNotifications } from '@capacitor/local-notifications';
 
+const CHANNEL_ID = 'fleet_notifications';
+
+export async function setupNotificationChannel() {
+  if (Capacitor.isNativePlatform()) {
+    try {
+      await LocalNotifications.createChannel({
+        id: CHANNEL_ID,
+        name: 'Alertas e Lembretes da Frota',
+        description: 'Notificações de revisões de manutenção, cobranças, contratos e vistorias da frota',
+        importance: 5, // High importance (heads-up notification + sound)
+        visibility: 1,
+        sound: 'default',
+        vibration: true,
+        lights: true,
+        lightColor: '#34d399'
+      });
+    } catch (err) {
+      console.warn('Erro ao configurar canal de notificação:', err);
+    }
+  }
+}
+
 export async function checkNotificationPermission(): Promise<boolean> {
   if (Capacitor.isNativePlatform()) {
     try {
@@ -20,6 +42,7 @@ export async function checkNotificationPermission(): Promise<boolean> {
 export async function requestNotificationPermission(): Promise<boolean> {
   if (Capacitor.isNativePlatform()) {
     try {
+      await setupNotificationChannel();
       const status = await LocalNotifications.requestPermissions();
       return status.display === 'granted';
     } catch (err) {
@@ -40,9 +63,18 @@ export async function requestNotificationPermission(): Promise<boolean> {
   return false;
 }
 
-export async function sendAppNotification(title: string, options?: { body?: string; id?: number; icon?: string }) {
+export async function sendAppNotification(
+  title: string, 
+  options?: { 
+    body?: string; 
+    id?: number; 
+    icon?: string;
+    extra?: Record<string, any>;
+  }
+) {
   if (Capacitor.isNativePlatform()) {
     try {
+      await setupNotificationChannel();
       await LocalNotifications.schedule({
         notifications: [
           {
@@ -51,7 +83,9 @@ export async function sendAppNotification(title: string, options?: { body?: stri
             id: options?.id || Math.floor(Math.random() * 1000000) + 1,
             smallIcon: 'ic_stat_icon',
             iconColor: '#34d399',
-            sound: 'default'
+            sound: 'default',
+            channelId: CHANNEL_ID,
+            extra: options?.extra
           }
         ]
       });

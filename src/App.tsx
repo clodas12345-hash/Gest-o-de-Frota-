@@ -308,8 +308,40 @@ export default function App() {
   };
 
   React.useEffect(() => {
-    requestNotificationPermission();
-  }, []);
+    requestNotificationPermission().then((granted) => {
+      if (!granted) return;
+
+      // 1. Check Friday Vistoria Reminder
+      const isFriday = new Date().getDay() === 5;
+      const todayDateStr = new Date().toISOString().split('T')[0];
+      const lastFridayCheck = localStorage.getItem('fleet_last_friday_check');
+
+      if (isFriday && !disableFridayReminder && lastFridayCheck !== todayDateStr) {
+        localStorage.setItem('fleet_last_friday_check', todayDateStr);
+        sendAppNotification('📋 Lembrete de Vistoria Semanal', {
+          body: 'Hoje é sexta-feira! Lembre-se de solicitar as fotos e vistorias semanais aos motoristas da frota.',
+        });
+      }
+
+      // 2. Check Overdue Maintenance on startup
+      const lastMaintCheck = localStorage.getItem('fleet_last_maint_check');
+      if (lastMaintCheck !== todayDateStr) {
+        localStorage.setItem('fleet_last_maint_check', todayDateStr);
+        const overdueVehicles = vehicles.filter((v) => {
+          const cur = v.preventiveMaintCurrentKm || v.currentKm || 0;
+          const next = v.preventiveMaintNextKm || 0;
+          return next > 0 && cur >= next;
+        });
+
+        if (overdueVehicles.length > 0) {
+          const v = overdueVehicles[0];
+          sendAppNotification(`🚨 MANUTENÇÃO VENCIDA: ${v.brand} (${v.plate})`, {
+            body: `O veículo atingiu ${(v.preventiveMaintCurrentKm || v.currentKm || 0).toLocaleString('pt-BR')} KM (limite era ${v.preventiveMaintNextKm?.toLocaleString('pt-BR')} KM). Providencie a revisão!`,
+          });
+        }
+      }
+    });
+  }, [vehicles.length, disableFridayReminder]);
 
   React.useEffect(() => {
     localStorage.setItem('fleet_checklist_config', JSON.stringify(checklistConfig));
@@ -900,6 +932,10 @@ export default function App() {
 
       setVehicles((prev) => prev.map((v) => (v.id === id ? updatedVehicle : v)));
 
+      sendAppNotification(`📁 Contrato Finalizado: ${targetVehicle.brand} (${targetVehicle.plate})`, {
+        body: `Contrato de ${targetVehicle.driver || 'motorista'} arquivado em Contratos Finalizados com sucesso.`,
+      });
+
       setDeleteToastMsg(`Contrato do veículo ${targetVehicle.brand} ${targetVehicle.model} (${targetVehicle.plate}) finalizado com sucesso! Relatório arquivado em 'Contratos Finalizados' e dados de manutenção mantidos no sistema.`);
       setTimeout(() => setDeleteToastMsg(null), 6000);
     } catch (err) {
@@ -938,6 +974,10 @@ export default function App() {
         console.error("Erro ao gerar PDF da Vistoria", err);
       }
     }
+
+    sendAppNotification(`📋 Vistoria Registrada: ${targetVehicle.brand} (${targetVehicle.plate})`, {
+      body: `Vistoria de ${vistoria.type || 'Rotina'} concluída com sucesso e anexada aos documentos do veículo.`,
+    });
 
     setVehicles((prev) =>
       prev.map((v) => {

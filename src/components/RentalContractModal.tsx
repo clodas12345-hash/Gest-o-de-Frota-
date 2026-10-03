@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Vehicle, VehicleDocument, Vistoria, AgendaContact } from '../types';
 import { generateRentalContractPDF, RentalContractData } from '../utils/pdfGenerator';
 import { generateNextContractNumber } from '../utils/contractHelper';
+import { sendAppNotification } from '../utils/notifications';
 import { DriverVistoriaForm } from './DriverVistoriaForm';
 import CurrencyInput from './CurrencyInput';
 import { 
@@ -460,6 +461,10 @@ Por favor, preencha as fotos e o checklist de entrega ao retirar o veículo.`;
       setGeneratedPdfUrl(pdfDataUrl);
       setGeneratedPdfFileName(fileName);
       setIsSuccess(true);
+
+      sendAppNotification(`📄 Contrato de Locação Gerado: ${vehicleToUse.brand} (${vehicleToUse.plate})`, {
+        body: `Contrato do locatário ${contractData.tenantName} foi gerado e anexado aos documentos com sucesso.`,
+      });
     } catch (err) {
       console.error('Erro ao gerar e salvar contrato:', err);
       alert('Ocorreu um erro ao gerar o contrato em PDF. Tente novamente.');
@@ -645,6 +650,16 @@ O contrato oficial em PDF já foi gerado e está arquivado nos documentos do ve�
                     <span>Avisar no WhatsApp</span>
                   </button>
                 )}
+
+                <button
+                  type="button"
+                  onClick={onClose}
+                  className="px-5 py-3 bg-white/10 hover:bg-white/20 text-white font-bold text-xs rounded-xl flex items-center justify-center gap-2 transition-all cursor-pointer border border-white/20 shadow-md"
+                  title="Fechar visualização do contrato"
+                >
+                  <X className="w-4 h-4" />
+                  <span>Fechar</span>
+                </button>
               </div>
 
               {isSavedNotification && (
@@ -718,13 +733,22 @@ O contrato oficial em PDF já foi gerado e está arquivado nos documentos do ve�
                 )}
               </div>
 
-              <div className="pt-4 border-t border-emerald-500/20">
+              <div className="pt-4 border-t border-emerald-500/20 flex items-center justify-between gap-3">
                 <button
                   type="button"
                   onClick={() => setIsSuccess(false)}
                   className="text-xs text-gray-400 hover:text-white underline cursor-pointer"
                 >
                   Voltar ao formulário para fazer alterações
+                </button>
+
+                <button
+                  type="button"
+                  onClick={onClose}
+                  className="px-4 py-2 bg-white/10 hover:bg-white/20 text-white font-bold text-xs rounded-xl flex items-center gap-1.5 transition-colors cursor-pointer border border-white/10"
+                >
+                  <X className="w-4 h-4" />
+                  <span>Concluir e Fechar</span>
                 </button>
               </div>
             </div>

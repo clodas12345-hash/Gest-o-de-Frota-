@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { FinalizedContract } from '../types';
 import { ConfirmDeleteModal } from './ConfirmDeleteModal';
+import { PdfViewer } from './PdfViewer';
 import { 
   FolderArchive, 
   X, 
@@ -202,6 +203,22 @@ export function FinalizedContractsModal({
           )}
         </div>
 
+        {/* Modal Footer with Close Button */}
+        <div className="p-4 border-t border-white/10 bg-[#141414] flex items-center justify-between">
+          <span className="text-xs text-gray-500 font-mono">
+            {filteredContracts.length} de {contracts.length} {contracts.length === 1 ? 'contrato' : 'contratos'}
+          </span>
+          <button
+            type="button"
+            onClick={onClose}
+            className="px-4 py-2 text-xs font-bold text-gray-300 hover:text-white bg-white/5 hover:bg-white/10 border border-white/10 rounded-xl transition-all cursor-pointer flex items-center gap-1.5"
+            title="Fechar pasta"
+          >
+            <X className="w-4 h-4" />
+            <span>Fechar Pasta</span>
+          </button>
+        </div>
+
         {/* Delete Confirmation Modal */}
         <ConfirmDeleteModal
           isOpen={!!contractToDelete}
@@ -232,26 +249,41 @@ export function FinalizedContractsModal({
                 <div className="flex items-center gap-2">
                   <button
                     onClick={() => handleDownloadPdf(selectedPdfPreview)}
-                    className="flex items-center gap-1.5 text-xs font-bold text-amber-400 bg-amber-500/10 px-3 py-1.5 rounded-xl border border-amber-500/20"
+                    className="flex items-center gap-1.5 text-xs font-bold text-amber-400 bg-amber-500/10 px-3 py-1.5 rounded-xl border border-amber-500/20 cursor-pointer"
                   >
                     <Download className="w-3.5 h-3.5" />
                     <span>Baixar</span>
                   </button>
                   <button
                     onClick={() => setSelectedPdfPreview(null)}
-                    className="p-1.5 text-gray-400 hover:text-white bg-white/5 rounded-lg"
+                    className="p-1.5 text-gray-400 hover:text-white bg-white/5 rounded-lg cursor-pointer"
+                    title="Fechar"
                   >
                     <X className="w-5 h-5" />
                   </button>
                 </div>
               </div>
 
-              <div className="flex-1 bg-white">
-                <iframe 
-                  src={selectedPdfPreview.pdfDataUrl} 
-                  className="w-full h-full border-none"
-                  title="PDF Preview"
+              <div className="flex-1 overflow-hidden">
+                <PdfViewer 
+                  pdfDataUrl={selectedPdfPreview.pdfDataUrl} 
+                  fileName={selectedPdfPreview.pdfFileName}
                 />
+              </div>
+
+              {/* Sub-modal Footer with Fechar */}
+              <div className="p-3 bg-[#141414] border-t border-white/10 flex items-center justify-between">
+                <span className="text-[11px] text-gray-500 font-mono">
+                  {selectedPdfPreview.brand} {selectedPdfPreview.model} ({selectedPdfPreview.plate})
+                </span>
+                <button
+                  type="button"
+                  onClick={() => setSelectedPdfPreview(null)}
+                  className="px-4 py-2 bg-white/10 hover:bg-white/15 text-white font-bold text-xs rounded-xl flex items-center gap-1.5 transition-colors cursor-pointer border border-white/10"
+                >
+                  <X className="w-4 h-4" />
+                  <span>Fechar Visualização</span>
+                </button>
               </div>
             </div>
           </div>

@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { Vehicle, ExpenseLog, WeeklyPayment, Vistoria, VehicleDocument, MaintenanceLog, FuelLog } from '../types';
 import { generateVistoriaPDF } from '../utils/pdfGenerator';
 import { sendAppNotification, requestNotificationPermission } from '../utils/notifications';
+import { PdfViewer } from './PdfViewer';
 import { 
   Calendar, 
   User, 
@@ -887,6 +888,11 @@ export const VehicleCard: React.FC<VehicleCardProps> = ({
       ...vehicle,
       weeklyPayments: [...currentPayments, newPayment],
     });
+
+    sendAppNotification(`💰 Pagamento Registrado: ${vehicle.brand} (${vehicle.plate})`, {
+      body: `Aluguel semanal de R$ ${newPaymentAmount.toLocaleString('pt-BR', { minimumFractionDigits: 2 })} registrado para ${vehicle.driver || 'motorista'}.`,
+    });
+
     setNewPaymentAmount(0);
     setShowAddPayment(false);
   };
@@ -4393,17 +4399,24 @@ export const VehicleCard: React.FC<VehicleCardProps> = ({
             </div>
 
             {/* Content Preview Body */}
-            <div className="p-6 overflow-y-auto flex-1 bg-black/40 flex items-center justify-center min-h-[300px]">
+            <div className="overflow-y-auto flex-1 bg-black/40 flex items-center justify-center min-h-[300px]">
               {previewDoc.contentUrl ? (
-                previewDoc.contentUrl.startsWith('data:image/') || previewDoc.fileType === 'image' || previewDoc.name.toLowerCase().endsWith('.png') || previewDoc.name.toLowerCase().endsWith('.jpg') || previewDoc.name.toLowerCase().endsWith('.jpeg') ? (
+                previewDoc.contentUrl.startsWith('data:application/pdf') || previewDoc.fileType === 'pdf' || previewDoc.name.toLowerCase().endsWith('.pdf') ? (
+                  <div className="w-full h-[65vh]">
+                    <PdfViewer 
+                      pdfDataUrl={previewDoc.contentUrl} 
+                      fileName={previewDoc.name} 
+                    />
+                  </div>
+                ) : previewDoc.contentUrl.startsWith('data:image/') || previewDoc.fileType === 'image' || previewDoc.name.toLowerCase().endsWith('.png') || previewDoc.name.toLowerCase().endsWith('.jpg') || previewDoc.name.toLowerCase().endsWith('.jpeg') ? (
                   <img 
                     src={previewDoc.contentUrl} 
                     alt={previewDoc.name} 
                     referrerPolicy="no-referrer"
-                    className="max-w-full max-h-[55vh] object-contain rounded-lg border border-white/5 shadow-lg"
+                    className="max-w-full max-h-[55vh] object-contain rounded-lg border border-white/5 shadow-lg p-4"
                   />
                 ) : previewDoc.contentUrl.startsWith('data:text/') || previewDoc.name.toLowerCase().endsWith('.txt') ? (
-                  <pre className="text-xs text-gray-300 font-mono p-4 bg-zinc-900 border border-white/5 rounded-xl w-full whitespace-pre-wrap select-all max-h-[50vh] overflow-y-auto">
+                  <pre className="text-xs text-gray-300 font-mono p-4 bg-zinc-900 border border-white/5 rounded-xl w-full whitespace-pre-wrap select-all max-h-[50vh] overflow-y-auto m-4">
                     {(() => {
                       try {
                         if (previewDoc.contentUrl.includes('base64,')) {
