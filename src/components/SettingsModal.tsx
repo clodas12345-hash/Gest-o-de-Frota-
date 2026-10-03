@@ -17,7 +17,7 @@ import {
   MessageCircle
 } from 'lucide-react';
 import { Vehicle } from '../types';
-import { requestNotificationPermission, sendAppNotification, checkNotificationPermission } from '../utils/notifications';
+import { requestNotificationPermission, sendAppNotification, checkNotificationPermission, requestIgnoreBatteryOptimization } from '../utils/notifications';
 
 interface SettingsModalProps {
   isOpen: boolean;
@@ -230,6 +230,25 @@ export function SettingsModal({
                       Permitir Notificações
                     </button>
                   )}
+                </div>
+
+                {/* Battery Optimization & Exact Alarm Button */}
+                <div className="pt-2 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2 border-t border-white/5">
+                  <span className="text-[11px] text-gray-400">
+                    Ativação para Notificações com App Fechado:
+                  </span>
+                  <button
+                    type="button"
+                    onClick={async () => {
+                      await requestIgnoreBatteryOptimization();
+                      alert('⚡ Configuração de bateria/alarmes acionada. Garanta que o aplicativo esteja marcado como "Sem restrições / Ignorar otimização" para disparar com o app fechado.');
+                    }}
+                    className="px-3 py-1.5 bg-emerald-600/20 hover:bg-emerald-600/30 border border-emerald-500/30 text-emerald-300 font-bold text-[11px] rounded-xl flex items-center gap-1.5 transition-all cursor-pointer"
+                    title="Permitir execução em segundo plano sem suspensão de bateria"
+                  >
+                    <ShieldCheck className="w-3.5 h-3.5 text-emerald-400" />
+                    <span>Ignorar Otimização de Bateria</span>
+                  </button>
                 </div>
 
                 {/* Test / Trigger Notification Button */}
