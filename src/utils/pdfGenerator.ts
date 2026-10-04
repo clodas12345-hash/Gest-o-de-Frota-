@@ -782,3 +782,221 @@ export async function generateRentalContractPDF(
   const pdfDataUrl = doc.output('datauristring');
   return { doc, fileName, pdfDataUrl };
 }
+
+export async function generatePaymentReceiptPDF(
+  vehicle: Vehicle,
+  payment: { id: string; date: string; amount: number }
+): Promise<{ doc: jsPDF; fileName: string; pdfDataUrl: string; whatsappText: string }> {
+  const doc = new jsPDF({
+    orientation: 'p',
+    unit: 'mm',
+    format: 'a4'
+  });
+
+  const formattedDate = new Date((payment.date || new Date().toISOString().split('T')[0]) + 'T12:00:00').toLocaleDateString('pt-BR');
+  const formattedAmount = (payment.amount || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 });
+  const fileName = `Recibo_${vehicle.plate.replace(/[^a-zA-Z0-9]/g, '')}_${payment.date}.pdf`;
+
+  // Header
+  doc.setFillColor(16, 185, 129); // Emerald
+  doc.rect(0, 0, 210, 32, 'F');
+
+  doc.setTextColor(255, 255, 255);
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(17);
+  doc.text('RECIBO DE PAGAMENTO DE LOCAÇÃO SEMANAL', 14, 15);
+
+  doc.setFontSize(10);
+  doc.setFont('helvetica', 'normal');
+  doc.text(`Comprovante Oficial de Quitação Semanal | Emitido em ${new Date().toLocaleDateString('pt-BR')}`, 14, 24);
+
+  // Box Principal
+  doc.setFillColor(248, 250, 252);
+  doc.setDrawColor(203, 213, 225);
+  doc.roundedRect(14, 42, 182, 85, 3, 3, 'FD');
+
+  doc.setTextColor(15, 23, 42);
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(14);
+  doc.text(`VALOR RECEBIDO: R$ ${formattedAmount}`, 20, 55);
+
+  doc.setFontSize(10.5);
+  doc.setFont('helvetica', 'normal');
+  const bodyText = `Recebemos de ${vehicle.driver || 'Locatário Responsável'} a importância de R$ ${formattedAmount}, referente ao pagamento semanal da locação do veículo ${vehicle.brand} ${vehicle.model}, placa ${vehicle.plate}, na data de referência ${formattedDate}.`;
+  const splitBody = doc.splitTextToSize(bodyText, 170);
+  doc.text(splitBody, 20, 67);
+
+  // Dados resumidos
+  doc.setFont('helvetica', 'bold');
+  doc.text('Dados da Locação:', 20, 88);
+  doc.setFont('helvetica', 'normal');
+  doc.text(`• Veículo: ${vehicle.brand} ${vehicle.model} (${vehicle.color || 'Cor padrão'})`, 22, 95);
+  doc.text(`• Placa: ${vehicle.plate}`, 22, 102);
+  doc.text(`• Locatário / Motorista: ${vehicle.driver || 'Não informado'}`, 22, 109);
+  doc.text(`• Data do Pagamento: ${formattedDate}   |   Status: QUITADO / APROVADO`, 22, 116);
+
+  // Assinatura
+  doc.setDrawColor(100, 116, 139);
+  doc.line(65, 155, 145, 155);
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(9.5);
+  doc.text('GESTÃO DE FROTA - LOCADOR RESPONSÁVEL', 105, 161, { align: 'center' });
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(8.5);
+  doc.text('Quitação confirmada eletronicamente no sistema de Gestão de Frota', 105, 166, { align: 'center' });
+
+  const pdfDataUrl = doc.output('datauristring');
+  const whatsappText = `✅ *RECIBO DE PAGAMENTO CONFIRMADO*\n\nOlá *${vehicle.driver || 'Motorista'}*!\nConfirmamos o recebimento do pagamento semanal:\n\n🚗 *Veículo:* ${vehicle.brand} ${vehicle.model} (${vehicle.plate})\n💰 *Valor Pago:* R$ ${formattedAmount}\n📅 *Data:* ${formattedDate}\n📄 *Status:* Quitado com sucesso!\n\nObrigado pela pontualidade!`;
+
+  return { doc, fileName, pdfDataUrl, whatsappText };
+}
+
+export async function generateExecutiveMonthlyPDF(
+  vehicles: Vehicle[],
+  maintenanceLogs: MaintenanceLog[],
+  expenseLogs: ExpenseLog[],
+  selectedMonth: number,
+  selectedYear: number
+): Promise<{ doc: jsPDF; fileName: string; pdfDataUrl: string }> {
+  const doc = new jsPDF({
+    orientation: 'p',
+    unit: 'mm',
+    format: 'a4'
+  });
+
+  const monthNames = [
+    'Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho',
+    'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro'
+  ];
+  const monthLabel = `${monthNames[selectedMonth] || 'Mês'} de ${selectedYear}`;
+  const fileName = `Relatorio_Executivo_Frota_${String(selectedMonth + 1).padStart(2, '0')}_${selectedYear}.pdf`;
+
+  const isSelectedPeriod = (dateStr: string) => {
+    if (!dateStr) return false;
+    const parts = dateStr.split('-');
+    if (parts.length >= 2) {
+      const yr = parseInt(parts[0], 10);
+      const mo = parseInt(parts[1], 10) - 1;
+      return yr === selectedYear && mo === selectedMonth;
+    }
+    return false;
+  };
+
+  // Header
+  doc.setFillColor(15, 23, 42);
+  doc.rect(0, 0, 210, 30, 'F');
+  doc.setTextColor(255, 255, 255);
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(15);
+  doc.text('RELATÓRIO EXECUTIVO MENSAL - CONTABILIDADE & INVESTIDOR', 14, 13);
+  doc.setFontSize(9.5);
+  doc.setFont('helvetica', 'normal');
+  doc.text(`Competência: ${monthLabel} | Total de Veículos: ${vehicles.length} | Emitido em ${new Date().toLocaleDateString('pt-BR')}`, 14, 22);
+
+  let y = 38;
+
+  let totalFrotaReceita = 0;
+  let totalFrotaFixas = 0;
+  let totalFrotaManut = 0;
+  let totalFrotaExtras = 0;
+
+  const rows = vehicles.map((v) => {
+    const weeklyInMonth = (v.weeklyPayments || [])
+      .filter((wp) => isSelectedPeriod(wp.date))
+      .reduce((acc, p) => acc + (p.amount || 0), 0);
+
+    const receita = weeklyInMonth > 0 ? weeklyInMonth : (v.valorRecebido || 0);
+    const fixas = (v.financiamento || 0) + (v.seguro || 0) + (v.ipva || 0) + (v.manutencaoPreventiva || 0) + (v.custoExtra || 0);
+    const manutMes = maintenanceLogs
+      .filter((m) => m.vehicleId === v.id && isSelectedPeriod(m.date))
+      .reduce((acc, m) => acc + (m.cost || 0), 0);
+    const expMes = expenseLogs
+      .filter((e) => e.vehicleId === v.id && isSelectedPeriod(e.date))
+      .reduce((acc, e) => acc + (e.cost || 0), 0);
+
+    const liquido = receita - fixas - manutMes - expMes;
+
+    totalFrotaReceita += receita;
+    totalFrotaFixas += fixas;
+    totalFrotaManut += manutMes;
+    totalFrotaExtras += expMes;
+
+    return {
+      car: `${v.brand} ${v.model} (${v.plate})`,
+      driver: v.driver || 'Disponível',
+      receita,
+      fixas,
+      manutMes: manutMes + expMes,
+      liquido
+    };
+  });
+
+  const totalFrotaLiquido = totalFrotaReceita - totalFrotaFixas - totalFrotaManut - totalFrotaExtras;
+
+  // KPIs Summary Box
+  doc.setFillColor(241, 245, 249);
+  doc.roundedRect(14, y, 182, 24, 2, 2, 'F');
+  doc.setTextColor(30, 41, 59);
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(9.5);
+  doc.text(`FATURAMENTO BRUTO: R$ ${totalFrotaReceita.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`, 18, y + 8);
+  doc.text(`DESPESAS FIXAS: R$ ${totalFrotaFixas.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`, 18, y + 17);
+  doc.text(`MANUTENÇÕES / EXTRAS: R$ ${(totalFrotaManut + totalFrotaExtras).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`, 108, y + 8);
+
+  if (totalFrotaLiquido >= 0) {
+    doc.setTextColor(5, 150, 105);
+  } else {
+    doc.setTextColor(220, 38, 38);
+  }
+  doc.setFontSize(10.5);
+  doc.text(`LUCRO LÍQUIDO REAL: R$ ${totalFrotaLiquido.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`, 108, y + 17);
+
+  y += 32;
+
+  // Table Header
+  doc.setFillColor(30, 41, 59);
+  doc.rect(14, y, 182, 8, 'F');
+  doc.setTextColor(255, 255, 255);
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(8.5);
+  doc.text('VEÍCULO / PLACA', 16, y + 5.5);
+  doc.text('MOTORISTA', 68, y + 5.5);
+  doc.text('RECEITA', 110, y + 5.5);
+  doc.text('CUSTO FIXO', 135, y + 5.5);
+  doc.text('MANUT/EXT', 160, y + 5.5);
+  doc.text('LÍQUIDO', 181, y + 5.5);
+
+  y += 8;
+
+  rows.forEach((r, idx) => {
+    if (y > 270) {
+      doc.addPage();
+      y = 20;
+    }
+    if (idx % 2 === 0) {
+      doc.setFillColor(248, 250, 252);
+      doc.rect(14, y, 182, 7.5, 'F');
+    }
+    doc.setTextColor(30, 41, 59);
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(8);
+    doc.text(r.car.substring(0, 27), 16, y + 5);
+    doc.text(r.driver.substring(0, 20), 68, y + 5);
+    doc.text(`R$ ${r.receita.toLocaleString('pt-BR', { minimumFractionDigits: 0 })}`, 110, y + 5);
+    doc.text(`R$ ${r.fixas.toLocaleString('pt-BR', { minimumFractionDigits: 0 })}`, 135, y + 5);
+    doc.text(`R$ ${r.manutMes.toLocaleString('pt-BR', { minimumFractionDigits: 0 })}`, 160, y + 5);
+
+    doc.setFont('helvetica', 'bold');
+    if (r.liquido >= 0) {
+      doc.setTextColor(5, 150, 105);
+    } else {
+      doc.setTextColor(220, 38, 38);
+    }
+    doc.text(`R$ ${r.liquido.toLocaleString('pt-BR', { minimumFractionDigits: 0 })}`, 180, y + 5);
+    y += 7.5;
+  });
+
+  const pdfDataUrl = doc.output('datauristring');
+  return { doc, fileName, pdfDataUrl };
+}
+

@@ -1,8 +1,9 @@
 import React, { useState } from 'react';
 import { Vehicle, FuelLog, MaintenanceLog, ExpenseLog, Vistoria } from '../types';
-import { BarChart3, History, X, PieChart } from 'lucide-react';
+import { BarChart3, History, X, PieChart, FileDown } from 'lucide-react';
 import { VisualCharts } from './VisualCharts';
 import { HistoryLogs } from './HistoryLogs';
+import { generateExecutiveMonthlyPDF } from '../utils/pdfGenerator';
 
 interface ReportsAndHistoryModalProps {
   isOpen: boolean;
@@ -46,8 +47,29 @@ export function ReportsAndHistoryModal({
   onClearAllVistorias,
 }: ReportsAndHistoryModalProps) {
   const [activeTab, setActiveTab] = useState<'charts' | 'history'>('charts');
+  const [isExportingExecPdf, setIsExportingExecPdf] = useState(false);
 
   if (!isOpen) return null;
+
+  const handleExportExecutivePdf = async () => {
+    setIsExportingExecPdf(true);
+    try {
+      const m = selectedMonth !== undefined ? selectedMonth : new Date().getMonth();
+      const y = selectedYear !== undefined ? selectedYear : new Date().getFullYear();
+      const { doc, fileName } = await generateExecutiveMonthlyPDF(
+        vehicles,
+        maintenanceLogs,
+        expenseLogs,
+        m,
+        y
+      );
+      doc.save(fileName);
+    } catch (err) {
+      console.error('Erro ao gerar PDF executivo:', err);
+    } finally {
+      setIsExportingExecPdf(false);
+    }
+  };
 
   return (
     <div className="fixed inset-0 z-[2000] flex items-center justify-center p-3 sm:p-6 bg-black/80 backdrop-blur-sm touch-none overscroll-contain animate-in fade-in duration-200">
@@ -58,7 +80,7 @@ export function ReportsAndHistoryModal({
 
       <div className="relative w-full max-w-6xl max-h-[92vh] bg-[#121212] border border-white/15 rounded-2xl shadow-2xl z-[2001] flex flex-col overflow-hidden overscroll-contain animate-in zoom-in-95 duration-150">
         {/* Modal Header */}
-        <div className="px-5 py-4 border-b border-white/10 flex items-center justify-between bg-[#18181b] shrink-0">
+        <div className="px-5 py-4 border-b border-white/10 flex items-center justify-between bg-[#18181b] shrink-0 flex-wrap gap-2">
           <div className="flex items-center gap-3">
             <div className="p-2 bg-blue-500/10 border border-blue-500/20 rounded-xl text-blue-400">
               <BarChart3 className="w-5 h-5" />
@@ -70,6 +92,17 @@ export function ReportsAndHistoryModal({
           </div>
 
           <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={handleExportExecutivePdf}
+              disabled={isExportingExecPdf}
+              className="px-3.5 py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer shadow-md shadow-emerald-500/20 disabled:opacity-50"
+              title="Baixar Relatório Mensal do Contador / Investidor em PDF (1 Página)"
+            >
+              <FileDown className="w-4 h-4" />
+              <span>{isExportingExecPdf ? 'Gerando PDF...' : 'Relatório Mensal PDF (Contador)'}</span>
+            </button>
+
             <button
               type="button"
               onClick={onClose}

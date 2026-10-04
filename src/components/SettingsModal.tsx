@@ -4,9 +4,7 @@ import {
   Settings, 
   Bell, 
   BellOff, 
-  ShieldAlert, 
   Gauge, 
-  Wrench, 
   CheckCircle2, 
   AlertTriangle,
   Volume2,
@@ -14,10 +12,23 @@ import {
   Camera,
   HardDrive,
   MapPin,
-  MessageCircle
+  MessageCircle,
+  ListChecks,
+  Check,
+  Play
 } from 'lucide-react';
 import { Vehicle } from '../types';
-import { requestNotificationPermission, sendAppNotification, checkNotificationPermission, requestIgnoreBatteryOptimization } from '../utils/notifications';
+import { 
+  requestNotificationPermission, 
+  sendAppNotification, 
+  checkNotificationPermission, 
+  requestIgnoreBatteryOptimization,
+  NOTIFICATION_OPTIONS,
+  NotificationEventKey,
+  getNotificationPreferences,
+  setNotificationPreferences,
+  DEFAULT_NOTIFICATION_PREFERENCES
+} from '../utils/notifications';
 
 interface SettingsModalProps {
   isOpen: boolean;
@@ -41,9 +52,12 @@ export function SettingsModal({
   onTriggerMaintNotificationCheck
 }: SettingsModalProps) {
   const [permissionState, setPermissionState] = useState<'granted' | 'denied' | 'default'>('default');
+  const [notifPrefs, setNotifPrefs] = useState<Record<NotificationEventKey, boolean>>(() => getNotificationPreferences());
+  const [selectedCategory, setSelectedCategory] = useState<string>('Todas');
 
   useEffect(() => {
     if (isOpen) {
+      setNotifPrefs(getNotificationPreferences());
       checkNotificationPermission().then((granted) => {
         setPermissionState(granted ? 'granted' : 'default');
       });
@@ -52,6 +66,31 @@ export function SettingsModal({
 
   if (!isOpen) return null;
 
+  const handleToggleEventPref = (key: NotificationEventKey) => {
+    const nextValue = !notifPrefs[key];
+    const updated = {
+      ...notifPrefs,
+      [key]: nextValue
+    };
+    setNotifPrefs(updated);
+    setNotificationPreferences(updated);
+
+    if (key === 'vistoria_friday') {
+      onToggleFridayReminder(!nextValue);
+    }
+  };
+
+  const handleSelectAllNotifs = (enable: boolean) => {
+    const updated = { ...DEFAULT_NOTIFICATION_PREFERENCES };
+    (Object.keys(updated) as NotificationEventKey[]).forEach((k) => {
+      updated[k] = enable;
+    });
+    setNotifPrefs(updated);
+    setNotificationPreferences(updated);
+    onToggleMaintNotifications(enable);
+    onToggleFridayReminder(!enable);
+  };
+
   const handleRequestPermission = async () => {
     try {
       const granted = await requestNotificationPermission();
@@ -59,7 +98,8 @@ export function SettingsModal({
         setPermissionState('granted');
         onToggleMaintNotifications(true);
         await sendAppNotification('🔔 Notificações Ativadas!', {
-          body: 'Você receberá alertas do aplicativo quando a quilometragem do veículo atingir o limite de manutenção preventiva.',
+          body: 'Você receberá alertas do aplicativo conforme suas escolhas personalizadas na central de notificações.',
+          force: true
         });
       } else {
         const check = await checkNotificationPermission();
@@ -76,6 +116,13 @@ export function SettingsModal({
     return next > 0 && current >= (next - 500);
   });
 
+  const categories = ['Todas', 'Manutenção e Pneus', 'Vistorias', 'Financeiro e Pagamentos', 'Contratos e CNH', 'Operação e Sistema'];
+  const filteredOptions = selectedCategory === 'Todas'
+    ? NOTIFICATION_OPTIONS
+    : NOTIFICATION_OPTIONS.filter(opt => opt.category === selectedCategory);
+
+  const enabledCount = Object.values(notifPrefs).filter(Boolean).length;
+
   return (
     <div className="fixed inset-0 z-[1000] flex items-center justify-center p-4 bg-black/75 backdrop-blur-md animate-in fade-in duration-200">
       <div 
@@ -83,7 +130,7 @@ export function SettingsModal({
         onClick={onClose} 
       />
 
-      <div className="relative w-full max-w-lg bg-[#141414] border border-white/15 rounded-2xl shadow-2xl overflow-hidden z-[1001] animate-in zoom-in-95 duration-150 flex flex-col max-h-[90vh]">
+      <div className="relative w-full max-w-2xl bg-[#141414] border border-white/15 rounded-2xl shadow-2xl overflow-hidden z-[1001] animate-in zoom-in-95 duration-150 flex flex-col max-h-[90vh]">
         
         {/* Modal Header */}
         <div className="px-5 py-4 border-b border-white/10 bg-[#181818] flex items-center justify-between shrink-0">
@@ -92,8 +139,8 @@ export function SettingsModal({
               <Settings className="w-5 h-5" />
             </div>
             <div>
-              <h2 className="text-sm font-bold text-white">Configurações de Lembretes</h2>
-              <p className="text-[11px] text-gray-400">Preferências, avisos de vistoria e notificações</p>
+              <h2 className="text-sm font-bold text-white">Configurações e Central de Notificações</h2>
+              <p className="text-[11px] text-gray-400">Escolha quais dos 20 alertas você deseja receber no seu aparelho</p>
             </div>
           </div>
           
@@ -110,11 +157,144 @@ export function SettingsModal({
         {/* Modal Body */}
         <div className="p-5 space-y-5 overflow-y-auto flex-1 scrollbar-thin scrollbar-thumb-white/10">
           
-          {/* Section 1: Lembrete de Vistoria de Sexta-Feira */}
+          {/* Section 1: Central de Escolha das 20 Notificações */}
+          <div className="space-y-3">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+              <h3 className="text-xs font-bold text-gray-300 uppercase tracking-wider flex items-center gap-1.5">
+                <ListChecks className="w-4 h-4 text-emerald-400" />
+                <span>1. Escolher Notificações para Receber ({enabledCount}/20 ativas)</span>
+              </h3>
+
+              <div className="flex items-center gap-1.5">
+                <button
+                  type="button"
+                  onClick={() => handleSelectAllNotifs(true)}
+                  className="px-2.5 py-1 bg-emerald-600/20 hover:bg-emerald-600/30 border border-emerald-500/30 text-emerald-300 text-[10px] font-bold rounded-lg transition-all cursor-pointer"
+                >
+                  Ativar Todas (20)
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleSelectAllNotifs(false)}
+                  className="px-2.5 py-1 bg-rose-600/20 hover:bg-rose-600/30 border border-rose-500/30 text-rose-300 text-[10px] font-bold rounded-lg transition-all cursor-pointer"
+                >
+                  Desativar Todas
+                </button>
+              </div>
+            </div>
+
+            {/* Category Filter Tabs */}
+            <div className="flex flex-wrap gap-1.5 pt-1">
+              {categories.map((cat) => (
+                <button
+                  key={cat}
+                  type="button"
+                  onClick={() => setSelectedCategory(cat)}
+                  className={`px-2.5 py-1 rounded-lg text-[10px] font-bold transition-all cursor-pointer border ${
+                    selectedCategory === cat
+                      ? 'bg-blue-600 text-white border-blue-500 shadow-xs'
+                      : 'bg-white/5 text-gray-400 hover:text-white border-white/10'
+                  }`}
+                >
+                  {cat}
+                </button>
+              ))}
+            </div>
+
+            {/* 20 Notifications List */}
+            <div className="space-y-2 max-h-[340px] overflow-y-auto pr-1 scrollbar-thin scrollbar-thumb-white/10">
+              {filteredOptions.map((item) => {
+                const isEnabled = notifPrefs[item.key] !== false;
+                return (
+                  <div
+                    key={item.key}
+                    className={`p-3 rounded-xl border transition-all flex items-start justify-between gap-3 ${
+                      isEnabled
+                        ? 'bg-emerald-500/[0.06] border-emerald-500/25'
+                        : 'bg-white/[0.02] border-white/10 opacity-70'
+                    }`}
+                  >
+                    <div className="flex items-start gap-2.5 min-w-0 flex-1">
+                      <button
+                        type="button"
+                        onClick={() => handleToggleEventPref(item.key)}
+                        className={`mt-0.5 w-5 h-5 rounded-md flex items-center justify-center border transition-all shrink-0 cursor-pointer ${
+                          isEnabled
+                            ? 'bg-emerald-500 border-emerald-400 text-black font-bold'
+                            : 'bg-black/40 border-white/20 text-transparent'
+                        }`}
+                        title={isEnabled ? 'Desmarcar esta notificação' : 'Marcar esta notificação'}
+                      >
+                        <Check className="w-3.5 h-3.5 stroke-[3]" />
+                      </button>
+
+                      <div className="space-y-0.5 min-w-0 flex-1">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <span className="text-[10px] font-mono font-bold px-1.5 py-0.2 rounded bg-white/10 text-gray-300">
+                            #{String(item.number).padStart(2, '0')}
+                          </span>
+                          <span className="text-xs font-bold text-white">
+                            {item.title}
+                          </span>
+                          <span className="text-[9px] font-semibold px-1.5 py-0.5 rounded-md bg-blue-500/10 text-blue-300 border border-blue-500/20">
+                            {item.category}
+                          </span>
+                        </div>
+                        <p className="text-[11px] text-gray-400 leading-snug">
+                          {item.description}
+                        </p>
+                      </div>
+                    </div>
+
+                    <div className="flex items-center gap-1.5 shrink-0">
+                      <button
+                        type="button"
+                        onClick={async () => {
+                          const granted = await requestNotificationPermission();
+                          if (granted) {
+                            setPermissionState('granted');
+                            await sendAppNotification(item.sampleTitle, {
+                              body: item.sampleBody,
+                              force: true
+                            });
+                          }
+                        }}
+                        className="px-2 py-1 bg-blue-600/20 hover:bg-blue-600/35 border border-blue-500/30 text-blue-300 rounded-lg text-[10px] font-bold flex items-center gap-1 transition-all cursor-pointer"
+                        title="Testar o envio desta notificação agora na barra do celular"
+                      >
+                        <Play className="w-2.5 h-2.5 fill-current" />
+                        <span>Testar</span>
+                      </button>
+
+                      <button
+                        type="button"
+                        role="switch"
+                        aria-checked={isEnabled}
+                        onClick={() => handleToggleEventPref(item.key)}
+                        className={`relative inline-flex h-5 w-9 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${
+                          isEnabled ? 'bg-emerald-500' : 'bg-gray-700'
+                        }`}
+                      >
+                        <span
+                          className={`pointer-events-none inline-block h-4 w-4 transform rounded-full bg-white shadow-md ring-0 transition duration-200 ease-in-out ${
+                            isEnabled ? 'translate-x-4' : 'translate-x-0'
+                          }`}
+                        />
+                      </button>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+
+          <div className="border-t border-white/10" />
+
+          {/* Section 2: Lembrete de Vistoria de Sexta-Feira */}
           <div className="space-y-3">
             <h3 className="text-xs font-bold text-gray-300 uppercase tracking-wider flex items-center gap-1.5">
               <Bell className="w-3.5 h-3.5 text-purple-400" />
-              <span>1. Lembrete de Vistoria Semanal (Sexta-Feira)</span>
+              <span>2. Banner e Alerta de Vistoria Semanal (Sexta-Feira)</span>
             </h3>
 
             {/* Friday Reminder Toggle Card */}
@@ -125,7 +305,7 @@ export function SettingsModal({
                     <span>Aviso de Vistoria de Sexta-Feira</span>
                   </p>
                   <p className="text-[11px] text-gray-400 leading-relaxed">
-                    Banner exibido todas as sextas-feiras no topo do aplicativo lembrando do envio de vistorias aos motoristas.
+                    Banner exibido todas as sextas-feiras no topo do aplicativo e notificação agendada às 09:00 lembrando do envio de vistorias aos motoristas.
                   </p>
                 </div>
 
@@ -134,7 +314,13 @@ export function SettingsModal({
                   type="button"
                   role="switch"
                   aria-checked={!disableFridayReminder}
-                  onClick={() => onToggleFridayReminder(!disableFridayReminder)}
+                  onClick={() => {
+                    const nextDisabled = !disableFridayReminder;
+                    onToggleFridayReminder(nextDisabled);
+                    const updated = { ...notifPrefs, vistoria_friday: !nextDisabled };
+                    setNotifPrefs(updated);
+                    setNotificationPreferences(updated);
+                  }}
                   className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${
                     !disableFridayReminder ? 'bg-emerald-500' : 'bg-gray-700'
                   }`}
@@ -166,21 +352,21 @@ export function SettingsModal({
 
           <div className="border-t border-white/10" />
 
-          {/* Section 2: Notificação do Navegador para Manutenção Preventiva por KM */}
+          {/* Section 3: Permissão Nativa e Bateria (App Fechado) */}
           <div className="space-y-3">
             <h3 className="text-xs font-bold text-gray-300 uppercase tracking-wider flex items-center gap-1.5">
               <Gauge className="w-3.5 h-3.5 text-blue-400" />
-              <span>2. Agendamento de Notificação por Quilometragem</span>
+              <span>3. Permissão do Sistema e Funcionamento com App Fechado</span>
             </h3>
 
             <div className="p-4 rounded-xl bg-white/5 border border-white/10 space-y-3">
               <div className="flex items-start justify-between gap-3">
                 <div className="space-y-1">
                   <p className="text-xs font-bold text-white flex items-center gap-2">
-                    <span>Alertas do Navegador (Manutenção Preventiva)</span>
+                    <span>Chave Geral de Notificações de Manutenção</span>
                   </p>
                   <p className="text-[11px] text-gray-400 leading-relaxed">
-                    Emite alertas visuais do sistema operacional/navegador quando a KM atual do veículo se aproximar ou atingir o limite de revisão configurado.
+                    Emite alertas na barra de notificações do Android/Navegador quando a KM atual do veículo atingir o limite configurado.
                   </p>
                 </div>
 
@@ -212,14 +398,14 @@ export function SettingsModal({
               {/* Permission & Action Button */}
               <div className="pt-2 border-t border-white/5 space-y-2">
                 <div className="flex items-center justify-between text-[11px]">
-                  <span className="text-gray-400">Permissão do Navegador:</span>
+                  <span className="text-gray-400">Permissão de Notificações:</span>
                   {permissionState === 'granted' ? (
                     <span className="text-emerald-400 font-bold flex items-center gap-1 bg-emerald-500/10 px-2 py-0.5 rounded-md border border-emerald-500/20">
                       <CheckCircle2 className="w-3 h-3" /> Concedida
                     </span>
                   ) : permissionState === 'denied' ? (
                     <span className="text-rose-400 font-bold flex items-center gap-1 bg-rose-500/10 px-2 py-0.5 rounded-md border border-rose-500/20">
-                      <AlertTriangle className="w-3 h-3" /> Bloqueada no Navegador
+                      <AlertTriangle className="w-3 h-3" /> Bloqueada
                     </span>
                   ) : (
                     <button
@@ -260,10 +446,10 @@ export function SettingsModal({
                     type="button"
                     onClick={onTriggerMaintNotificationCheck}
                     className="px-3 py-1.5 bg-blue-600/20 hover:bg-blue-600/30 border border-blue-500/30 text-blue-300 font-bold text-[11px] rounded-xl flex items-center gap-1.5 transition-all cursor-pointer"
-                    title="Disparar verificação e notificação teste agora"
+                    title="Disparar verificação e notificação das escolhas ativas agora"
                   >
                     <Volume2 className="w-3.5 h-3.5 text-blue-400" />
-                    <span>Disparar Notificação Agora</span>
+                    <span>Verificar e Disparar Alertas Ativos</span>
                   </button>
                 </div>
               </div>
@@ -272,11 +458,11 @@ export function SettingsModal({
 
           <div className="border-t border-white/10" />
 
-          {/* Section 3: Permissões do Dispositivo (Câmera, Memória Interna, Localização) */}
+          {/* Section 4: Permissões do Dispositivo (Câmera, Memória Interna, Localização) */}
           <div className="space-y-3">
             <h3 className="text-xs font-bold text-gray-300 uppercase tracking-wider flex items-center gap-1.5">
               <ShieldCheck className="w-3.5 h-3.5 text-emerald-400" />
-              <span>3. Autorização de Permissões do Dispositivo</span>
+              <span>4. Autorização de Permissões do Dispositivo</span>
             </h3>
 
             <div className="p-4 rounded-xl bg-white/5 border border-white/10 space-y-3">
@@ -339,11 +525,11 @@ export function SettingsModal({
 
           <div className="border-t border-white/10" />
 
-          {/* Section 4: Suporte e Fale Conosco (WhatsApp) */}
+          {/* Section 5: Suporte e Fale Conosco (WhatsApp) */}
           <div className="space-y-3">
             <h3 className="text-xs font-bold text-gray-300 uppercase tracking-wider flex items-center gap-1.5">
               <MessageCircle className="w-3.5 h-3.5 text-emerald-400" />
-              <span>4. Suporte e Fale Conosco</span>
+              <span>5. Suporte e Fale Conosco</span>
             </h3>
 
             <div className="p-4 rounded-xl bg-white/5 border border-white/10 space-y-3">

@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { Vehicle, ExpenseLog, WeeklyPayment, Vistoria, VehicleDocument, MaintenanceLog, FuelLog, SinistroLog } from '../types';
-import { generateVistoriaPDF } from '../utils/pdfGenerator';
+import { generateVistoriaPDF, generatePaymentReceiptPDF } from '../utils/pdfGenerator';
 import { sendAppNotification, requestNotificationPermission } from '../utils/notifications';
 import { PdfViewer } from './PdfViewer';
 import { 
@@ -46,7 +46,8 @@ import {
   History,
   AlertTriangle,
   BarChart3,
-  Smartphone
+  Smartphone,
+  Sparkles
 } from 'lucide-react';
 import CurrencyInput from './CurrencyInput';
 
@@ -1084,6 +1085,7 @@ export const VehicleCard: React.FC<VehicleCardProps> = ({
 
     sendAppNotification(`💰 Pagamento Registrado: ${vehicle.brand} (${vehicle.plate})`, {
       body: `Aluguel semanal de R$ ${newPaymentAmount.toLocaleString('pt-BR', { minimumFractionDigits: 2 })} registrado para ${vehicle.driver || 'motorista'}.`,
+      eventKey: 'payment_registered',
     });
 
     setNewPaymentAmount(0);
@@ -1122,6 +1124,7 @@ export const VehicleCard: React.FC<VehicleCardProps> = ({
 
     sendAppNotification(`✅ Comprovante Aprovado: ${vehicle.brand} (${vehicle.plate})`, {
       body: `Pagamento de R$ ${amountToUse.toLocaleString('pt-BR', { minimumFractionDigits: 2 })} aprovado e anexado aos documentos.`,
+      eventKey: 'receipt_approved',
     });
   };
 
@@ -1902,6 +1905,37 @@ _Enviado via sistema de gestão de frota._`;
                 <MessageCircle className="w-3 h-3 text-emerald-400" />
                 <span>Lembrete Pagamento</span>
               </button>
+
+              {/* #2 Botão Pagamento Rápido (1 Clique) */}
+              {(vehicle.valorSemanal || vehicle.valorRecebido > 0) && (
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    const quickAmt = vehicle.valorSemanal || vehicle.valorRecebido || 0;
+                    if (quickAmt <= 0) return;
+                    const todayIso = new Date().toISOString().split('T')[0];
+                    const newPay = {
+                      id: `wp-${Date.now()}`,
+                      date: todayIso,
+                      amount: quickAmt
+                    };
+                    onUpdateVehicle({
+                      ...vehicle,
+                      weeklyPayments: [...(vehicle.weeklyPayments || []), newPay]
+                    });
+                    sendAppNotification(`💰 Pagamento Semanal Confirmado: ${vehicle.brand} (${vehicle.plate})`, {
+                      body: `Pagamento rápido de R$ ${quickAmt.toLocaleString('pt-BR', { minimumFractionDigits: 2 })} lançado em 1 clique!`,
+                      eventKey: 'payment_registered'
+                    });
+                  }}
+                  className="ml-1 text-[10px] text-amber-300 hover:text-slate-950 bg-amber-500/15 hover:bg-amber-400 border border-amber-500/30 px-2 py-0.5 rounded font-bold transition-all flex items-center gap-1 cursor-pointer shadow-xs"
+                  title="Lançar pagamento semanal de hoje com 1 clique"
+                >
+                  <Check className="w-3 h-3" />
+                  <span>Confirmar Semanal (R$ {(vehicle.valorSemanal || vehicle.valorRecebido || 0).toLocaleString('pt-BR')})</span>
+                </button>
+              )}
             </p>
           </div>
           
@@ -3006,13 +3040,55 @@ _Enviado via sistema de gestão de frota._`;
                             </p>
                           </div>
                         </div>
-                        <button
-                          type="button"
-                          onClick={() => handleApproveReceipt(rec)}
-                          className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg text-[11px] font-bold flex items-center gap-1 shadow-md shadow-emerald-500/20 transition-all cursor-pointer w-full sm:w-auto justify-center"
-                        >
-                          <Check className="w-3.5 h-3.5" /> Aprovar Comprovante
-                        </button>
+                        <div className="flex items-center gap-1.5 w-full sm:w-auto justify-end">
+                          {rec.photoUrl && (
+                            <button
+                              type="button"
+                              onClick={async () => {
+                                try {
+                                  const res = await fetch('/api/ocr-image', {
+                                    method: 'POST',
+                                    headers: { 'Content-Type': 'application/json' },
+                                    body: JSON.stringify({ imageBase64: rec.photoUrl, mode: 'receipt' })
+                                  });
+                                  const json = await res.json();
+                                  if (json.success && json.data?.amount) {
+                                    const updatedPending = (vehicle.pendingReceipts || []).map(item =>
+                                      item.id === rec.id
+                                        ? {
+                                            ...item,
+                                            amount: Number(json.data.amount),
+                                            date: json.data.date || item.date,
+                                            notes: json.data.summary || item.notes
+                                          }
+                                        : item
+                                    );
+                                    onUpdateVehicle({
+                                      ...vehicle,
+                                      pendingReceipts: updatedPending
+                                    });
+                                  } else {
+                                    alert('Não foi possível extrair o valor automaticamente desta imagem.');
+                                  }
+                                } catch (e) {
+                                  console.warn('OCR receipt error:', e);
+                                }
+                              }}
+                              className="px-2.5 py-1.5 bg-blue-600/20 hover:bg-blue-600/35 border border-blue-500/30 text-blue-300 rounded-lg text-[10px] font-bold flex items-center gap-1 transition-all cursor-pointer"
+                              title="Ler valor e data do comprovante Pix por IA"
+                            >
+                              <Sparkles className="w-3 h-3 text-blue-400" />
+                              <span>Ler Pix (IA)</span>
+                            </button>
+                          )}
+                          <button
+                            type="button"
+                            onClick={() => handleApproveReceipt(rec)}
+                            className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg text-[11px] font-bold flex items-center gap-1 shadow-md shadow-emerald-500/20 transition-all cursor-pointer justify-center"
+                          >
+                            <Check className="w-3.5 h-3.5" /> Aprovar Comprovante
+                          </button>
+                        </div>
                       </div>
                     ))}
                   </div>
@@ -3396,12 +3472,36 @@ _Enviado via sistema de gestão de frota._`;
                     .map((p) => (
                       <div key={p.id} className="flex justify-between items-center text-[11px] py-1 border-b border-white/[0.02]">
                         <span className="text-gray-400 font-mono">{new Date(p.date + 'T12:00:00').toLocaleDateString('pt-BR')}</span>
-                        <div className="flex items-center gap-2">
+                        <div className="flex items-center gap-1.5">
                           <InlineEdit
                             value={p.amount}
                             label="Pagamento Semanal"
                             onSave={(val) => handleEditPayment(p.id, val)}
                           />
+                          <button
+                            type="button"
+                            onClick={async () => {
+                              try {
+                                const { doc, fileName, whatsappText } = await generatePaymentReceiptPDF(vehicle, p);
+                                doc.save(fileName);
+                                let cleanPhone = (vehicle.driverPhone || '').replace(/\D/g, '');
+                                if (cleanPhone && !cleanPhone.startsWith('55')) {
+                                  cleanPhone = '55' + cleanPhone;
+                                }
+                                const waUrl = cleanPhone
+                                  ? `https://wa.me/${cleanPhone}?text=${encodeURIComponent(whatsappText)}`
+                                  : `https://wa.me/?text=${encodeURIComponent(whatsappText)}`;
+                                window.open(waUrl, '_blank');
+                              } catch (err) {
+                                console.error('Erro ao gerar recibo:', err);
+                              }
+                            }}
+                            className="px-1.5 py-0.5 bg-emerald-500/15 hover:bg-emerald-500/30 text-emerald-300 border border-emerald-500/25 rounded text-[9px] font-bold flex items-center gap-1 transition-colors cursor-pointer"
+                            title="Baixar Recibo em PDF e enviar confirmação no WhatsApp do motorista"
+                          >
+                            <FileText className="w-2.5 h-2.5" />
+                            <span>Recibo</span>
+                          </button>
                           <button
                             onClick={() => handleDeletePayment(p.id)}
                             className="text-gray-500 hover:text-rose-400 transition-colors p-0.5 rounded"
@@ -3593,6 +3693,8 @@ _Enviado via sistema de gestão de frota._`;
                             }
                             await sendAppNotification(`🚗 Lembrete de Manutenção: ${vehicle.brand} ${vehicle.model} (${vehicle.plate})`, {
                               body: msg,
+                              eventKey: nextKm > 0 && curKm >= nextKm ? 'maint_overdue' : 'maint_near',
+                              force: true,
                             });
                           } else {
                             alert('Permissão de notificação não concedida. Por favor, habilite as permissões para receber alertas.');
@@ -4716,26 +4818,58 @@ _Enviado via sistema de gestão de frota._`;
                       </div>
                     </div>
 
-                    <div className="pt-2 border-t border-white/5 grid grid-cols-1 sm:grid-cols-2 gap-2">
-                      <button
-                        type="button"
-                        onClick={() => onOpenRentalContract?.(vehicle)}
-                        className="w-full py-2.5 bg-emerald-600/20 hover:bg-emerald-600/30 text-emerald-400 font-bold text-xs rounded-xl flex items-center justify-center gap-2 border border-emerald-500/30 transition-all cursor-pointer shadow-md shadow-emerald-500/10"
-                      >
-                        <FileText className="w-4 h-4 text-emerald-400" />
-                        <span>Gerar / Alterar Contrato (PDF)</span>
-                      </button>
+                    <div className="pt-2 border-t border-white/5 space-y-2">
+                      <div className="flex items-center justify-between bg-purple-500/10 border border-purple-500/20 rounded-xl px-3 py-2">
+                        <span className="text-[10px] font-bold text-purple-300 uppercase tracking-wider">
+                          Renovação Rápida de Contrato:
+                        </span>
+                        <div className="flex items-center gap-1.5">
+                          {[30, 90].map((days) => (
+                            <button
+                              key={days}
+                              type="button"
+                              onClick={() => {
+                                const baseStr = vehicle.endDate || vehicle.startDate || new Date().toISOString().split('T')[0];
+                                const d = new Date(baseStr + 'T12:00:00');
+                                if (isNaN(d.getTime())) {
+                                  const fallback = new Date();
+                                  fallback.setDate(fallback.getDate() + days);
+                                  handleUpdateField('endDate', fallback.toISOString().split('T')[0]);
+                                } else {
+                                  d.setDate(d.getDate() + days);
+                                  handleUpdateField('endDate', d.toISOString().split('T')[0]);
+                                }
+                              }}
+                              className="px-2.5 py-1 bg-purple-600 hover:bg-purple-500 text-white rounded-lg text-[10px] font-bold transition-colors cursor-pointer"
+                              title={`Prorrogar data de término do contrato por +${days} dias`}
+                            >
+                              Renovar +{days} dias
+                            </button>
+                          ))}
+                        </div>
+                      </div>
 
-                      {onFinalizeContract && (
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                         <button
                           type="button"
-                          onClick={() => onFinalizeContract(vehicle)}
-                          className="w-full py-2.5 bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 font-bold text-xs rounded-xl flex items-center justify-center gap-2 border border-amber-500/30 transition-all cursor-pointer shadow-md shadow-amber-500/10"
+                          onClick={() => onOpenRentalContract?.(vehicle)}
+                          className="w-full py-2.5 bg-emerald-600/20 hover:bg-emerald-600/30 text-emerald-400 font-bold text-xs rounded-xl flex items-center justify-center gap-2 border border-emerald-500/30 transition-all cursor-pointer shadow-md shadow-emerald-500/10"
                         >
-                          <Archive className="w-4 h-4 text-amber-400" />
-                          <span>Finalizar Contrato Atual</span>
+                          <FileText className="w-4 h-4 text-emerald-400" />
+                          <span>Gerar / Alterar Contrato (PDF)</span>
                         </button>
-                      )}
+
+                        {onFinalizeContract && (
+                          <button
+                            type="button"
+                            onClick={() => onFinalizeContract(vehicle)}
+                            className="w-full py-2.5 bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 font-bold text-xs rounded-xl flex items-center justify-center gap-2 border border-amber-500/30 transition-all cursor-pointer shadow-md shadow-amber-500/10"
+                          >
+                            <Archive className="w-4 h-4 text-amber-400" />
+                            <span>Finalizar Contrato + Acerto Caução</span>
+                          </button>
+                        )}
+                      </div>
                     </div>
                   </div>
                 )}

@@ -35,7 +35,8 @@ import { ConfirmFinalizeContractModal } from './components/ConfirmFinalizeContra
 import { AboutAppModal } from './components/AboutAppModal';
 import { LogoViewerModal } from './components/LogoViewerModal';
 import { GlobalVoiceAssistant } from './components/GlobalVoiceAssistant';
-import { generateVehiclePDF, generateVistoriaPDF } from './utils/pdfGenerator';
+import { BatchOdometerModal } from './components/BatchOdometerModal';
+import { generateVehiclePDF, generateVistoriaPDF, generateExecutiveMonthlyPDF } from './utils/pdfGenerator';
 import { sendAppNotification, requestNotificationPermission } from './utils/notifications';
 import logoImg from './assets/logo.png';
 
@@ -65,7 +66,9 @@ import {
   Wrench,
   Fuel,
   Coins,
-  Map
+  Map,
+  Gauge,
+  FileDown
 } from 'lucide-react';
 
 function ensureFuturePaymentsForVehicles(vehicles: Vehicle[]): Vehicle[] {
@@ -292,6 +295,7 @@ export default function App() {
   const [isChecklistConfigOpen, setIsChecklistConfigOpen] = useState<boolean>(false);
   const [isRentalContractOpen, setIsRentalContractOpen] = useState<boolean>(false);
   const [isReportsModalOpen, setIsReportsModalOpen] = useState<boolean>(false);
+  const [isBatchOdometerOpen, setIsBatchOdometerOpen] = useState<boolean>(false);
   const [isAboutModalOpen, setIsAboutModalOpen] = useState<boolean>(false);
   const [isLogoViewerOpen, setIsLogoViewerOpen] = useState<boolean>(false);
   const [selectedContractVehicle, setSelectedContractVehicle] = useState<Vehicle | null>(null);
@@ -322,34 +326,91 @@ export default function App() {
     requestNotificationPermission().then((granted) => {
       if (!granted) return;
 
-      // 1. Check Friday Vistoria Reminder
-      const isFriday = new Date().getDay() === 5;
       const todayDateStr = new Date().toISOString().split('T')[0];
+
+      // 1. Check Friday Vistoria Reminder (#6)
+      const isFriday = new Date().getDay() === 5;
       const lastFridayCheck = localStorage.getItem('fleet_last_friday_check');
 
       if (isFriday && !disableFridayReminder && lastFridayCheck !== todayDateStr) {
         localStorage.setItem('fleet_last_friday_check', todayDateStr);
         sendAppNotification('📋 Lembrete de Vistoria Semanal', {
           body: 'Hoje é sexta-feira! Lembre-se de solicitar as fotos e vistorias semanais aos motoristas da frota.',
+          eventKey: 'vistoria_friday',
         });
       }
 
-      // 2. Check Overdue Maintenance on startup
+      // 2. Check Daily Scheduled & Alert Conditions on Startup
       const lastMaintCheck = localStorage.getItem('fleet_last_maint_check');
       if (lastMaintCheck !== todayDateStr) {
         localStorage.setItem('fleet_last_maint_check', todayDateStr);
-        const overdueVehicles = vehicles.filter((v) => {
+
+        vehicles.forEach((v) => {
           const cur = v.preventiveMaintCurrentKm || v.currentKm || 0;
           const next = v.preventiveMaintNextKm || 0;
-          return next > 0 && cur >= next;
-        });
 
-        if (overdueVehicles.length > 0) {
-          const v = overdueVehicles[0];
-          sendAppNotification(`🚨 MANUTENÇÃO VENCIDA: ${v.brand} (${v.plate})`, {
-            body: `O veículo atingiu ${(v.preventiveMaintCurrentKm || v.currentKm || 0).toLocaleString('pt-BR')} KM (limite era ${v.preventiveMaintNextKm?.toLocaleString('pt-BR')} KM). Providencie a revisão!`,
-          });
-        }
+          // #1 Overdue Maintenance
+          if (next > 0 && cur >= next) {
+            sendAppNotification(`🚨 MANUTENÇÃO VENCIDA: ${v.brand} (${v.plate})`, {
+              body: `O veículo atingiu ${cur.toLocaleString('pt-BR')} KM (limite era ${next.toLocaleString('pt-BR')} KM). Providencie a revisão!`,
+              eventKey: 'maint_overdue',
+            });
+          } else if (next > 0 && cur >= next - 500) {
+            // #2 Near Maintenance
+            sendAppNotification(`⚠️ Revisão Próxima: ${v.brand} (${v.plate})`, {
+              body: `Faltam ${(next - cur).toLocaleString('pt-BR')} KM para a revisão preventiva (${next.toLocaleString('pt-BR')} KM).`,
+              eventKey: 'maint_near',
+            });
+          }
+
+          // #3 Scheduled Maintenance Date
+          if (v.preventiveMaintDate === todayDateStr) {
+            sendAppNotification(`🔧 Revisão Programada para Hoje: ${v.brand} (${v.plate})`, {
+              body: `A manutenção preventiva do veículo ${v.brand} ${v.model} está agendada para hoje.`,
+              eventKey: 'maint_scheduled_date',
+            });
+          }
+
+          // #7 Scheduled Vistoria Date
+          if (v.nextVistoriaDate === todayDateStr) {
+            sendAppNotification(`📅 Vistoria Agendada para Hoje: ${v.brand} (${v.plate})`, {
+              body: `Lembrete: Há uma vistoria programada hoje para o motorista ${v.driver || 'responsável'}.`,
+              eventKey: 'vistoria_scheduled_date',
+            });
+          }
+
+          // #14 Contract Expiring (within 7 days or expired)
+          if (v.endDate) {
+            const endMs = new Date(v.endDate + 'T12:00:00').getTime();
+            const nowMs = new Date(todayDateStr + 'T12:00:00').getTime();
+            const diffDays = Math.round((endMs - nowMs) / (1000 * 60 * 60 * 24));
+            if (diffDays <= 7 && diffDays >= -3) {
+              sendAppNotification(`⏳ Contrato Vencendo: ${v.brand} (${v.plate})`, {
+                body: diffDays < 0
+                  ? `O contrato do motorista ${v.driver || ''} venceu há ${Math.abs(diffDays)} dia(s).`
+                  : diffDays === 0
+                  ? `O contrato do motorista ${v.driver || ''} vence hoje!`
+                  : `O contrato do motorista ${v.driver || ''} vence em ${diffDays} dia(s).`,
+                eventKey: 'contract_expiring',
+              });
+            }
+          }
+
+          // #16 CNH Expiring (within 30 days or expired)
+          if (v.driverCnhExpiration) {
+            const cnhMs = new Date(v.driverCnhExpiration + 'T12:00:00').getTime();
+            const nowMs = new Date(todayDateStr + 'T12:00:00').getTime();
+            const diffDays = Math.round((cnhMs - nowMs) / (1000 * 60 * 60 * 24));
+            if (diffDays <= 30) {
+              sendAppNotification(`🪪 Alerta de CNH: ${v.driver || v.plate}`, {
+                body: diffDays < 0
+                  ? `A CNH do motorista do veículo ${v.brand} (${v.plate}) está vencida!`
+                  : `A CNH do motorista do veículo ${v.brand} (${v.plate}) vence em ${diffDays} dia(s).`,
+                eventKey: 'cnh_expiring',
+              });
+            }
+          }
+        });
       }
     });
   }, [vehicles.length, disableFridayReminder]);
@@ -368,6 +429,7 @@ export default function App() {
     if (needyVehicles.length === 0) {
       await sendAppNotification('🚗 Frota em Dia com Manutenção', {
         body: 'Nenhum veículo atingiu o limite de quilometragem para revisão preventiva no momento.',
+        force: true,
       });
     } else {
       for (const v of needyVehicles) {
@@ -382,6 +444,7 @@ export default function App() {
             body: isOverdue
               ? `O veículo atingiu ${cur.toLocaleString('pt-BR')} KM (limite era ${next.toLocaleString('pt-BR')} KM). Providencie a revisão!`
               : `Atual: ${cur.toLocaleString('pt-BR')} KM. Próxima revisão: ${next.toLocaleString('pt-BR')} KM (faltam ${ (next - cur).toLocaleString('pt-BR') } KM).`,
+            eventKey: isOverdue ? 'maint_overdue' : 'maint_near',
           }
         );
       }
@@ -732,6 +795,39 @@ export default function App() {
   };
 
   const handleUpdateVehicle = (vehicle: Vehicle) => {
+    const prevVehicle = vehicles.find((v) => v.id === vehicle.id);
+    if (prevVehicle) {
+      // #10 Receipt Received
+      if ((vehicle.pendingReceipts?.length || 0) > (prevVehicle.pendingReceipts?.length || 0)) {
+        sendAppNotification(`🧾 Novo Comprovante Pendente: ${vehicle.brand} (${vehicle.plate})`, {
+          body: `Um comprovante de pagamento de ${vehicle.driver || 'motorista'} foi anexado e aguarda aprovação.`,
+          eventKey: 'receipt_received',
+        });
+      }
+      // #12 Caucao Updated
+      if (vehicle.caucaoValor !== prevVehicle.caucaoValor || vehicle.caucaoObservacoes !== prevVehicle.caucaoObservacoes) {
+        sendAppNotification(`🛡️ Caução Atualizada: ${vehicle.brand} (${vehicle.plate})`, {
+          body: `Valor de caução atualizado para R$ ${(vehicle.caucaoValor || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}.`,
+          eventKey: 'caucao_updated',
+        });
+      }
+      // #5 Tire Wear Alert
+      const hasBadTireNow = (vehicle.tires || []).some((t) => t.status === 'Warning' || t.status === 'Replace');
+      const hadBadTireBefore = (prevVehicle.tires || []).some((t) => t.status === 'Warning' || t.status === 'Replace');
+      if (hasBadTireNow && !hadBadTireBefore) {
+        sendAppNotification(`🛞 Alerta de Pneus: ${vehicle.brand} (${vehicle.plate})`, {
+          body: `Há pneu(s) com status de atenção ou troca necessária neste veículo.`,
+          eventKey: 'tire_wear_alert',
+        });
+      }
+      // #18 Low Fuel Alert
+      if (vehicle.fuelLevel <= 1 && prevVehicle.fuelLevel > 1) {
+        sendAppNotification(`⛽ Combustível na Reserva: ${vehicle.brand} (${vehicle.plate})`, {
+          body: `O veículo foi registrado com nível baixo de combustível (${vehicle.fuelLevel}/8 do tanque).`,
+          eventKey: 'fuel_low_alert',
+        });
+      }
+    }
     setVehicles((prev) => prev.map((v) => (v.id === vehicle.id ? vehicle : v)));
   };
 
@@ -739,6 +835,13 @@ export default function App() {
     vehicleId: string,
     doc: { name: string; category: string; contentUrl: string; fileSize: string; fileType: string }
   ) => {
+    const targetV = vehicles.find((v) => v.id === vehicleId);
+    if (targetV) {
+      sendAppNotification(`📎 Novo Documento Anexado: ${targetV.brand} (${targetV.plate})`, {
+        body: `Documento "${doc.name}" (${doc.category}) salvo na pasta do veículo.`,
+        eventKey: 'document_uploaded',
+      });
+    }
     setVehicles((prev) =>
       prev.map((v) => {
         if (v.id === vehicleId) {
@@ -789,6 +892,11 @@ export default function App() {
     const newId = `maint-${Date.now()}`;
     const newLog: MaintenanceLog = { ...log, id: newId };
     setMaintenanceLogs((prev) => [newLog, ...prev]);
+    const targetV = vehicles.find((v) => v.id === log.vehicleId);
+    sendAppNotification(`🛠️ Manutenção Registrada: ${targetV ? `${targetV.brand} (${targetV.plate})` : log.type}`, {
+      body: `${log.type}: ${log.description} — R$ ${(log.cost || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}.`,
+      eventKey: 'maint_logged',
+    });
   };
 
   // Actions: Save Expense Log
@@ -976,6 +1084,7 @@ export default function App() {
 
       sendAppNotification(`📁 Contrato Finalizado: ${targetVehicle.brand} (${targetVehicle.plate})`, {
         body: `Contrato de ${targetVehicle.driver || 'motorista'} arquivado em Contratos Finalizados com sucesso.`,
+        eventKey: 'contract_finalized',
       });
 
       setDeleteToastMsg(`Contrato do veículo ${targetVehicle.brand} ${targetVehicle.model} (${targetVehicle.plate}) finalizado com sucesso! Relatório arquivado em 'Contratos Finalizados' e dados de manutenção mantidos no sistema.`);
@@ -1019,6 +1128,7 @@ export default function App() {
 
     sendAppNotification(`📋 Vistoria Registrada: ${targetVehicle.brand} (${targetVehicle.plate})`, {
       body: `Vistoria de ${vistoria.type || 'Rotina'} concluída com sucesso e anexada aos documentos do veículo.`,
+      eventKey: 'vistoria_completed',
     });
 
     setVehicles((prev) =>
@@ -1347,6 +1457,11 @@ export default function App() {
     downloadAnchor.click();
     downloadAnchor.remove();
     URL.revokeObjectURL(url);
+
+    sendAppNotification('💾 Backup Completo da Frota Concluído', {
+      body: `Backup com ${backupData.summary.totalVehicles} carros e ${backupData.summary.totalDocumentsAttached} documentos salvo com sucesso.`,
+      eventKey: 'backup_completed',
+    });
 
     setDeleteToastMsg(`Backup completo baixado com sucesso! (${backupData.summary.totalVehicles} carros, ${backupData.summary.totalVistorias} vistorias, ${backupData.summary.totalDocumentsAttached} documentos anexos e configurações).`);
     setTimeout(() => setDeleteToastMsg(null), 5000);
@@ -1738,7 +1853,7 @@ export default function App() {
 
         {/* 2. Vehicles Grid Heading and Cards */}
         <div className="space-y-4">
-          <div className="flex justify-between items-center">
+          <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
             <div>
               <h2 className="text-sm font-bold text-white flex items-center gap-2">
                 <Layers className="w-4 h-4 text-blue-500" />
@@ -1746,6 +1861,43 @@ export default function App() {
               </h2>
               <p className="text-xs text-gray-400">Detalhamento de despesas, pagamentos semanais e nível de tanque entregue.</p>
             </div>
+
+            {vehicles.length > 0 && (
+              <div className="flex items-center gap-2 flex-wrap">
+                <button
+                  type="button"
+                  onClick={() => setIsBatchOdometerOpen(true)}
+                  className="px-3 py-1.5 bg-cyan-500/15 hover:bg-cyan-500/25 text-cyan-300 border border-cyan-500/30 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer shadow-xs"
+                  title="Atualizar KM de todos os veículos da frota em uma única tela (#9)"
+                >
+                  <Gauge className="w-3.5 h-3.5 text-cyan-400" />
+                  <span>Modo Odômetro (KM em Lote)</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={async () => {
+                    try {
+                      const { doc, fileName } = await generateExecutiveMonthlyPDF(
+                        sortedVehicles,
+                        maintenanceLogs,
+                        expenseLogs,
+                        selectedMonth,
+                        selectedYear
+                      );
+                      doc.save(fileName);
+                    } catch (err) {
+                      console.error('Erro ao gerar relatório executivo:', err);
+                    }
+                  }}
+                  className="px-3 py-1.5 bg-emerald-500/15 hover:bg-emerald-500/25 text-emerald-300 border border-emerald-500/30 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer shadow-xs"
+                  title="Gerar PDF executivo de 1 página para Contador / Investidor (#10)"
+                >
+                  <FileDown className="w-3.5 h-3.5 text-emerald-400" />
+                  <span>Relatório Mensal PDF (Contador)</span>
+                </button>
+              </div>
+            )}
           </div>
 
           {vehicles.length === 0 ? (
@@ -1806,7 +1958,13 @@ export default function App() {
                     setIsAgendaOpen(true);
                   }}
                   sinistroLogs={sinistroLogs.filter((s) => s.vehicleId === car.id)}
-                  onAddSinistro={(sinistro) => setSinistroLogs((prev) => [sinistro, ...prev])}
+                  onAddSinistro={(sinistro) => {
+                    setSinistroLogs((prev) => [sinistro, ...prev]);
+                    sendAppNotification(`🚨 Sinistro Registrado: ${car.brand} (${car.plate})`, {
+                      body: `${sinistro.description} — Custo estimado: R$ ${(sinistro.repairCost || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}.`,
+                      eventKey: 'sinistro_logged',
+                    });
+                  }}
                   onDeleteSinistro={(id) => setSinistroLogs((prev) => prev.filter((s) => s.id !== id))}
                   onOpenLogForm={handleOpenForm}
                 />
@@ -1998,6 +2156,16 @@ export default function App() {
         vehicle={vehiclePendingFinalize}
         onConfirm={handleConfirmFinalizeContract}
         onCancel={() => setVehiclePendingFinalize(null)}
+      />
+
+      {/* Batch Odometer Modal (#9) */}
+      <BatchOdometerModal
+        isOpen={isBatchOdometerOpen}
+        onClose={() => setIsBatchOdometerOpen(false)}
+        vehicles={sortedVehicles}
+        onBatchUpdateVehicles={(updatedList) => {
+          setVehicles(updatedList);
+        }}
       />
 
       {/* Confirmation Modal: Vehicle Deletion */}

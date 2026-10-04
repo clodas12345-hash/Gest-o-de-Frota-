@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { Camera, Check, X, ShieldCheck, FileCheck2, Trash2, Send, Info, ZoomIn, Gauge } from 'lucide-react';
+import { Camera, Check, X, ShieldCheck, FileCheck2, Trash2, Send, Info, ZoomIn, Gauge, Sparkles } from 'lucide-react';
 import { Vehicle, Vistoria } from '../types';
 import { generateVistoriaPDF } from '../utils/pdfGenerator';
 import { LogoViewerModal } from './LogoViewerModal';
@@ -89,6 +89,44 @@ export function DriverVistoriaForm({
     return Number(params.get('value')) || vehicle?.valorSemanal || vehicle?.valorRecebido || 0;
   });
   const [paymentPhoto, setPaymentPhoto] = useState<string | null>(null);
+  const [isOcrLoading, setIsOcrLoading] = useState(false);
+  const [ocrStatusMsg, setOcrStatusMsg] = useState<string | null>(null);
+  const odometerCameraRef = useRef<HTMLInputElement>(null);
+
+  const runImageOcr = async (base64Img: string, mode: 'receipt' | 'odometer') => {
+    setIsOcrLoading(true);
+    setOcrStatusMsg(mode === 'odometer' ? 'Lendo KM do painel com IA...' : 'Lendo valor do comprovante Pix...');
+    try {
+      const res = await fetch('/api/ocr-image', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ imageBase64: base64Img, mode })
+      });
+      const json = await res.json();
+      if (json.success && json.data) {
+        if (mode === 'odometer' && json.data.km) {
+          setKmOdometer(Number(json.data.km));
+          setOcrStatusMsg(`✅ Odômetro lido automaticamente: ${Number(json.data.km).toLocaleString('pt-BR')} KM`);
+        } else if (mode === 'receipt' && json.data.amount) {
+          setPaymentAmount(Number(json.data.amount));
+          if (json.data.summary && !notes) {
+            setNotes(json.data.summary);
+          }
+          setOcrStatusMsg(`✅ Valor lido automaticamente: R$ ${Number(json.data.amount).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`);
+        } else {
+          setOcrStatusMsg('⚠️ Não foi possível identificar os números com clareza. Confira manualmente.');
+        }
+      } else {
+        setOcrStatusMsg('⚠️ Leitura automática indisponível no momento.');
+      }
+    } catch (err) {
+      console.warn('OCR error:', err);
+      setOcrStatusMsg('⚠️ Não foi possível ler a imagem automaticamente.');
+    } finally {
+      setIsOcrLoading(false);
+      setTimeout(() => setOcrStatusMsg(null), 5000);
+    }
+  };
 
   // Swipe gesture support for photo gallery
   const touchStartX = useRef<number | null>(null);
@@ -566,13 +604,23 @@ _Enviado via sistema de vistoria digital._`;
                   if (file) {
                     const reader = new FileReader();
                     reader.onload = (ev) => {
-                      if (ev.target?.result) setPaymentPhoto(ev.target.result as string);
+                      if (ev.target?.result) {
+                        const dataUrl = ev.target.result as string;
+                        setPaymentPhoto(dataUrl);
+                        runImageOcr(dataUrl, 'receipt');
+                      }
                     };
                     reader.readAsDataURL(file);
                   }
                 }}
                 className="hidden"
               />
+              {ocrStatusMsg && (
+                <div className="p-2.5 bg-blue-500/10 border border-blue-500/30 rounded-xl text-[11px] text-blue-300 font-bold flex items-center gap-2">
+                  <Sparkles className="w-3.5 h-3.5 text-blue-400 shrink-0" />
+                  <span>{ocrStatusMsg}</span>
+                </div>
+              )}
               {!paymentPhoto ? (
                 <button
                   type="button"
@@ -648,19 +696,56 @@ _Enviado via sistema de vistoria digital._`;
 
             {/* Campo para Adicionar os KM / Odômetro do Veículo */}
             <div className="bg-[#111111] border border-emerald-500/20 rounded-2xl p-4 shadow-xl space-y-2.5">
-              <div className="flex items-center justify-between">
+              <div className="flex items-center justify-between flex-wrap gap-2">
                 <label className="text-xs font-bold text-white uppercase tracking-wider flex items-center gap-2">
                   <Gauge className="w-4 h-4 text-emerald-400" />
                   <span>Odômetro / Quilometragem Atual (KM) *</span>
                 </label>
-                {vehicle?.currentKm ? (
-                  <span className="text-[10px] text-gray-400 font-mono">
-                    Último: {vehicle.currentKm.toLocaleString('pt-BR')} KM
-                  </span>
-                ) : null}
+                <div className="flex items-center gap-2">
+                  {vehicle?.currentKm ? (
+                    <span className="text-[10px] text-gray-400 font-mono">
+                      Último: {vehicle.currentKm.toLocaleString('pt-BR')} KM
+                    </span>
+                  ) : null}
+                  <input
+                    type="file"
+                    accept="image/*"
+                    capture="environment"
+                    ref={odometerCameraRef}
+                    onChange={(e) => {
+                      const file = e.target.files?.[0];
+                      if (file) {
+                        const reader = new FileReader();
+                        reader.onload = (ev) => {
+                          if (ev.target?.result) {
+                            runImageOcr(ev.target.result as string, 'odometer');
+                          }
+                        };
+                        reader.readAsDataURL(file);
+                      }
+                    }}
+                    className="hidden"
+                  />
+                  <button
+                    type="button"
+                    disabled={isOcrLoading}
+                    onClick={() => odometerCameraRef.current?.click()}
+                    className="px-2.5 py-1 bg-blue-600/20 hover:bg-blue-600/30 border border-blue-500/30 text-blue-300 rounded-lg text-[10px] font-bold flex items-center gap-1 transition-all cursor-pointer disabled:opacity-50"
+                    title="Fotografar painel para ler a quilometragem automaticamente"
+                  >
+                    <Sparkles className="w-3 h-3 text-blue-400" />
+                    <span>{isOcrLoading ? 'Lendo...' : 'Ler Painel por Foto (IA)'}</span>
+                  </button>
+                </div>
               </div>
+              {ocrStatusMsg && (
+                <div className="p-2 bg-blue-500/10 border border-blue-500/30 rounded-lg text-[10px] text-blue-300 font-bold flex items-center gap-1.5">
+                  <Sparkles className="w-3.5 h-3.5 text-blue-400 shrink-0" />
+                  <span>{ocrStatusMsg}</span>
+                </div>
+              )}
               <p className="text-[10px] text-gray-400 leading-relaxed">
-                Informe a quilometragem exata marcada no painel do veículo. Esse valor atualizará o odômetro e a manutenção preventiva do carro.
+                Informe a quilometragem exata marcada no painel do veículo ou clique em "Ler Painel por Foto". Esse valor atualizará o odômetro e a manutenção preventiva do carro.
               </p>
               <div className="relative flex items-center">
                 <input

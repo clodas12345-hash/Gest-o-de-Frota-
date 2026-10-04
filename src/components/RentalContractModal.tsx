@@ -464,6 +464,7 @@ Por favor, preencha as fotos e o checklist de entrega ao retirar o veículo.`;
 
       sendAppNotification(`📄 Contrato de Locação Gerado: ${vehicleToUse.brand} (${vehicleToUse.plate})`, {
         body: `Contrato do locatário ${contractData.tenantName} foi gerado e anexado aos documentos com sucesso.`,
+        eventKey: 'contract_generated',
       });
     } catch (err) {
       console.error('Erro ao gerar e salvar contrato:', err);
@@ -815,24 +816,62 @@ O contrato oficial em PDF já foi gerado e está arquivado nos documentos do ve�
 
               {/* 2. Dados do Locatário (Pessoa que vai alugar) */}
               <div className="bg-[#181818] border border-white/10 rounded-2xl p-4 space-y-3">
-                <div className="flex items-center justify-between gap-2 pb-2 border-b border-white/5">
+                <div className="flex flex-wrap items-center justify-between gap-2 pb-2 border-b border-white/5">
                   <div className="flex items-center gap-2 text-white font-bold uppercase tracking-wider text-[11px]">
                     <User className="w-4 h-4 text-emerald-400" />
                     <span>2. Dados Pessoais do Locatário (Pessoa que vai alugar)</span>
                   </div>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setContactSearch('');
-                      setShowContactPicker(true);
-                    }}
-                    className="px-2.5 py-1 bg-emerald-600/20 hover:bg-emerald-600/30 text-emerald-300 border border-emerald-500/30 rounded-lg text-[10px] font-bold flex items-center gap-1.5 transition-all cursor-pointer shadow-xs shrink-0"
-                    title="Buscar contato na agenda interna ou agenda do celular"
-                    id="btn-contract-search-agenda"
-                  >
-                    <BookOpen className="w-3.5 h-3.5 text-emerald-400" />
-                    <span>Buscar na Agenda</span>
-                  </button>
+                  <div className="flex items-center gap-1.5 flex-wrap">
+                    {vehicles.filter(v => v.driver && v.driver.trim() !== '').length > 0 && (
+                      <select
+                        value=""
+                        onChange={(e) => {
+                          const vId = e.target.value;
+                          const sourceV = vehicles.find((item) => item.id === vId);
+                          if (sourceV) {
+                            setTenantName(sourceV.driver || '');
+                            setTenantPhone(sourceV.driverPhone || '');
+                            setTenantCpfCnpj(sourceV.tenantCpfCnpj || '');
+                            setTenantRg(sourceV.tenantRg || '');
+                            setTenantCnh(sourceV.tenantCnh || '');
+                            setTenantEmail(sourceV.tenantEmail || '');
+                            setTenantAddress(sourceV.tenantAddress || '');
+                            if (sourceV.caucaoValor) setCaucaoValue(sourceV.caucaoValor);
+                            if (sourceV.valorSemanal || sourceV.valorRecebido) {
+                              setRentalValue(sourceV.valorSemanal || sourceV.valorRecebido || 0);
+                            }
+                          }
+                        }}
+                        className="px-2.5 py-1 bg-purple-600/20 hover:bg-purple-600/30 text-purple-300 border border-purple-500/30 rounded-lg text-[10px] font-bold transition-all cursor-pointer focus:outline-hidden"
+                        title="Puxar automaticamente CPF, RG, CNH, Endereço e Caução de um motorista já cadastrado"
+                      >
+                        <option value="" className="bg-[#141414] text-gray-300">
+                          ⚡ Puxar Motorista Recorrente...
+                        </option>
+                        {vehicles
+                          .filter((v) => v.driver && v.driver.trim() !== '')
+                          .map((v) => (
+                            <option key={v.id} value={v.id} className="bg-[#141414] text-white">
+                              {v.driver} ({v.plate})
+                            </option>
+                          ))}
+                      </select>
+                    )}
+
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setContactSearch('');
+                        setShowContactPicker(true);
+                      }}
+                      className="px-2.5 py-1 bg-emerald-600/20 hover:bg-emerald-600/30 text-emerald-300 border border-emerald-500/30 rounded-lg text-[10px] font-bold flex items-center gap-1.5 transition-all cursor-pointer shadow-xs shrink-0"
+                      title="Buscar contato na agenda interna ou agenda do celular"
+                      id="btn-contract-search-agenda"
+                    >
+                      <BookOpen className="w-3.5 h-3.5 text-emerald-400" />
+                      <span>Buscar na Agenda</span>
+                    </button>
+                  </div>
                 </div>
 
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
@@ -1012,9 +1051,29 @@ O contrato oficial em PDF já foi gerado e está arquivado nos documentos do ve�
                   </div>
 
                   <div className="space-y-1">
-                    <label className="text-[10px] text-gray-400 font-semibold uppercase tracking-wider block">
-                      Data de Término
-                    </label>
+                    <div className="flex items-center justify-between gap-1">
+                      <label className="text-[10px] text-gray-400 font-semibold uppercase tracking-wider block">
+                        Data de Término / Renovação
+                      </label>
+                      <div className="flex items-center gap-1">
+                        {[30, 90, 180].map((daysToAdd) => (
+                          <button
+                            key={daysToAdd}
+                            type="button"
+                            onClick={() => {
+                              const baseStr = startDate || new Date().toISOString().split('T')[0];
+                              const baseDate = new Date(baseStr + 'T12:00:00');
+                              baseDate.setDate(baseDate.getDate() + daysToAdd);
+                              setEndDate(baseDate.toISOString().split('T')[0]);
+                            }}
+                            className="px-1.5 py-0.5 bg-amber-500/15 hover:bg-amber-500/30 border border-amber-500/30 text-amber-300 rounded text-[9px] font-bold transition-colors cursor-pointer"
+                            title={`Definir término para +${daysToAdd} dias a partir do início`}
+                          >
+                            +{daysToAdd}d
+                          </button>
+                        ))}
+                      </div>
+                    </div>
                     <input
                       type="text"
                       value={endDate}

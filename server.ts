@@ -7,7 +7,66 @@ async function startServer() {
   const app = express();
   const PORT = 3000;
 
-  app.use(express.json());
+  app.use(express.json({ limit: "25mb" }));
+
+  // API route for AI OCR (Pix Receipt & Odometer reading)
+  app.post("/api/ocr-image", async (req, res) => {
+    try {
+      const { imageBase64, mode } = req.body;
+      if (!process.env.GEMINI_API_KEY) {
+        return res.status(500).json({ error: "GEMINI_API_KEY is missing." });
+      }
+      if (!imageBase64) {
+        return res.status(400).json({ error: "Imagem não fornecida." });
+      }
+
+      const ai = new GoogleGenAI({
+        apiKey: process.env.GEMINI_API_KEY,
+        httpOptions: {
+          headers: {
+            "User-Agent": "aistudio-build",
+          },
+        },
+      });
+
+      const match = String(imageBase64).match(/^data:(image\/[a-zA-Z0-9+.-]+);base64,(.+)$/);
+      const mimeType = match ? match[1] : "image/jpeg";
+      const base64Data = match ? match[2] : String(imageBase64);
+
+      const promptText =
+        mode === "odometer"
+          ? `Analyze this vehicle dashboard/odometer photo and extract the total odometer mileage (KM) and fuel level (0 to 8 eighths, where 8 is full tank and 1 is reserve). Return ONLY raw JSON: { "km": number | null, "fuelEighths": number | null, "notes": string }`
+          : `Analyze this payment receipt (Comprovante Pix / transferência) and extract the payment amount (in BRL number, e.g. 650.00), the payment date (in YYYY-MM-DD format), and payer/sender name if visible. Return ONLY raw JSON: { "amount": number | null, "date": string | null, "payerName": string | null, "summary": string }`;
+
+      const response = await ai.models.generateContent({
+        model: "gemini-3.8-flash",
+        contents: {
+          parts: [
+            {
+              inlineData: {
+                mimeType,
+                data: base64Data,
+              },
+            },
+            { text: promptText },
+          ],
+        },
+        config: {
+          temperature: 0.1,
+          responseMimeType: "application/json",
+        },
+      });
+
+      let responseText = response.text || "{}";
+      responseText = responseText.replace(/```json/g, "").replace(/```/g, "").trim();
+      const extracted = JSON.parse(responseText);
+
+      res.json({ success: true, data: extracted });
+    } catch (error: any) {
+      console.error("AI OCR Error:", error);
+      res.status(500).json({ error: error.message || "Falha ao ler imagem com IA" });
+    }
+  });
 
   // API route for AI form filling
   app.post("/api/fill-form", async (req, res) => {
@@ -18,7 +77,14 @@ async function startServer() {
         return res.status(500).json({ error: "GEMINI_API_KEY is missing." });
       }
 
-      const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
+      const ai = new GoogleGenAI({
+        apiKey: process.env.GEMINI_API_KEY,
+        httpOptions: {
+          headers: {
+            "User-Agent": "aistudio-build",
+          },
+        },
+      });
 
       let schemaText = "";
       if (formType === "auto") {
@@ -52,7 +118,7 @@ async function startServer() {
 Schema requirement: ${schemaText}`;
 
       const response = await ai.models.generateContent({
-        model: "gemini-2.5-flash",
+        model: "gemini-3.8-flash",
         contents: prompt,
         config: {
           systemInstruction: systemPrompt,
