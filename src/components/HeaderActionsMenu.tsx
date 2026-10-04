@@ -17,7 +17,8 @@ import {
   FileText,
   MessageCircle,
   Wrench,
-  Fuel
+  Fuel,
+  BellRing
 } from 'lucide-react';
 
 interface HeaderActionsMenuProps {
@@ -31,6 +32,7 @@ interface HeaderActionsMenuProps {
   onOpenLogForm: (type: 'fuel' | 'maintenance' | 'expense') => void;
   onOpenDocumentUpload: () => void;
   onOpenSettings?: () => void;
+  onOpenNotificationCenter?: () => void;
   onOpenChecklistConfig?: () => void;
   onDownloadBackup: () => void;
   onUploadBackup: (e: React.ChangeEvent<HTMLInputElement>) => void;
@@ -48,6 +50,7 @@ export function HeaderActionsMenu({
   onOpenLogForm,
   onOpenDocumentUpload,
   onOpenSettings,
+  onOpenNotificationCenter,
   onOpenChecklistConfig,
   onDownloadBackup,
   onUploadBackup,
@@ -206,6 +209,23 @@ export function HeaderActionsMenu({
               )}
             </button>
 
+            {/* Option: Centro de Notificações */}
+            {onOpenNotificationCenter && (
+              <button
+                type="button"
+                onClick={() => handleAction(onOpenNotificationCenter)}
+                className="w-full flex items-center gap-3 p-3 rounded-xl bg-emerald-950/40 hover:bg-emerald-900/60 text-left group transition-all cursor-pointer border border-emerald-500/20 hover:border-emerald-500/40"
+              >
+                <div className="p-2 bg-emerald-600 text-white rounded-lg group-hover:scale-105 transition-transform shadow-md shadow-emerald-500/20">
+                  <BellRing className="w-4 h-4 text-white" />
+                </div>
+                <div>
+                  <p className="text-xs font-bold text-white group-hover:text-emerald-300">Centro de Notificações</p>
+                  <p className="text-[10px] text-gray-400">Ativar/desativar os 20 tipos de alertas</p>
+                </div>
+              </button>
+            )}
+
             {/* Option: Configurações */}
             {onOpenSettings && (
               <button
@@ -218,7 +238,7 @@ export function HeaderActionsMenu({
                 </div>
                 <div>
                   <p className="text-xs font-bold text-white group-hover:text-sky-300">Configurações</p>
-                  <p className="text-[10px] text-gray-400">Lembretes, suporte, notificações e permissões</p>
+                  <p className="text-[10px] text-gray-400">Lembretes, suporte e permissões</p>
                 </div>
               </button>
             )}

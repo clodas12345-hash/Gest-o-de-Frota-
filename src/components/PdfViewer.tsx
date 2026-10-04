@@ -137,11 +137,30 @@ export const PdfViewer: React.FC<PdfViewerProps> = ({
     <div className={`flex flex-col h-full bg-[#18181b] text-white select-none ${className}`}>
       {/* Zoom / Page Controls Toolbar */}
       {!loading && !error && renderedPages.length > 0 && (
-        <div className="flex items-center justify-between px-4 py-2 bg-[#202024] border-b border-white/10 text-xs text-gray-300">
+        <div className="flex items-center justify-between px-4 py-2 bg-[#202024] border-b border-white/10 text-xs text-gray-300 flex-wrap gap-2">
           <span className="font-mono text-[11px] text-gray-400">
             Total: <strong className="text-white">{numPages}</strong> {numPages === 1 ? 'página' : 'páginas'}
           </span>
           <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => {
+                const printWin = window.open('', '_blank');
+                if (printWin) {
+                  const imgsHtml = renderedPages
+                    .map((p) => `<div style="page-break-after:always;text-align:center;"><img src="${p.dataUrl}" style="max-width:100%;height:auto;"/></div>`)
+                    .join('');
+                  printWin.document.write(`<html><head><title>${fileName}</title><style>@media print { body { margin: 0; } }</style></head><body style="margin:0;background:#fff;">${imgsHtml}<script>window.onload=function(){setTimeout(function(){window.print();},300);};</script></body></html>`);
+                  printWin.document.close();
+                } else {
+                  window.print();
+                }
+              }}
+              className="px-2.5 py-1 bg-blue-600 hover:bg-blue-500 text-white font-bold text-[11px] rounded-lg transition-colors cursor-pointer flex items-center gap-1 shadow-xs"
+              title="Imprimir Documento"
+            >
+              <span>🖨️ Imprimir</span>
+            </button>
             <button
               type="button"
               onClick={() => setScale((s) => Math.max(0.6, s - 0.2))}

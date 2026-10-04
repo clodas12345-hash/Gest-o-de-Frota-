@@ -13,6 +13,7 @@ export type NotificationEventKey =
   | 'vistoria_friday'
   | 'vistoria_scheduled_date'
   | 'vistoria_completed'
+  | 'vistoria_approved'
   | 'payment_registered'
   | 'receipt_received'
   | 'receipt_approved'
@@ -20,6 +21,7 @@ export type NotificationEventKey =
   | 'contract_expiring'
   | 'contract_finalized'
   | 'cnh_expiring'
+  | 'insurance_expiring'
   | 'tire_wear_alert'
   | 'sinistro_logged'
   | 'fuel_low_alert'
@@ -111,8 +113,17 @@ export const NOTIFICATION_OPTIONS: NotificationOptionDefinition[] = [
     sampleBody: 'Vistoria concluída com sucesso e PDF anexado aos documentos do veículo.'
   },
   {
-    key: 'payment_registered',
+    key: 'vistoria_approved',
     number: 9,
+    title: 'Vistoria Aprovada e Arquivada',
+    description: 'Notificação ao aprovar um laudo de vistoria para arquivamento com documentos e contratos.',
+    category: 'Vistorias',
+    sampleTitle: '✅ Vistoria Aprovada & Arquivada: Hyundai HB20 (MNO-7890)',
+    sampleBody: 'Laudo de vistoria aprovado e arquivado com sucesso junto a todos os documentos e contratos.'
+  },
+  {
+    key: 'payment_registered',
+    number: 10,
     title: 'Pagamento Semanal Registrado',
     description: 'Notificação ao lançar um novo pagamento semanal de aluguel recebido do motorista.',
     category: 'Financeiro e Pagamentos',
@@ -121,7 +132,7 @@ export const NOTIFICATION_OPTIONS: NotificationOptionDefinition[] = [
   },
   {
     key: 'receipt_received',
-    number: 10,
+    number: 11,
     title: 'Novo Comprovante Pendente Recebido',
     description: 'Alerta quando um novo comprovante de pagamento é enviado pelo motorista para análise.',
     category: 'Financeiro e Pagamentos',
@@ -130,7 +141,7 @@ export const NOTIFICATION_OPTIONS: NotificationOptionDefinition[] = [
   },
   {
     key: 'receipt_approved',
-    number: 11,
+    number: 12,
     title: 'Comprovante do Motorista Aprovado',
     description: 'Confirmação quando você aprova um comprovante pendente e o valor entra no caixa do veículo.',
     category: 'Financeiro e Pagamentos',
@@ -139,7 +150,7 @@ export const NOTIFICATION_OPTIONS: NotificationOptionDefinition[] = [
   },
   {
     key: 'caucao_updated',
-    number: 12,
+    number: 13,
     title: 'Registro ou Atualização de Caução',
     description: 'Notifica quando o valor ou observação de caução de um motorista é atualizado no veículo.',
     category: 'Financeiro e Pagamentos',
@@ -148,7 +159,7 @@ export const NOTIFICATION_OPTIONS: NotificationOptionDefinition[] = [
   },
   {
     key: 'contract_generated',
-    number: 13,
+    number: 14,
     title: 'Novo Contrato de Locação Gerado',
     description: 'Confirmação ao emitir e salvar um novo contrato PDF de locação para um motorista.',
     category: 'Contratos e CNH',
@@ -157,7 +168,7 @@ export const NOTIFICATION_OPTIONS: NotificationOptionDefinition[] = [
   },
   {
     key: 'contract_expiring',
-    number: 14,
+    number: 15,
     title: 'Contrato de Locação Próximo do Vencimento / Vencido',
     description: 'Alerta quando a data final de um contrato ativo está vencendo nos próximos 7 dias ou já venceu.',
     category: 'Contratos e CNH',
@@ -166,7 +177,7 @@ export const NOTIFICATION_OPTIONS: NotificationOptionDefinition[] = [
   },
   {
     key: 'contract_finalized',
-    number: 15,
+    number: 16,
     title: 'Contrato Encerrado e Arquivado',
     description: 'Notificação ao finalizar um contrato ativo e arquivar o histórico completo na pasta Contratos Finalizados.',
     category: 'Contratos e CNH',
@@ -175,7 +186,7 @@ export const NOTIFICATION_OPTIONS: NotificationOptionDefinition[] = [
   },
   {
     key: 'cnh_expiring',
-    number: 16,
+    number: 17,
     title: 'CNH do Motorista Vencida ou Próxima de Vencer',
     description: 'Alerta de segurança quando a CNH cadastrada para o motorista está vencida ou vence em até 30 dias.',
     category: 'Contratos e CNH',
@@ -183,8 +194,17 @@ export const NOTIFICATION_OPTIONS: NotificationOptionDefinition[] = [
     sampleBody: 'A CNH do motorista responsável pelo veículo está vencida ou próxima do vencimento.'
   },
   {
+    key: 'insurance_expiring',
+    number: 18,
+    title: 'Vencimento do Seguro do Veículo (15 dias de antecedência)',
+    description: 'Alerta automático emitido com 15 dias de antecedência (ou quando vencido) para lembrar da renovação do seguro da frota.',
+    category: 'Contratos e CNH',
+    sampleTitle: '🛡️ Vencimento do Seguro: Chevrolet Onix (ABC-1234)',
+    sampleBody: 'O seguro deste veículo vence em 15 dias! Lembre-se de cotar e renovar a apólice com a seguradora.'
+  },
+  {
     key: 'sinistro_logged',
-    number: 17,
+    number: 19,
     title: 'Registro de Sinistro / Acidente ou Avaria',
     description: 'Alerta imediato ao registrar uma ocorrência de batida, avaria ou sinistro em um veículo da frota.',
     category: 'Operação e Sistema',
@@ -193,7 +213,7 @@ export const NOTIFICATION_OPTIONS: NotificationOptionDefinition[] = [
   },
   {
     key: 'fuel_low_alert',
-    number: 18,
+    number: 20,
     title: 'Alerta de Reserva / Combustível Baixo',
     description: 'Notifica quando o nível de combustível do veículo é registrado na reserva (≤ 1/8 do tanque).',
     category: 'Operação e Sistema',
@@ -201,17 +221,8 @@ export const NOTIFICATION_OPTIONS: NotificationOptionDefinition[] = [
     sampleBody: 'O veículo foi registrado com nível crítico de combustível no tanque.'
   },
   {
-    key: 'document_uploaded',
-    number: 19,
-    title: 'Novo Documento Anexado ao Veículo',
-    description: 'Confirmação quando um documento (CRLV, Seguro, Multa, Contrato) é enviado para a pasta do carro.',
-    category: 'Operação e Sistema',
-    sampleTitle: '📎 Novo Documento Anexado',
-    sampleBody: 'O arquivo foi salvo com segurança na aba Documentos do veículo.'
-  },
-  {
     key: 'backup_completed',
-    number: 20,
+    number: 21,
     title: 'Backup Completo Exportado ou Restaurado',
     description: 'Confirmação de segurança ao exportar ou restaurar um arquivo JSON de backup completo da frota.',
     category: 'Operação e Sistema',
@@ -228,6 +239,7 @@ export const DEFAULT_NOTIFICATION_PREFERENCES: Record<NotificationEventKey, bool
   vistoria_friday: true,
   vistoria_scheduled_date: true,
   vistoria_completed: true,
+  vistoria_approved: true,
   payment_registered: true,
   receipt_received: true,
   receipt_approved: true,
@@ -235,6 +247,7 @@ export const DEFAULT_NOTIFICATION_PREFERENCES: Record<NotificationEventKey, bool
   contract_expiring: true,
   contract_finalized: true,
   cnh_expiring: true,
+  insurance_expiring: true,
   tire_wear_alert: true,
   sinistro_logged: true,
   fuel_low_alert: true,

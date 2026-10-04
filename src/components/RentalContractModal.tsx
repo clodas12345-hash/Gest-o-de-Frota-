@@ -291,7 +291,10 @@ export const RentalContractModal: React.FC<RentalContractModalProps> = ({
   // Vistoria helper functions
   const getVistoriaLink = () => {
     const currentVeh = vehicles.find(v => v.id === selectedVehicleId) || initialVehicle;
-    const origin = window.location.origin + window.location.pathname;
+    const isLocalApp = !window.location.origin.startsWith('http') || window.location.origin.includes('localhost') || window.location.origin.includes('127.0.0.1');
+    const origin = isLocalApp
+      ? 'https://ais-pre-nxg4lixniko7ymx3t5cstw-473118395752.us-west2.run.app/upload-receipt'
+      : window.location.origin + window.location.pathname;
     const plate = currentVeh?.plate ? currentVeh.plate.replace(/[^A-Z0-9]/gi, '').toUpperCase() : '';
     const brand = currentVeh?.brand || 'Veículo';
     const model = currentVeh?.model || '';

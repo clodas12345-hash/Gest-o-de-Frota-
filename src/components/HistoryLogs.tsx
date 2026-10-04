@@ -1029,11 +1029,13 @@ export function HistoryLogs({
                         </td>
                         <td className="py-3.5">
                           <span className={`px-2 py-0.5 rounded font-bold text-[10px] ${
-                            isFullApproved
+                            log.status === 'approved'
+                              ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40'
+                              : isFullApproved
                               ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20'
                               : 'bg-amber-500/10 text-amber-400 border border-amber-500/20'
                           }`}>
-                            {isFullApproved ? 'Aprovado (100%)' : `${approvedCount}/${totalItems} itens aprovados`}
+                            {log.status === 'approved' ? '✅ Aprovada & Arquivada' : isFullApproved ? 'Aprovado (100%)' : `${approvedCount}/${totalItems} itens`}
                           </span>
                         </td>
                         <td className="py-3.5 max-w-xs text-gray-300">

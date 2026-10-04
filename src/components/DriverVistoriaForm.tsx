@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { Camera, Check, X, ShieldCheck, FileCheck2, Trash2, Send, Info, ZoomIn, Gauge, Sparkles } from 'lucide-react';
+import { Camera, Check, X, ShieldCheck, FileCheck2, Trash2, Send, Info, ZoomIn, Gauge, Sparkles, Radio, HardDrive, Video } from 'lucide-react';
 import { Vehicle, Vistoria } from '../types';
 import { generateVistoriaPDF } from '../utils/pdfGenerator';
 import { LogoViewerModal } from './LogoViewerModal';
@@ -41,22 +41,38 @@ export function DriverVistoriaForm({
     const params = new URLSearchParams(window.location.search);
     const itemsFromUrl = params.get('items');
     const initial: Record<string, { isOk: boolean, photoUrl: string | null }> = {};
+    
+    let baseList: string[] = [];
     if (itemsFromUrl) {
-      const itemsList = itemsFromUrl.split(',').map(s => decodeURIComponent(s.trim())).filter(Boolean);
-      if (itemsList.length > 0) {
-        itemsList.forEach(item => {
-          initial[item] = { isOk: true, photoUrl: null };
-        });
-        return initial;
-      }
-    }
-    if (checklistConfig && checklistConfig.length > 0) {
-      checklistConfig.forEach(item => {
-        initial[item] = { isOk: true, photoUrl: null };
-      });
+      baseList = itemsFromUrl.split(',').map(s => decodeURIComponent(s.trim())).filter(Boolean);
+    } else if (checklistConfig && checklistConfig.length > 0) {
+      baseList = [...checklistConfig];
     } else {
-      initial['Checklist Padrão'] = { isOk: true, photoUrl: null };
+      baseList = [
+        'Estepe',
+        'Chaves de roda',
+        'Frente do carro',
+        'Fundo do carro',
+        'Lateral direita',
+        'Lateral esquerda',
+        'Estofados frente',
+        'Estofados trás',
+        'Nível de combustivel'
+      ];
     }
+
+    const hasCamera = baseList.some(item => item.toLowerCase().includes('câmera') || item.toLowerCase().includes('camera'));
+    const hasSd = baseList.some(item => item.toLowerCase().includes('cartão') || item.toLowerCase().includes('cartao') || item.toLowerCase().includes('memória') || item.toLowerCase().includes('memoria'));
+    const hasTracker = baseList.some(item => item.toLowerCase().includes('rastreador'));
+
+    if (!hasCamera) baseList.push('Câmera do carro (Foto)');
+    if (!hasSd) baseList.push('Cartão de memória (Foto)');
+    if (!hasTracker) baseList.push('Rastreador está funcionando?');
+
+    baseList.forEach(item => {
+      initial[item] = { isOk: true, photoUrl: null };
+    });
+
     return initial;
   });
 
@@ -77,10 +93,19 @@ export function DriverVistoriaForm({
   const [previewEnlargedPhoto, setPreviewEnlargedPhoto] = useState<{ photos: string[]; index: number; title: string } | null>(null);
   const [isLogoViewerOpen, setIsLogoViewerOpen] = useState<boolean>(false);
   
+  const requestToken = (() => {
+    const params = new URLSearchParams(window.location.search);
+    return params.get('reqId') || '';
+  })();
+
+  const getSubmissionStorageKey = () => {
+    const baseKey = isPaymentMode ? `payment_receipt_submitted_${vehicle?.plate || ''}` : `vistoria_submitted_${vehicle?.plate || ''}`;
+    return requestToken ? `${baseKey}_${requestToken}` : baseKey;
+  };
+
   const [alreadySubmittedBefore, setAlreadySubmittedBefore] = useState<boolean>(() => {
-    if (!vehicle) return false;
-    const key = isPaymentMode ? `payment_receipt_submitted_${vehicle.plate}` : `vistoria_submitted_${vehicle.plate}`;
-    return localStorage.getItem(key) === 'true';
+    if (!vehicle || !requestToken) return false;
+    return localStorage.getItem(getSubmissionStorageKey()) === 'true';
   });
 
   // Payment receipt specific states
@@ -328,7 +353,9 @@ export function DriverVistoriaForm({
     };
 
     if (vehicle) {
-      localStorage.setItem(`vistoria_submitted_${vehicle.plate}`, 'true');
+      if (requestToken) {
+        localStorage.setItem(getSubmissionStorageKey(), 'true');
+      }
       setAlreadySubmittedBefore(true);
       try {
         const { pdfDataUrl, fileName } = await generateVistoriaPDF(vehicle, newVistoria);
@@ -495,11 +522,23 @@ _Enviado via sistema de vistoria digital._`;
             <div>
               <h2 className="text-lg font-bold text-amber-400">Link Já Utilizado</h2>
               <p className="text-xs text-gray-400 mt-2 leading-relaxed">
-                Este link {isPaymentMode ? 'de comprovante' : 'de vistoria'} já foi enviado anteriormente. Cada link pode ser enviado apenas <strong>1 única vez</strong>.
+                Este link {isPaymentMode ? 'de comprovante' : 'de vistoria'} já foi enviado anteriormente.
               </p>
-              <p className="text-xs text-gray-500 font-medium mt-3">
-                Você já pode fechar esta página no seu navegador.
-              </p>
+              <button
+                type="button"
+                onClick={() => {
+                  if (vehicle) {
+                    localStorage.removeItem(getSubmissionStorageKey());
+                    localStorage.removeItem(`vistoria_submitted_${vehicle.plate}`);
+                    localStorage.removeItem(`payment_receipt_submitted_${vehicle.plate}`);
+                  }
+                  setAlreadySubmittedBefore(false);
+                  setIsSubmitted(false);
+                }}
+                className="mt-4 w-full py-3 bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs rounded-xl transition-all cursor-pointer shadow-lg shadow-emerald-600/20"
+              >
+                {isPaymentMode ? 'Enviar Novo Comprovante Agora' : 'Realizar Nova Vistoria Agora'}
+              </button>
             </div>
           </div>
         ) : isSubmitted ? (
@@ -543,7 +582,9 @@ _Enviado via sistema de vistoria digital._`;
               return;
             }
             if (vehicle) {
-              localStorage.setItem(`payment_receipt_submitted_${vehicle.plate}`, 'true');
+              if (requestToken) {
+                localStorage.setItem(getSubmissionStorageKey(), 'true');
+              }
               setAlreadySubmittedBefore(true);
               if (onSavePaymentReceipt) {
                 onSavePaymentReceipt({
@@ -770,63 +811,130 @@ _Enviado via sistema de vistoria digital._`;
                 Checklist de Inspeção
               </h3>
               <div className="space-y-3">
-                {Object.entries(checklist).map(([key, state]: [string, {isOk: boolean, photoUrl: string | null}]) => (
-                  <div key={key} className="bg-black/40 rounded-xl border border-white/5 overflow-hidden">
+                {Object.entries(checklist).map(([key, state]: [string, {isOk: boolean, photoUrl: string | null}]) => {
+                  const lower = key.toLowerCase();
+                  const isCameraItem = lower.includes('câmera') || lower.includes('camera');
+                  const isSdItem = lower.includes('cartão') || lower.includes('cartao') || lower.includes('memória') || lower.includes('memoria');
+                  const isTrackerItem = lower.includes('rastreador');
+
+                  return (
                     <div 
-                      onClick={() => handleToggleChecklist(key)}
-                      className={`flex items-center justify-between p-3 transition-all cursor-pointer select-none ${
-                        state.isOk ? 'bg-emerald-500/5 text-white' : 'bg-red-500/5 text-gray-300'
+                      key={key} 
+                      className={`bg-black/40 rounded-xl border transition-all overflow-hidden ${
+                        isTrackerItem 
+                          ? 'border-indigo-500/30 shadow-indigo-950/20 shadow-lg' 
+                          : isCameraItem || isSdItem
+                          ? 'border-emerald-500/30 shadow-emerald-950/20 shadow-lg'
+                          : 'border-white/5'
                       }`}
                     >
-                      <div className="flex flex-col">
-                        <span className="text-xs font-semibold">{key}</span>
-                      </div>
-                      <div className={`w-8 h-8 rounded-lg border flex items-center justify-center transition-all ${
-                        state.isOk ? 'bg-emerald-500/10 border-emerald-500/20 text-emerald-400' : 'bg-red-500/10 border-red-500/20 text-red-400'
-                      }`}>
-                        {state.isOk ? <Check className="w-4 h-4" /> : <X className="w-4 h-4" />}
-                      </div>
-                    </div>
-                    <div className="p-3 border-t border-white/5 flex flex-col gap-2">
-                      {!state.photoUrl ? (
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setTargetPhotoItem(key);
-                            cameraInputRef.current?.click();
-                          }}
-                          className="w-full flex items-center justify-center gap-2 py-2.5 bg-white/5 hover:bg-white/10 text-emerald-400 border border-white/10 rounded-lg text-[10px] font-bold uppercase transition-colors cursor-pointer"
-                        >
-                          <Camera className="w-4 h-4" /> Bater Foto: {key}
-                        </button>
-                      ) : (
-                        <div 
-                          className="relative group rounded-lg overflow-hidden border border-emerald-500/20 w-full h-32 cursor-pointer"
-                          onClick={() => state.photoUrl && openEnlargedPhoto(state.photoUrl, `Foto: ${key}`)}
-                          title="Clique para ver foto grande"
-                        >
-                          <img src={state.photoUrl} alt={key} className="w-full h-full object-cover group-hover:scale-105 transition-transform" />
-                          <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-2">
-                            <span className="px-2 py-1 bg-black/70 text-white text-[10px] font-semibold rounded flex items-center gap-1">
-                              <ZoomIn className="w-3 h-3 text-emerald-400" /> Ver Grande
+                      {/* Item Header / Title */}
+                      <div 
+                        onClick={() => handleToggleChecklist(key)}
+                        className={`flex items-center justify-between p-3.5 transition-all cursor-pointer select-none ${
+                          state.isOk ? 'bg-emerald-500/5 text-white' : 'bg-red-500/5 text-gray-300'
+                        }`}
+                      >
+                        <div className="flex items-center gap-2.5">
+                          {isCameraItem && <Video className="w-4 h-4 text-emerald-400 shrink-0" />}
+                          {isSdItem && <HardDrive className="w-4 h-4 text-emerald-400 shrink-0" />}
+                          {isTrackerItem && <Radio className="w-4 h-4 text-indigo-400 shrink-0" />}
+                          
+                          <div className="flex flex-col">
+                            <span className="text-xs font-bold text-white flex items-center gap-1.5 flex-wrap">
+                              {key}
+                              {(isCameraItem || isSdItem) && (
+                                <span className="px-1.5 py-0.5 rounded text-[9px] font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">
+                                  📸 Foto Obrigatória
+                                </span>
+                              )}
+                              {isTrackerItem && (
+                                <span className="px-1.5 py-0.5 rounded text-[9px] font-bold bg-indigo-500/20 text-indigo-300 border border-indigo-500/30">
+                                  📡 Verificação de Segurança
+                                </span>
+                              )}
                             </span>
-                            <button
-                              type="button"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                setTargetPhotoItem(key);
-                                cameraInputRef.current?.click();
-                              }}
-                              className="px-2.5 py-1 bg-emerald-600 hover:bg-emerald-500 text-white text-[10px] font-bold rounded flex items-center gap-1 cursor-pointer"
-                            >
-                              <Camera className="w-3 h-3" /> Refazer
-                            </button>
+                            {isCameraItem && (
+                              <span className="text-[10px] text-gray-400 mt-0.5">Tirar foto nítida da câmera instalada no veículo</span>
+                            )}
+                            {isSdItem && (
+                              <span className="text-[10px] text-gray-400 mt-0.5">Tirar foto do cartão de memória inserido/retirado</span>
+                            )}
+                            {isTrackerItem && (
+                              <span className="text-[10px] text-indigo-300/80 mt-0.5 font-medium">
+                                Confirmar se o rastreador está ativo, comunicando e operacional
+                              </span>
+                            )}
                           </div>
                         </div>
-                      )}
+
+                        {/* Status Toggle / Icon */}
+                        {isTrackerItem ? (
+                          <div className="flex items-center gap-1.5 shrink-0">
+                            <span className={`px-2.5 py-1 rounded-lg text-[10px] font-bold border transition-colors ${
+                              state.isOk 
+                                ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40' 
+                                : 'bg-red-500/20 text-red-300 border-red-500/40'
+                            }`}>
+                              {state.isOk ? '✅ SIM (Funcionando)' : '❌ NÃO (Com Defeito)'}
+                            </span>
+                          </div>
+                        ) : (
+                          <div className={`w-8 h-8 rounded-lg border flex items-center justify-center transition-all shrink-0 ${
+                            state.isOk ? 'bg-emerald-500/10 border-emerald-500/20 text-emerald-400' : 'bg-red-500/10 border-red-500/20 text-red-400'
+                          }`}>
+                            {state.isOk ? <Check className="w-4 h-4" /> : <X className="w-4 h-4" />}
+                          </div>
+                        )}
+                      </div>
+
+                      {/* Photo Capture Section */}
+                      <div className="p-3 border-t border-white/5 flex flex-col gap-2 bg-black/20">
+                        {!state.photoUrl ? (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setTargetPhotoItem(key);
+                              cameraInputRef.current?.click();
+                            }}
+                            className={`w-full flex items-center justify-center gap-2 py-2.5 rounded-lg text-[10px] font-bold uppercase transition-all cursor-pointer ${
+                              isCameraItem || isSdItem
+                                ? 'bg-emerald-600/20 hover:bg-emerald-600/30 text-emerald-300 border border-emerald-500/40 shadow-xs'
+                                : 'bg-white/5 hover:bg-white/10 text-emerald-400 border border-white/10'
+                            }`}
+                          >
+                            <Camera className="w-4 h-4" /> 
+                            {isCameraItem ? 'Tirar Foto da Câmera do Carro' : isSdItem ? 'Tirar Foto do Cartão de Memória' : isTrackerItem ? 'Bater Foto do Rastreador / LED (Opcional)' : `Bater Foto: ${key}`}
+                          </button>
+                        ) : (
+                          <div 
+                            className="relative group rounded-lg overflow-hidden border border-emerald-500/20 w-full h-32 cursor-pointer"
+                            onClick={() => state.photoUrl && openEnlargedPhoto(state.photoUrl, `Foto: ${key}`)}
+                            title="Clique para ver foto grande"
+                          >
+                            <img src={state.photoUrl} alt={key} className="w-full h-full object-cover group-hover:scale-105 transition-transform" />
+                            <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-2">
+                              <span className="px-2 py-1 bg-black/70 text-white text-[10px] font-semibold rounded flex items-center gap-1">
+                                <ZoomIn className="w-3 h-3 text-emerald-400" /> Ver Grande
+                              </span>
+                              <button
+                                type="button"
+                                onClick={(e) => {
+                                 e.stopPropagation();
+                                 setTargetPhotoItem(key);
+                                 cameraInputRef.current?.click();
+                                }}
+                                className="px-2.5 py-1 bg-emerald-600 hover:bg-emerald-500 text-white text-[10px] font-bold rounded flex items-center gap-1 cursor-pointer"
+                              >
+                                <Camera className="w-3 h-3" /> Refazer
+                              </button>
+                            </div>
+                          </div>
+                        )}
+                      </div>
                     </div>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             </div>
 

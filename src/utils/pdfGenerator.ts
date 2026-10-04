@@ -1,7 +1,7 @@
 import { jsPDF } from 'jspdf';
 import { Vehicle, MaintenanceLog, ExpenseLog, Vistoria, FuelLog } from '../types';
 
-async function urlToDataUrl(url: string): Promise<{ dataUrl: string; format: 'PNG' | 'JPEG' } | null> {
+export async function urlToDataUrl(url: string): Promise<{ dataUrl: string; format: 'PNG' | 'JPEG' } | null> {
   if (!url) return null;
 
   return new Promise((resolve) => {
@@ -475,6 +475,15 @@ export async function generateVistoriaPDF(
     ? `Veículo: ${vehicle.brand} ${vehicle.model} (${vehicle.plate}) | Odômetro: ${kmToDisplay} | Data: ${formattedNow}`
     : `Veículo: ${vehicle.brand} ${vehicle.model} (${vehicle.plate}) | Data: ${formattedNow}`;
   doc.text(headerInfo, 14, 20);
+
+  if (vistoria.status === 'approved') {
+    doc.setFillColor(16, 185, 129);
+    doc.roundedRect(145, 7, 51, 8, 2, 2, 'F');
+    doc.setTextColor(255, 255, 255);
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(8);
+    doc.text('VISTORIA APROVADA', 170.5, 12.2, { align: 'center' });
+  }
 
   y = 36;
   doc.setTextColor(textColor[0], textColor[1], textColor[2]);

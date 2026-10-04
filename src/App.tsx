@@ -23,11 +23,13 @@ import { ReportsAndHistoryModal } from './components/ReportsAndHistoryModal';
 import { AgendaModal } from './components/AgendaModal';
 import { DocumentUploadModal } from './components/DocumentUploadModal';
 import { DriverVistoriaForm } from './components/DriverVistoriaForm';
+import { DriverPortalView } from './components/DriverPortalView';
 import { HelpModal } from './components/HelpModal';
 import { DashboardCalendar } from './components/DashboardCalendar';
 import { FinalizedContractsModal } from './components/FinalizedContractsModal';
 import { HeaderActionsMenu } from './components/HeaderActionsMenu';
 import { SettingsModal } from './components/SettingsModal';
+import { NotificationCenterModal } from './components/NotificationCenterModal';
 import { ChecklistConfigModal } from './components/ChecklistConfigModal';
 import { RentalContractModal } from './components/RentalContractModal';
 import { ConfirmDeleteModal } from './components/ConfirmDeleteModal';
@@ -67,6 +69,7 @@ import {
   Fuel,
   Coins,
   Map,
+  BellRing,
   Gauge,
   FileDown
 } from 'lucide-react';
@@ -292,6 +295,7 @@ export default function App() {
     return localStorage.getItem('fleet_maint_notif_enabled') === 'true';
   });
   const [isSettingsOpen, setIsSettingsOpen] = useState<boolean>(false);
+  const [isNotificationCenterOpen, setIsNotificationCenterOpen] = useState<boolean>(false);
   const [isChecklistConfigOpen, setIsChecklistConfigOpen] = useState<boolean>(false);
   const [isRentalContractOpen, setIsRentalContractOpen] = useState<boolean>(false);
   const [isReportsModalOpen, setIsReportsModalOpen] = useState<boolean>(false);
@@ -302,9 +306,7 @@ export default function App() {
   const [vehiclePendingFinalize, setVehiclePendingFinalize] = useState<Vehicle | null>(null);
 
   const [checklistConfig, setChecklistConfig] = useState<string[]>(() => {
-    const saved = localStorage.getItem('fleet_checklist_config');
-    if (saved) return JSON.parse(saved);
-    return [
+    const defaultList = [
       'Estepe',
       'Chaves de roda',
       'Frente do carro',
@@ -313,8 +315,40 @@ export default function App() {
       'Lateral esquerda',
       'Estofados frente',
       'Estofados trás',
-      'Nível de combustivel'
+      'Nível de combustivel',
+      'Câmera do carro (Tirar foto)',
+      'Cartão de memória (Tirar foto)',
+      'Rastreador está funcionando?'
     ];
+    const saved = localStorage.getItem('fleet_checklist_config');
+    if (saved) {
+      try {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          const newRequired = [
+            'Câmera do carro (Tirar foto)',
+            'Cartão de memória (Tirar foto)',
+            'Rastreador está funcionando?'
+          ];
+          const hasAnyCamera = parsed.some(item => item.toLowerCase().includes('câmera') || item.toLowerCase().includes('camera'));
+          const hasAnySd = parsed.some(item => item.toLowerCase().includes('cartão') || item.toLowerCase().includes('cartao') || item.toLowerCase().includes('memória') || item.toLowerCase().includes('memoria'));
+          const hasAnyTracker = parsed.some(item => item.toLowerCase().includes('rastreador'));
+
+          const toAdd: string[] = [];
+          if (!hasAnyCamera) toAdd.push('Câmera do carro (Tirar foto)');
+          if (!hasAnySd) toAdd.push('Cartão de memória (Tirar foto)');
+          if (!hasAnyTracker) toAdd.push('Rastreador está funcionando?');
+
+          if (toAdd.length > 0) {
+            const merged = [...parsed, ...toAdd];
+            localStorage.setItem('fleet_checklist_config', JSON.stringify(merged));
+            return merged;
+          }
+          return parsed;
+        }
+      } catch (e) {}
+    }
+    return defaultList;
   });
 
   const handleToggleMaintNotifications = (enabled: boolean) => {
@@ -407,6 +441,24 @@ export default function App() {
                   ? `A CNH do motorista do veículo ${v.brand} (${v.plate}) está vencida!`
                   : `A CNH do motorista do veículo ${v.brand} (${v.plate}) vence em ${diffDays} dia(s).`,
                 eventKey: 'cnh_expiring',
+              });
+            }
+          }
+
+          // Insurance Expiring (within 15 days or expired)
+          const insDate = v.insuranceExpirationDate || v.seguroVencimento;
+          if (insDate) {
+            const insMs = new Date(insDate + 'T12:00:00').getTime();
+            const nowMs = new Date(todayDateStr + 'T12:00:00').getTime();
+            const diffDays = Math.round((insMs - nowMs) / (1000 * 60 * 60 * 24));
+            if (diffDays <= 15) {
+              sendAppNotification(`🛡️ Alerta de Seguro: ${v.brand} (${v.plate})`, {
+                body: diffDays < 0
+                  ? `O seguro do veículo ${v.brand} (${v.plate}) venceu há ${Math.abs(diffDays)} dia(s)! Providencie a renovação.`
+                  : diffDays === 0
+                  ? `O seguro do veículo ${v.brand} (${v.plate}) vence HOJE! Providencie a renovação da apólice.`
+                  : `O seguro do veículo ${v.brand} (${v.plate}) vence em ${diffDays} dia(s). Lembre-se de renovar a apólice.`,
+                eventKey: 'insurance_expiring',
               });
             }
           }
@@ -1221,6 +1273,82 @@ export default function App() {
     );
   };
 
+  const handleApproveVistoria = async (vistoria: Vistoria) => {
+    const approvalDate = new Date().toLocaleDateString('pt-BR') + ' às ' + new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+    const targetVehicle = vehicles.find(v => v.id === vistoria.vehicleId || (vistoria.vehiclePlate && v.plate.replace(/[^A-Z0-9]/gi, '').toUpperCase() === vistoria.vehiclePlate.replace(/[^A-Z0-9]/gi, '').toUpperCase()));
+    
+    const approvedVistoria: Vistoria = {
+      ...vistoria,
+      status: 'approved',
+      approvedAt: approvalDate,
+      vehiclePlate: vistoria.vehiclePlate || targetVehicle?.plate
+    };
+
+    let approvedPdfUrl = vistoria.pdfDataUrl;
+    let approvedPdfName = `Vistoria Aprovada (${approvedVistoria.type || 'Geral'}) - ${new Date(approvedVistoria.date + 'T12:00:00').toLocaleDateString('pt-BR').replace(/\//g, '-')}.pdf`;
+
+    if (targetVehicle) {
+      try {
+        const { fileName, pdfDataUrl } = await generateVistoriaPDF(targetVehicle, approvedVistoria);
+        approvedPdfUrl = pdfDataUrl;
+        approvedPdfName = fileName;
+        approvedVistoria.pdfDataUrl = pdfDataUrl;
+      } catch (err) {
+        console.error('Erro ao gerar PDF de aprovação da vistoria:', err);
+      }
+    }
+
+    // Update in vistorias state
+    setVistorias(prev => {
+      const nextVistorias = prev.map(v => v.id === vistoria.id ? approvedVistoria : v);
+      setDoc(doc(db, 'fleetData', 'main'), sanitizeForCloud({
+        vistorias: nextVistorias,
+        updatedAt: new Date().toISOString()
+      }), { merge: true }).catch(err => console.warn('Direct approved vistoria cloud sync error:', err));
+      return nextVistorias;
+    });
+
+    if (targetVehicle) {
+      const vistoriaDoc: VehicleDocument = {
+        id: `doc-vist-approved-${vistoria.id}`,
+        name: approvedPdfName,
+        category: 'Vistoria',
+        uploadDate: vistoria.date || new Date().toISOString().split('T')[0],
+        fileSize: 'Laudo Aprovado PDF',
+        fileType: 'pdf',
+        contentUrl: approvedPdfUrl
+      };
+
+      setVehicles(prev => {
+        const nextVehicles = prev.map(v => {
+          if (v.id === targetVehicle.id) {
+            const cleanDocs = (v.documents || []).filter(d => !d.id.includes(vistoria.id));
+            return {
+              ...v,
+              documents: [vistoriaDoc, ...cleanDocs]
+            };
+          }
+          return v;
+        });
+
+        setDoc(doc(db, 'fleetData', 'main'), sanitizeForCloud({
+          vehicles: cleanVehiclesForCloud(nextVehicles),
+          updatedAt: new Date().toISOString()
+        }), { merge: true }).catch(err => console.warn('Direct vehicle vistoria approval cloud sync error:', err));
+
+        return nextVehicles;
+      });
+
+      sendAppNotification(`✅ Vistoria Aprovada & Arquivada: ${targetVehicle.brand} (${targetVehicle.plate})`, {
+        body: `Laudo de vistoria (${approvedVistoria.type || 'Geral'}) aprovado e arquivado com sucesso junto a todos os documentos e contratos.`,
+        eventKey: 'vistoria_approved',
+      });
+    }
+
+    setDeleteToastMsg(`Vistoria aprovada com sucesso! Arquivada na pasta de Documentos, Contratos e Vistorias.`);
+    setTimeout(() => setDeleteToastMsg(null), 5000);
+  };
+
   const handleDeleteVistoria = (id: string) => {
     setVistorias((prev) => prev.filter((v) => v.id !== id));
     setVehicles((prev) =>
@@ -1679,6 +1807,24 @@ export default function App() {
       };
     }
 
+    if (params.get('mode') === 'portal_motorista') {
+      return (
+        <DriverPortalView
+          vehicle={targetVehicle}
+          vistorias={vistorias}
+          onExit={() => {
+            window.location.href = window.location.pathname;
+          }}
+          onOpenVistoriaForm={() => {
+            window.location.search = `?mode=vistoria_retorno&placa=${encodeURIComponent(targetVehicle.plate)}`;
+          }}
+          onOpenReceiptUpload={() => {
+            window.location.search = `?mode=pagamento&placa=${encodeURIComponent(targetVehicle.plate)}`;
+          }}
+        />
+      );
+    }
+
     const isPaymentMode = params.get('mode') === 'pagamento';
 
     return (
@@ -1864,6 +2010,16 @@ export default function App() {
               <span className="sm:hidden">Agenda</span>
             </button>
 
+            <button
+              type="button"
+              onClick={() => setIsNotificationCenterOpen(true)}
+              className="px-3 py-2 bg-emerald-950/40 hover:bg-emerald-900/60 text-emerald-300 border border-emerald-500/30 rounded-xl flex items-center gap-1.5 text-xs font-semibold transition-all cursor-pointer shadow-sm shadow-emerald-500/10"
+              title="Abrir Centro de Notificações (Ativar/Desativar os 20 tipos de alertas)"
+            >
+              <BellRing className="w-4 h-4 text-emerald-400" />
+              <span className="hidden sm:inline">Notificações</span>
+            </button>
+
             <HeaderActionsMenu
               onAddVehicle={() => handleOpenForm('vehicle')}
               onOpenRentalContract={() => {
@@ -1878,6 +2034,7 @@ export default function App() {
               onOpenLogForm={(type) => handleOpenForm(type)}
               onOpenDocumentUpload={() => setIsUploadDocOpen(true)}
               onOpenSettings={() => setIsSettingsOpen(true)}
+              onOpenNotificationCenter={() => setIsNotificationCenterOpen(true)}
               onOpenChecklistConfig={() => setIsChecklistConfigOpen(true)}
               onDownloadBackup={handleDownloadBackup}
               onUploadBackup={handleUploadBackup}
@@ -2044,6 +2201,7 @@ export default function App() {
                   selectedMonth={selectedMonth}
                   selectedYear={selectedYear}
                   onSaveVistoria={handleSaveVistoria}
+                  onApproveVistoria={handleApproveVistoria}
                   onDeleteVistoria={handleDeleteVistoria}
                   onDeleteAllVistorias={handleDeleteAllVistoriasForVehicle}
                   onOpenRentalContract={(v) => {
@@ -2192,9 +2350,12 @@ export default function App() {
         isOpen={isFinalizedContractsOpen}
         onClose={() => setIsFinalizedContractsOpen(false)}
         contracts={finalizedContracts}
+        vehicles={sortedVehicles}
+        vistorias={vistorias}
         onDeleteContract={handleDeleteFinalizedContract}
         onMarkContractAsViewed={handleMarkContractAsViewed}
         onMarkAllAsViewed={handleMarkAllContractsAsViewed}
+        onDownloadBackup={handleDownloadBackup}
       />
 
       {/* Settings Modal */}
@@ -2207,6 +2368,12 @@ export default function App() {
         onToggleMaintNotifications={handleToggleMaintNotifications}
         vehicles={vehicles}
         onTriggerMaintNotificationCheck={triggerMaintNotificationCheck}
+      />
+
+      {/* Centro de Notificações Modal */}
+      <NotificationCenterModal
+        isOpen={isNotificationCenterOpen}
+        onClose={() => setIsNotificationCenterOpen(false)}
       />
 
       <ChecklistConfigModal

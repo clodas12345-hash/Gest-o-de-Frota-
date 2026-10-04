@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Vehicle, FuelLog, MaintenanceLog, ExpenseLog, AgendaContact, SinistroLog, TireState } from '../types';
-import { X, Save, AlertCircle, Users, BookOpen, Sparkles, Mic, MicOff, Calculator, Plus, Trash2, User, Phone, Search, Smartphone, Check, Upload, ExternalLink, AlertTriangle, Car, Calendar, Camera } from 'lucide-react';
+import { X, Save, AlertCircle, Users, BookOpen, Sparkles, Mic, MicOff, Calculator, Plus, Trash2, User, Phone, Search, Smartphone, Check, Upload, ExternalLink, AlertTriangle, Car, Calendar, Camera, Shield, Bell } from 'lucide-react';
 import { generateNextContractNumber } from '../utils/contractHelper';
 import CurrencyInput from './CurrencyInput';
 
@@ -117,11 +117,17 @@ export function LogForms({
   const [driverPhone, setDriverPhone] = useState('');
   const [driverCnhExpiration, setDriverCnhExpiration] = useState('');
   const [driverCnhPhotoUrl, setDriverCnhPhotoUrl] = useState('');
+  const [driverCnhFileName, setDriverCnhFileName] = useState('');
+  const [driverAddressProofUrl, setDriverAddressProofUrl] = useState('');
+  const [driverAddressFileName, setDriverAddressFileName] = useState('');
+  const cnhFileInputRef = useRef<HTMLInputElement>(null);
+  const addressFileInputRef = useRef<HTMLInputElement>(null);
   const [tires, setTires] = useState<TireState[]>([]);
   const [caucaoValor, setCaucaoValor] = useState(0);
   const [caucaoData, setCaucaoData] = useState('');
   const [caucaoObservacoes, setCaucaoObservacoes] = useState('');
   const [nextVistoriaDate, setNextVistoriaDate] = useState('');
+  const [insuranceExpirationDate, setInsuranceExpirationDate] = useState('');
   const [showAddExpense, setShowAddExpense] = useState(false);
   const [custoExtra, setCustoExtra] = useState(0);
   const [custoExtraLabel, setCustoExtraLabel] = useState('Outras Despesas');
@@ -573,8 +579,12 @@ export function LogForms({
         setCaucaoData(vehicleToEdit.caucaoData || '2026-08-01');
         setCaucaoObservacoes(vehicleToEdit.caucaoObservacoes || '');
         setNextVistoriaDate(vehicleToEdit.nextVistoriaDate || '');
+        setInsuranceExpirationDate(vehicleToEdit.insuranceExpirationDate || vehicleToEdit.seguroVencimento || '');
         setDriverCnhExpiration(vehicleToEdit.driverCnhExpiration || '');
         setDriverCnhPhotoUrl(vehicleToEdit.driverCnhPhotoUrl || '');
+        setDriverCnhFileName(vehicleToEdit.driverCnhPhotoUrl ? 'CNH Anexada' : '');
+        setDriverAddressProofUrl(vehicleToEdit.driverAddressProofUrl || '');
+        setDriverAddressFileName(vehicleToEdit.driverAddressProofUrl ? 'Comprovante de Endereço Anexado' : '');
         setTires(vehicleToEdit.tires || []);
         setCustoExtra(vehicleToEdit.custoExtra || 0);
         setCustoExtraLabel(vehicleToEdit.custoExtraLabel || 'Outras Despesas');
@@ -612,11 +622,15 @@ export function LogForms({
             setDriverPhone(draft.driverPhone ?? '');
             setDriverCnhExpiration(draft.driverCnhExpiration ?? '');
             setDriverCnhPhotoUrl(draft.driverCnhPhotoUrl ?? '');
+            setDriverCnhFileName(draft.driverCnhPhotoUrl ? 'CNH Anexada' : '');
+            setDriverAddressProofUrl(draft.driverAddressProofUrl ?? '');
+            setDriverAddressFileName(draft.driverAddressProofUrl ? 'Comprovante de Endereço Anexado' : '');
             setTires(draft.tires ?? []);
             setCaucaoValor(draft.caucaoValor ?? 1500);
             setCaucaoData(draft.caucaoData ?? new Date().toISOString().split('T')[0]);
             setCaucaoObservacoes(draft.caucaoObservacoes ?? '');
             setNextVistoriaDate(draft.nextVistoriaDate ?? '');
+            setInsuranceExpirationDate(draft.insuranceExpirationDate ?? draft.seguroVencimento ?? '');
             setExtraExpenses(draft.extraExpenses ?? []);
           } catch (e) {
             console.error('Error loading vehicle draft:', e);
@@ -648,6 +662,12 @@ export function LogForms({
           setCaucaoData(new Date().toISOString().split('T')[0]);
           setCaucaoObservacoes('');
           setNextVistoriaDate('');
+          setInsuranceExpirationDate('');
+          setDriverCnhExpiration('');
+          setDriverCnhPhotoUrl('');
+          setDriverCnhFileName('');
+          setDriverAddressProofUrl('');
+          setDriverAddressFileName('');
         }
       }
     } else if (formType === 'fuel' && currentSelectedCar) {
@@ -704,6 +724,7 @@ export function LogForms({
         caucaoData,
         caucaoObservacoes,
         nextVistoriaDate,
+        insuranceExpirationDate,
         preventiveMaintNextKm,
         extraExpenses
       };
@@ -713,7 +734,7 @@ export function LogForms({
     isOpen, formType, vehicleToEdit, brand, model, plate, color, yearFab, yearModel, rentalCompany,
     startDate, endDate, initialKm, contractNumber, valorRecebido, valorSemanal,
     financiamento, seguro, ipva, manutencaoPreventiva, currentKm, preventiveMaintNextKm, fuelLevel,
-    driver, driverPhone, caucaoValor, caucaoData, caucaoObservacoes, nextVistoriaDate, extraExpenses
+    driver, driverPhone, caucaoValor, caucaoData, caucaoObservacoes, nextVistoriaDate, insuranceExpirationDate, extraExpenses
   ]);
 
   // Handle vehicle select change & auto-populate corresponding km
@@ -786,11 +807,40 @@ export function LogForms({
         preventiveMaintNextKm: preventiveMaintNextKm !== undefined ? Number(preventiveMaintNextKm) : (vehicleToEdit ? (vehicleToEdit.preventiveMaintNextKm ?? ((Number(currentKm) || 0) + 10000)) : ((Number(currentKm) || 0) + 10000)),
         preventiveMaintDate: vehicleToEdit ? (vehicleToEdit.preventiveMaintDate || getTodayStr()) : getTodayStr(),
         nextVistoriaDate: nextVistoriaDate || '',
+        insuranceExpirationDate: insuranceExpirationDate || '',
+        seguroVencimento: insuranceExpirationDate || '',
         driverCnhExpiration: driverCnhExpiration || '',
         driverCnhPhotoUrl: driverCnhPhotoUrl || '',
+        driverAddressProofUrl: driverAddressProofUrl || '',
         tires: tires || [],
         extraExpenses,
-        documents: vehicleToEdit?.documents || []
+        documents: (() => {
+          const baseDocs = [...(vehicleToEdit?.documents || [])];
+          const todayStr = getTodayStr();
+          if (driverCnhPhotoUrl && driverCnhPhotoUrl !== vehicleToEdit?.driverCnhPhotoUrl) {
+            baseDocs.unshift({
+              id: `doc-cnh-${Date.now()}`,
+              name: driverCnhFileName || `CNH - ${driver || plate.toUpperCase()}`,
+              category: 'CNH / Motorista',
+              uploadDate: todayStr,
+              fileSize: 'Documento Anexado',
+              fileType: driverCnhPhotoUrl.startsWith('data:application/pdf') ? 'pdf' : 'image',
+              contentUrl: driverCnhPhotoUrl
+            });
+          }
+          if (driverAddressProofUrl && driverAddressProofUrl !== vehicleToEdit?.driverAddressProofUrl) {
+            baseDocs.unshift({
+              id: `doc-end-${Date.now() + 1}`,
+              name: driverAddressFileName || `Comprovante de Endereço - ${driver || plate.toUpperCase()}`,
+              category: 'Comprovante de Endereço',
+              uploadDate: todayStr,
+              fileSize: 'Documento Anexado',
+              fileType: driverAddressProofUrl.startsWith('data:application/pdf') ? 'pdf' : 'image',
+              contentUrl: driverAddressProofUrl
+            });
+          }
+          return baseDocs;
+        })()
       };
 
       onSaveVehicle(vehicleData);
@@ -1233,9 +1283,9 @@ export function LogForms({
                           </div>
                         </div>
                         
-                        <div className="flex items-center gap-4 pt-1 border-t border-white/5">
-                          <div className="flex items-center gap-2">
-                            <span className="text-[9px] text-gray-500 font-bold uppercase shrink-0">Início:</span>
+                        <div className="grid grid-cols-12 gap-2 pt-2 border-t border-white/5 items-end">
+                          <div className="col-span-6 sm:col-span-5 space-y-1">
+                            <span className="text-[9px] text-gray-500 font-bold uppercase block ml-0.5">Início:</span>
                             <input
                               type="month"
                               value={exp.startDate || ''}
@@ -1244,11 +1294,11 @@ export function LogForms({
                                 newList[index].startDate = e.target.value;
                                 setExtraExpenses(newList);
                               }}
-                              className="text-[10px] bg-black/40 border border-white/10 rounded-lg px-2 py-1 text-white focus:border-amber-500/50"
+                              className="w-full text-[11px] bg-black/40 border border-white/10 rounded-lg px-2 py-1.5 text-white focus:border-amber-500/50 scheme-dark"
                             />
                           </div>
-                          <div className="flex items-center gap-2">
-                            <span className="text-[9px] text-gray-500 font-bold uppercase shrink-0">Parc. Pagas:</span>
+                          <div className="col-span-3 sm:col-span-3 space-y-1">
+                            <span className="text-[9px] text-gray-500 font-bold uppercase block text-center">Parc. Pagas</span>
                             <input
                               type="number"
                               value={exp.parcelasPagas ?? ''}
@@ -1258,11 +1308,11 @@ export function LogForms({
                                 setExtraExpenses(newList);
                               }}
                               placeholder="Ex: 1"
-                              className="w-16 text-center text-xs bg-black/40 border border-white/10 rounded-lg py-1 text-white font-mono focus:border-amber-500/50"
+                              className="w-full text-center text-xs bg-black/40 border border-white/10 rounded-lg py-1.5 px-1 text-white font-mono focus:border-amber-500/50"
                             />
                           </div>
-                          <div className="flex items-center gap-2">
-                            <span className="text-[9px] text-gray-500 font-bold uppercase shrink-0">Total Parc:</span>
+                          <div className="col-span-3 sm:col-span-4 space-y-1">
+                            <span className="text-[9px] text-gray-500 font-bold uppercase block text-center">Total Parc.</span>
                             <input
                               type="number"
                               value={exp.parcelasTotais ?? ''}
@@ -1272,13 +1322,15 @@ export function LogForms({
                                 setExtraExpenses(newList);
                               }}
                               placeholder="Ex: 12"
-                              className="w-16 text-center text-xs bg-black/40 border border-white/10 rounded-lg py-1 text-white font-mono focus:border-amber-500/50"
+                              className="w-full text-center text-xs bg-black/40 border border-white/10 rounded-lg py-1.5 px-1 text-white font-mono focus:border-amber-500/50"
                             />
                           </div>
                           {exp.parcelasTotais && exp.parcelasTotais > 0 ? (
-                            <span className="text-[9px] text-amber-500/60 font-medium italic">
-                              Faltam {(exp.parcelasTotais || 0) - (exp.parcelasPagas || 0)} parcelas
-                            </span>
+                            <div className="col-span-12 text-right">
+                              <span className="text-[10px] text-amber-400/80 font-medium italic">
+                                Faltam {Math.max(0, (exp.parcelasTotais || 0) - (exp.parcelasPagas || 0))} parcela(s)
+                              </span>
+                            </div>
                           ) : null}
                         </div>
                       </div>
@@ -1370,7 +1422,7 @@ export function LogForms({
                   />
                 </div>
 
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div className="space-y-3 pt-1">
                   <div className="space-y-1">
                     <label className="font-semibold text-gray-400 text-xs flex items-center gap-1.5">
                       <Calendar className="w-3.5 h-3.5 text-blue-400" /> Vencimento da CNH
@@ -1379,20 +1431,179 @@ export function LogForms({
                       type="date" 
                       value={driverCnhExpiration} 
                       onChange={e => setDriverCnhExpiration(e.target.value)}
-                      className="w-full text-xs bg-black/40 border border-white/10 rounded-xl px-3 py-2 text-white focus:outline-hidden focus:border-blue-500/50 focus:bg-[#1a1a1a]"
+                      className="w-full text-xs bg-black/40 border border-white/10 rounded-xl px-3 py-2 text-white focus:outline-hidden focus:border-blue-500/50 focus:bg-[#1a1a1a] scheme-dark"
                     />
                   </div>
-                  <div className="space-y-1">
-                    <label className="font-semibold text-gray-400 text-xs flex items-center gap-1.5">
-                      <Camera className="w-3.5 h-3.5 text-blue-400" /> Foto da CNH (URL)
-                    </label>
-                    <input 
-                      type="text" 
-                      value={driverCnhPhotoUrl} 
-                      onChange={e => setDriverCnhPhotoUrl(e.target.value)}
-                      placeholder="https://..."
-                      className="w-full text-xs bg-black/40 border border-white/10 rounded-xl px-3 py-2 text-white placeholder-gray-500 focus:outline-hidden focus:border-blue-500/50 focus:bg-[#1a1a1a]"
-                    />
+
+                  {/* Upload de Foto / PDF da CNH e Comprovante de Endereço */}
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    {/* Upload CNH */}
+                    <div className="space-y-1.5">
+                      <label className="font-semibold text-gray-400 text-xs flex items-center gap-1.5">
+                        <Camera className="w-3.5 h-3.5 text-blue-400" /> Foto / Arquivo da CNH
+                      </label>
+                      <input
+                        ref={cnhFileInputRef}
+                        type="file"
+                        accept="image/*,application/pdf"
+                        className="hidden"
+                        onChange={(e) => {
+                          const file = e.target.files?.[0];
+                          if (!file) return;
+                          setDriverCnhFileName(file.name);
+                          if (file.type.startsWith('image/')) {
+                            const reader = new FileReader();
+                            reader.onload = (ev) => {
+                              const img = new Image();
+                              img.onload = () => {
+                                const canvas = document.createElement('canvas');
+                                let w = img.width;
+                                let h = img.height;
+                                const maxD = 900;
+                                if (w > maxD || h > maxD) {
+                                  if (w > h) { h = Math.round((h * maxD) / w); w = maxD; }
+                                  else { w = Math.round((w * maxD) / h); h = maxD; }
+                                }
+                                canvas.width = w;
+                                canvas.height = h;
+                                const ctx = canvas.getContext('2d');
+                                if (ctx) {
+                                  ctx.drawImage(img, 0, 0, w, h);
+                                  setDriverCnhPhotoUrl(canvas.toDataURL('image/jpeg', 0.7));
+                                }
+                              };
+                              img.src = ev.target?.result as string;
+                            };
+                            reader.readAsDataURL(file);
+                          } else {
+                            const reader = new FileReader();
+                            reader.onload = (ev) => {
+                              if (ev.target?.result) setDriverCnhPhotoUrl(ev.target.result as string);
+                            };
+                            reader.readAsDataURL(file);
+                          }
+                          e.target.value = '';
+                        }}
+                      />
+                      <div className="flex items-center gap-2">
+                        <button
+                          type="button"
+                          onClick={() => cnhFileInputRef.current?.click()}
+                          className={`flex-1 py-2.5 px-3 rounded-xl border text-xs font-bold flex items-center justify-center gap-2 transition-all cursor-pointer ${
+                            driverCnhPhotoUrl
+                              ? 'bg-emerald-500/15 border-emerald-500/40 text-emerald-300 hover:bg-emerald-500/25'
+                              : 'bg-blue-500/10 border-blue-500/30 text-blue-300 hover:bg-blue-500/20'
+                          }`}
+                        >
+                          <Upload className="w-4 h-4 shrink-0" />
+                          <span className="truncate">
+                            {driverCnhPhotoUrl ? (driverCnhFileName || 'Alterar CNH') : 'Enviar Foto / PDF da CNH'}
+                          </span>
+                        </button>
+                        {driverCnhPhotoUrl && (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setDriverCnhPhotoUrl('');
+                              setDriverCnhFileName('');
+                            }}
+                            className="p-2.5 bg-rose-500/15 hover:bg-rose-500/25 text-rose-400 border border-rose-500/30 rounded-xl transition-colors cursor-pointer shrink-0"
+                            title="Remover arquivo da CNH"
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </button>
+                        )}
+                      </div>
+                      {driverCnhPhotoUrl && driverCnhPhotoUrl.startsWith('data:image') && (
+                        <div className="mt-1 rounded-xl overflow-hidden border border-emerald-500/30 h-20 bg-black/40 flex items-center justify-center">
+                          <img src={driverCnhPhotoUrl} alt="CNH Preview" className="h-full w-full object-cover" />
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Upload Comprovante de Endereço */}
+                    <div className="space-y-1.5">
+                      <label className="font-semibold text-gray-400 text-xs flex items-center gap-1.5">
+                        <Upload className="w-3.5 h-3.5 text-emerald-400" /> Comprovante de Endereço
+                      </label>
+                      <input
+                        ref={addressFileInputRef}
+                        type="file"
+                        accept="image/*,application/pdf"
+                        className="hidden"
+                        onChange={(e) => {
+                          const file = e.target.files?.[0];
+                          if (!file) return;
+                          setDriverAddressFileName(file.name);
+                          if (file.type.startsWith('image/')) {
+                            const reader = new FileReader();
+                            reader.onload = (ev) => {
+                              const img = new Image();
+                              img.onload = () => {
+                                const canvas = document.createElement('canvas');
+                                let w = img.width;
+                                let h = img.height;
+                                const maxD = 900;
+                                if (w > maxD || h > maxD) {
+                                  if (w > h) { h = Math.round((h * maxD) / w); w = maxD; }
+                                  else { w = Math.round((w * maxD) / h); h = maxD; }
+                                }
+                                canvas.width = w;
+                                canvas.height = h;
+                                const ctx = canvas.getContext('2d');
+                                if (ctx) {
+                                  ctx.drawImage(img, 0, 0, w, h);
+                                  setDriverAddressProofUrl(canvas.toDataURL('image/jpeg', 0.7));
+                                }
+                              };
+                              img.src = ev.target?.result as string;
+                            };
+                            reader.readAsDataURL(file);
+                          } else {
+                            const reader = new FileReader();
+                            reader.onload = (ev) => {
+                              if (ev.target?.result) setDriverAddressProofUrl(ev.target.result as string);
+                            };
+                            reader.readAsDataURL(file);
+                          }
+                          e.target.value = '';
+                        }}
+                      />
+                      <div className="flex items-center gap-2">
+                        <button
+                          type="button"
+                          onClick={() => addressFileInputRef.current?.click()}
+                          className={`flex-1 py-2.5 px-3 rounded-xl border text-xs font-bold flex items-center justify-center gap-2 transition-all cursor-pointer ${
+                            driverAddressProofUrl
+                              ? 'bg-emerald-500/15 border-emerald-500/40 text-emerald-300 hover:bg-emerald-500/25'
+                              : 'bg-emerald-500/10 border-emerald-500/30 text-emerald-300 hover:bg-emerald-500/20'
+                          }`}
+                        >
+                          <Upload className="w-4 h-4 shrink-0" />
+                          <span className="truncate">
+                            {driverAddressProofUrl ? (driverAddressFileName || 'Alterar Endereço') : 'Enviar Comprov. Endereço'}
+                          </span>
+                        </button>
+                        {driverAddressProofUrl && (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setDriverAddressProofUrl('');
+                              setDriverAddressFileName('');
+                            }}
+                            className="p-2.5 bg-rose-500/15 hover:bg-rose-500/25 text-rose-400 border border-rose-500/30 rounded-xl transition-colors cursor-pointer shrink-0"
+                            title="Remover comprovante de endereço"
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </button>
+                        )}
+                      </div>
+                      {driverAddressProofUrl && driverAddressProofUrl.startsWith('data:image') && (
+                        <div className="mt-1 rounded-xl overflow-hidden border border-emerald-500/30 h-20 bg-black/40 flex items-center justify-center">
+                          <img src={driverAddressProofUrl} alt="Comprovante de Endereço Preview" className="h-full w-full object-cover" />
+                        </div>
+                      )}
+                    </div>
                   </div>
                 </div>
 
@@ -1453,6 +1664,46 @@ export function LogForms({
                   onChange={e => setNextVistoriaDate(e.target.value)}
                   className="w-full text-xs bg-white/[0.03] border border-white/10 rounded-xl px-3 py-2 text-white focus:outline-hidden focus:border-blue-500/50 focus:bg-[#1a1a1a] font-mono scheme-dark"
                 />
+              </div>
+
+              {/* Vencimento do Seguro do Veículo */}
+              <div className="bg-blue-950/25 border border-blue-500/20 p-3.5 rounded-xl space-y-2">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <Shield className="w-4 h-4 text-blue-400" />
+                    <label className="font-bold text-blue-300 text-xs uppercase tracking-wider">
+                      Data de Vencimento do Seguro
+                    </label>
+                  </div>
+                  <span className="text-[10px] font-bold bg-blue-500/20 text-blue-300 border border-blue-500/30 px-2 py-0.5 rounded-full flex items-center gap-1">
+                    <Bell className="w-3 h-3 text-blue-400" />
+                    Alerta automático 15 dias antes
+                  </span>
+                </div>
+                <input 
+                  type="date" 
+                  value={insuranceExpirationDate} 
+                  onChange={e => setInsuranceExpirationDate(e.target.value)}
+                  className="w-full text-xs bg-black/40 border border-white/10 rounded-xl px-3 py-2 text-white focus:outline-hidden focus:border-blue-500/50 font-mono scheme-dark"
+                />
+                {insuranceExpirationDate && (
+                  <div className="pt-1 text-[11px] font-mono">
+                    {(() => {
+                      const expMs = new Date(insuranceExpirationDate + 'T12:00:00').getTime();
+                      const nowMs = new Date().setHours(12, 0, 0, 0);
+                      const diffDays = Math.round((expMs - nowMs) / (1000 * 60 * 60 * 24));
+                      if (diffDays < 0) {
+                        return <span className="text-rose-400 font-bold flex items-center gap-1">🚨 Seguro vencido há {Math.abs(diffDays)} dia(s)!</span>;
+                      } else if (diffDays === 0) {
+                        return <span className="text-amber-400 font-bold flex items-center gap-1">⚠️ Seguro vence hoje!</span>;
+                      } else if (diffDays <= 15) {
+                        return <span className="text-amber-300 font-bold flex items-center gap-1">⚠️ Vence em {diffDays} dias (Alerta de 15 dias ativo).</span>;
+                      } else {
+                        return <span className="text-emerald-400 flex items-center gap-1">✅ Vence em {diffDays} dias ({formatDateBR(insuranceExpirationDate)}).</span>;
+                      }
+                    })()}
+                  </div>
+                )}
               </div>
             </div>
           )}

@@ -47,8 +47,16 @@ import {
   AlertTriangle,
   BarChart3,
   Smartphone,
-  Sparkles
+  Sparkles,
+  Printer,
+  GitCompare,
+  AlertOctagon,
+  CircleDot
 } from 'lucide-react';
+import { VistoriaComparatorModal } from './VistoriaComparatorModal';
+import { VehicleProfitabilityModal } from './VehicleProfitabilityModal';
+import { TiresManagementModal } from './TiresManagementModal';
+import { FinesManagementModal } from './FinesManagementModal';
 import CurrencyInput from './CurrencyInput';
 
 interface InlineEditProps {
@@ -302,7 +310,10 @@ const DEFAULT_CHECKLIST_ITEMS = [
   'Lateral esquerda',
   'Estofados frente',
   'Estofados trás',
-  'Nível de combustivel'
+  'Nível de combustivel',
+  'Câmera do carro (Foto)',
+  'Cartão de memória (Foto)',
+  'Rastreador está funcionando?'
 ];
 
 const DEFAULT_REQUEST_TEMPLATE = `🔔 *SOLICITAÇÃO DE VISTORIA DO VEÍCULO*
@@ -325,6 +336,31 @@ const DEFAULT_PAYMENT_TEMPLATES = {
   atrasado: `Olá, *{driver}*.\n\nIdentificamos que o pagamento semanal referente ao veículo *{brand} {model}* ({plate}) com vencimento em *{data_vencimento}* consta em **atraso**.\n\n⚠️ *Valor em aberto:* R$ {valor}\n\nRegularize e envie o comprovante pelo link:\n🔗 {link_comprovante}\n\nFicamos no aguardo. Obrigado!`
 };
 
+const PUBLIC_WEB_ORIGIN = 'https://ais-pre-nxg4lixniko7ymx3t5cstw-473118395752.us-west2.run.app';
+
+export const getPublicWebBaseUrl = (): string => {
+  const saved = localStorage.getItem('fleet_vistoria_return_link');
+  if (
+    saved &&
+    saved.startsWith('http') &&
+    !saved.includes('localhost') &&
+    !saved.includes('127.0.0.1') &&
+    !saved.includes('jotform.com') &&
+    !saved.includes('sua-vistoria')
+  ) {
+    return saved.replace(/\/+$/, '');
+  }
+  if (
+    typeof window !== 'undefined' &&
+    window.location.origin.startsWith('http') &&
+    !window.location.origin.includes('localhost') &&
+    !window.location.origin.includes('127.0.0.1')
+  ) {
+    return `${window.location.origin}/upload-receipt`;
+  }
+  return `${PUBLIC_WEB_ORIGIN}/upload-receipt`;
+};
+
 const formatPaymentTemplateText = (
   template: string,
   driverName: string,
@@ -344,6 +380,11 @@ const formatPaymentTemplateText = (
     }
   }
 
+  const baseLink = (returnLink && !returnLink.includes('localhost'))
+    ? returnLink
+    : getPublicWebBaseUrl();
+  const sep = baseLink.includes('?') ? '&' : '?';
+
   return template
     .replace(/\{driver\}/g, driverName || 'Locatário')
     .replace(/\{brand\}/g, brand || 'Veículo')
@@ -351,7 +392,7 @@ const formatPaymentTemplateText = (
     .replace(/\{plate\}/g, plate || '')
     .replace(/\{valor\}/g, formattedAmount)
     .replace(/\{data_vencimento\}/g, formattedDate)
-    .replace(/\{link_comprovante\}/g, returnLink || `${window.location.origin}/upload-receipt?mode=pagamento&placa=${encodeURIComponent(plate)}`);
+    .replace(/\{link_comprovante\}/g, `${baseLink}${sep}mode=pagamento&placa=${encodeURIComponent(plate)}&reqId=${Date.now().toString(36)}`);
 };
 
 interface VehicleCardProps {
@@ -369,6 +410,7 @@ interface VehicleCardProps {
   checklistConfig?: string[];
   onUpdateChecklistConfig?: (config: string[]) => void;
   onSaveVistoria?: (vistoria: Vistoria, pdfDataUrl?: string, pdfFileName?: string) => void;
+  onApproveVistoria?: (vistoria: Vistoria) => void;
   onDeleteVistoria?: (id: string) => void;
   onDeleteAllVistorias?: (vehicleId: string) => void;
   onOpenAgenda?: (defaultName?: string, defaultPhone?: string) => void;
@@ -395,6 +437,7 @@ export const VehicleCard: React.FC<VehicleCardProps> = ({
   checklistConfig = [],
   onUpdateChecklistConfig,
   onSaveVistoria,
+  onApproveVistoria,
   onDeleteVistoria,
   onDeleteAllVistorias,
   onOpenAgenda,
@@ -406,13 +449,18 @@ export const VehicleCard: React.FC<VehicleCardProps> = ({
   onOpenLogForm,
 }) => {
   const [isExpanded, setIsExpanded] = useState(false); // Default to collapsed/closed as requested by user
-  const [activeTab, setActiveTab] = useState<'financeiro' | 'pagamentos' | 'manutencao' | 'vistorias' | 'documentos' | 'pneus' | 'sinistros'>('financeiro');
+  const [activeTab, setActiveTab] = useState<'financeiro' | 'pagamentos' | 'manutencao' | 'vistorias' | 'documentos' | 'pneus' | 'sinistros' | 'multas'>('financeiro');
   const [isCaucaoExpanded, setIsCaucaoExpanded] = useState(true);
   const [isContractExpanded, setIsContractExpanded] = useState(true);
   const [isAgendaExpanded, setIsAgendaExpanded] = useState(true);
   const [isVistoriaExpanded, setIsVistoriaExpanded] = useState(true);
   const [isDocExpanded, setIsDocExpanded] = useState(true);
   const [showHistoryPopover, setShowHistoryPopover] = useState(false);
+  const [isComparatorOpen, setIsComparatorOpen] = useState(false);
+  const [isProfitabilityOpen, setIsProfitabilityOpen] = useState(false);
+  const [isTiresModalOpen, setIsTiresModalOpen] = useState(false);
+  const [isFinesModalOpen, setIsFinesModalOpen] = useState(false);
+  const [copiedPortalLink, setCopiedPortalLink] = useState(false);
   const historyRef = useRef<HTMLDivElement>(null);
 
   // Close history popover when clicking outside
@@ -729,14 +777,13 @@ export const VehicleCard: React.FC<VehicleCardProps> = ({
   const [sharingVistoria, setSharingVistoria] = useState<Vistoria | null>(null);
   const [isRequestingNewVistoria, setIsRequestingNewVistoria] = useState<boolean>(false);
   const [requestVistoriaType, setRequestVistoriaType] = useState<'Entrega de Veículo' | 'Periódica' | 'Devolução de Veículo'>('Periódica');
+  const [vistoriaRequestToken, setVistoriaRequestToken] = useState<string>(() => Date.now().toString(36));
   const [whatsappVistoriaPhone, setWhatsappVistoriaPhone] = useState<string>('');
   const [customVistoriaMsgText, setCustomVistoriaMsgText] = useState<string>('');
   const [vistoriaReturnLink, setVistoriaReturnLink] = useState<string>(() => {
-    const saved = localStorage.getItem('fleet_vistoria_return_link');
-    if (saved && !saved.includes('jotform.com') && !saved.includes('sua-vistoria')) return saved;
-    const defaultUrl = `${window.location.origin}/upload-receipt`;
-    localStorage.setItem('fleet_vistoria_return_link', defaultUrl);
-    return defaultUrl;
+    const validUrl = getPublicWebBaseUrl();
+    localStorage.setItem('fleet_vistoria_return_link', validUrl);
+    return validUrl;
   });
 
   const availableChecklistItems = (checklistConfig && checklistConfig.length > 0)
@@ -774,8 +821,11 @@ export const VehicleCard: React.FC<VehicleCardProps> = ({
       ? `&items=${encodeURIComponent(itemsToUse.join(','))}`
       : '';
 
-    const separator = vistoriaReturnLink.includes('?') ? '&' : '?';
-    const returnUrlWithPlaca = `${vistoriaReturnLink}${separator}placa=${encodeURIComponent(vehicle.plate)}&brand=${encodeURIComponent(vehicle.brand)}&model=${encodeURIComponent(vehicle.model)}&driver=${encodeURIComponent(vehicle.driver || '')}&type=${encodeURIComponent(typeToUse)}&deadline=${encodeURIComponent(vehicle.nextVistoriaDate || '')}${itemsQueryParam}`;
+    const safeBaseLink = (vistoriaReturnLink && !vistoriaReturnLink.includes('localhost') && !vistoriaReturnLink.includes('127.0.0.1'))
+      ? vistoriaReturnLink
+      : getPublicWebBaseUrl();
+    const separator = safeBaseLink.includes('?') ? '&' : '?';
+    const returnUrlWithPlaca = `${safeBaseLink}${separator}placa=${encodeURIComponent(vehicle.plate)}&brand=${encodeURIComponent(vehicle.brand)}&model=${encodeURIComponent(vehicle.model)}&driver=${encodeURIComponent(vehicle.driver || '')}&type=${encodeURIComponent(typeToUse)}&deadline=${encodeURIComponent(vehicle.nextVistoriaDate || '')}&reqId=${vistoriaRequestToken}${itemsQueryParam}`;
 
     text = text.replace(/{veiculo}/g, veiculoStr);
     text = text.replace(/{placa}/g, plateStr);
@@ -837,8 +887,11 @@ export const VehicleCard: React.FC<VehicleCardProps> = ({
       ? `&items=${encodeURIComponent(selectedRequestItems.join(','))}`
       : '';
 
-    const separator = vistoriaReturnLink.includes('?') ? '&' : '?';
-    const returnUrlWithPlaca = `${vistoriaReturnLink}${separator}placa=${encodeURIComponent(vehicle.plate)}&brand=${encodeURIComponent(vehicle.brand)}&model=${encodeURIComponent(vehicle.model)}&driver=${encodeURIComponent(vehicle.driver || '')}&type=${encodeURIComponent(requestVistoriaType)}&deadline=${encodeURIComponent(vehicle.nextVistoriaDate || '')}${itemsQueryParam}`;
+    const safeBaseLink = (vistoriaReturnLink && !vistoriaReturnLink.includes('localhost') && !vistoriaReturnLink.includes('127.0.0.1'))
+      ? vistoriaReturnLink
+      : getPublicWebBaseUrl();
+    const separator = safeBaseLink.includes('?') ? '&' : '?';
+    const returnUrlWithPlaca = `${safeBaseLink}${separator}placa=${encodeURIComponent(vehicle.plate)}&brand=${encodeURIComponent(vehicle.brand)}&model=${encodeURIComponent(vehicle.model)}&driver=${encodeURIComponent(vehicle.driver || '')}&type=${encodeURIComponent(requestVistoriaType)}&deadline=${encodeURIComponent(vehicle.nextVistoriaDate || '')}&reqId=${vistoriaRequestToken}${itemsQueryParam}`;
 
     // Replace return URL first
     template = template.replace(new RegExp(escapeRegExp(returnUrlWithPlaca), 'g'), '{link_retorno}');
@@ -1403,6 +1456,8 @@ export const VehicleCard: React.FC<VehicleCardProps> = ({
     const nextState = !isRequestingNewVistoria;
     setIsRequestingNewVistoria(nextState);
     if (nextState) {
+      const freshToken = Date.now().toString(36);
+      setVistoriaRequestToken(freshToken);
       let rawPhone = vehicle.driverPhone || '';
       if (rawPhone.startsWith('55')) {
         rawPhone = rawPhone.substring(2);
@@ -1415,7 +1470,7 @@ export const VehicleCard: React.FC<VehicleCardProps> = ({
       }
 
       const savedTemplate = localStorage.getItem('fleet_vistoria_request_template') || DEFAULT_REQUEST_TEMPLATE;
-      const formatted = formatTemplateText(savedTemplate, false, null, requestVistoriaType, itemsToUse);
+      const formatted = formatTemplateText(savedTemplate, false, null, requestVistoriaType, itemsToUse).replace(`&reqId=${vistoriaRequestToken}`, `&reqId=${freshToken}`);
       setCustomVistoriaMsgText(formatted);
     }
   };
@@ -1558,6 +1613,32 @@ _Enviado via sistema de gestão de frota._`;
     const phone = vehicle.driverPhone?.replace(/\D/g, '') || '';
     const encodedMessage = encodeURIComponent(message);
     window.open(`https://wa.me/${phone ? `55${phone}` : ''}?text=${encodedMessage}`, '_blank');
+  };
+
+  const handleDownloadVistoriaPdf = async (v: Vistoria) => {
+    try {
+      const { doc, fileName } = await generateVistoriaPDF(vehicle, v);
+      doc.save(fileName);
+    } catch (err) {
+      console.error('Erro ao baixar PDF da vistoria:', err);
+    }
+  };
+
+  const handlePrintVistoriaPdf = async (v: Vistoria) => {
+    try {
+      const { pdfDataUrl, fileName } = await generateVistoriaPDF(vehicle, v);
+      setPreviewDoc({
+        id: `vist-print-${v.id}`,
+        name: fileName,
+        category: 'Vistoria',
+        uploadDate: v.date,
+        fileSize: 'Laudo Oficial PDF',
+        fileType: 'pdf',
+        contentUrl: pdfDataUrl,
+      });
+    } catch (err) {
+      console.error('Erro ao preparar impressão da vistoria:', err);
+    }
   };
 
   const handleAddVistoriaSubmit = async () => {
@@ -1940,6 +2021,24 @@ _Enviado via sistema de gestão de frota._`;
           </div>
           
           <div className="flex items-center gap-1.5 sm:gap-2 flex-wrap self-end sm:self-auto shrink-0" onClick={(e) => e.stopPropagation()}>
+            {/* Portal do Locatário button */}
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                const baseUrl = window.location.origin + window.location.pathname;
+                const portalLink = `${baseUrl}?mode=portal_motorista&placa=${encodeURIComponent(vehicle.plate)}`;
+                navigator.clipboard.writeText(portalLink);
+                setCopiedPortalLink(true);
+                setTimeout(() => setCopiedPortalLink(false), 3000);
+              }}
+              className="px-2.5 py-1.5 text-xs font-bold text-emerald-300 bg-emerald-500/15 hover:bg-emerald-500/25 border border-emerald-500/30 rounded-xl transition-all flex items-center gap-1.5 cursor-pointer shadow-sm shadow-emerald-500/10"
+              title="Copiar link exclusivo do Portal do Locatário / Extrato do Motorista"
+            >
+              {copiedPortalLink ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Smartphone className="w-3.5 h-3.5 text-emerald-400" />}
+              <span className="hidden sm:inline">{copiedPortalLink ? 'Link Copiado!' : 'Portal Locatário'}</span>
+            </button>
+
             {/* Finalizar Contrato button */}
             {onFinalizeContract && (
               <button
@@ -2215,6 +2314,23 @@ _Enviado via sistema de gestão de frota._`;
                   </span>
                 )}
               </button>
+              <button
+                type="button"
+                onClick={() => setActiveTab('multas')}
+                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all whitespace-nowrap cursor-pointer ${
+                  activeTab === 'multas'
+                    ? 'bg-zinc-800 text-white shadow-xs border border-zinc-700'
+                    : 'text-zinc-400 hover:text-zinc-200 hover:bg-white/5'
+                }`}
+              >
+                <AlertOctagon className="w-3.5 h-3.5 text-rose-400/80" />
+                <span>Multas</span>
+                {(vehicle.fines || []).length > 0 && (
+                  <span className="text-[10px] bg-rose-900/50 text-rose-300 border border-rose-500/30 px-1.5 py-0.2 rounded-full font-mono">
+                    {(vehicle.fines || []).length}
+                  </span>
+                )}
+              </button>
             </div>
 
             {/* TAB 1: Financeiro / Custos */}
@@ -2226,7 +2342,18 @@ _Enviado via sistema de gestão de frota._`;
                     <span className="font-bold text-gray-300 flex items-center gap-1.5 uppercase tracking-wider text-[10px]">
                       <DollarSign className="w-3.5 h-3.5 text-emerald-400" /> Demonstrativo Mensal
                     </span>
-                    <span className="text-[10px] text-gray-500">Valores deste mês</span>
+                    <div className="flex items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={() => setIsProfitabilityOpen(true)}
+                        className="px-2.5 py-1 bg-emerald-600/20 hover:bg-emerald-600/30 border border-emerald-500/30 text-emerald-300 rounded-lg text-[10px] font-bold flex items-center gap-1 transition-all cursor-pointer shadow-xs"
+                        title="Ver Lucro Real, DRE e Margem Líquida"
+                      >
+                        <BarChart3 className="w-3 h-3 text-emerald-400" />
+                        <span>DRE & Lucro Real</span>
+                      </button>
+                      <span className="text-[10px] text-gray-500 hidden sm:inline">Valores deste mês</span>
+                    </div>
                   </div>
 
                   {/* Entradas / Receitas */}
@@ -3992,10 +4119,19 @@ _Enviado via sistema de gestão de frota._`;
                       setIsRequestingNewVistoria(false);
                       setSharingVistoria(null);
                     }}
-                    className="text-[11px] text-purple-400 hover:text-purple-300 font-bold flex items-center justify-center gap-1 px-2.5 py-1 bg-purple-500/10 rounded-md border border-purple-500/10 hover:border-purple-500/20 transition-all col-span-2"
+                    className="text-[11px] text-purple-400 hover:text-purple-300 font-bold flex items-center justify-center gap-1 px-2.5 py-1 bg-purple-500/10 rounded-md border border-purple-500/10 hover:border-purple-500/20 transition-all"
                     id={`btn-new-vistoria-${vehicle.id}`}
                   >
                     <span>{showAddVistoria ? 'Fechar' : '+ Nova Vistoria'}</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setIsComparatorOpen(true)}
+                    className="text-[11px] text-purple-300 hover:text-white font-bold flex items-center justify-center gap-1 px-2.5 py-1 bg-purple-600/20 hover:bg-purple-600/30 rounded-md border border-purple-500/30 transition-all col-span-2 cursor-pointer shadow-xs"
+                    title="Comparar vistorias lado a lado (Entrega vs Devolução)"
+                  >
+                    <GitCompare className="w-3.5 h-3.5 text-purple-400" />
+                    <span>Comparar Vistorias Lado a Lado</span>
                   </button>
                 </div>
               </div>
@@ -4206,8 +4342,11 @@ _Enviado via sistema de gestão de frota._`;
                   <div>
                     <label className="text-[9px] text-gray-400 block mb-1 font-semibold uppercase tracking-wider">Fotos da Vistoria</label>
                     <div className="mb-2 p-2 bg-blue-500/10 border border-blue-500/20 rounded-md">
-                      <p className="text-[10px] font-bold text-blue-400 mb-1">📸 ATENÇÃO - FOTOS IMPORTANTES:</p>
+                      <p className="text-[10px] font-bold text-blue-400 mb-1">📸 ATENÇÃO - ITENS E FOTOS OBRIGATÓRIAS:</p>
                       <ul className="text-[10px] text-blue-200/80 space-y-0.5 ml-4 list-disc">
+                        <li>Foto da <strong>câmera do carro</strong> instalada.</li>
+                        <li>Foto do <strong>cartão de memória</strong>.</li>
+                        <li>Verificação / Questionamento se o <strong>rastreador está funcionando</strong>.</li>
                         <li>Foto do <strong>painel com quilometragem</strong>.</li>
                         <li>Foto da <strong>lataria</strong> (frente, traseira e laterais).</li>
                       </ul>
@@ -4356,11 +4495,13 @@ _Enviado via sistema de gestão de frota._`;
                                   </span>
                                 )}
                                 <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded-sm ${
-                                  isFullApproved 
-                                    ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/10' 
+                                  v.status === 'approved'
+                                    ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40'
+                                    : isFullApproved 
+                                    ? 'bg-amber-500/15 text-amber-300 border border-amber-500/30' 
                                     : 'bg-amber-500/10 text-amber-400 border border-amber-500/10'
                                 }`}>
-                                  {isFullApproved ? 'Aprovado' : `${approvedCount}/${totalItems} Itens`}
+                                  {v.status === 'approved' ? '✅ Aprovada & Arquivada' : `⏳ Aguardando Aprovação (${approvedCount}/${totalItems})`}
                                 </span>
                                 {v.photos && v.photos.length > 0 && (
                                   <button
@@ -4394,7 +4535,36 @@ _Enviado via sistema de gestão de frota._`;
                               )}
                             </div>
 
-                            <div className="flex items-center gap-1 shrink-0" onClick={(e) => e.stopPropagation()}>
+                            <div className="flex items-center gap-1 shrink-0 flex-wrap justify-end" onClick={(e) => e.stopPropagation()}>
+                              {v.status !== 'approved' && onApproveVistoria && (
+                                <button
+                                  type="button"
+                                  onClick={() => onApproveVistoria(v)}
+                                  className="px-2 py-0.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded border border-emerald-400/40 font-bold transition-all text-[10px] flex items-center gap-1 cursor-pointer shadow-sm shadow-emerald-500/20"
+                                  title="Aprovar vistoria e arquivar junto aos documentos e contratos"
+                                >
+                                  <CheckCircle2 className="w-3 h-3" />
+                                  <span>Aprovar</span>
+                                </button>
+                              )}
+                              <button
+                                type="button"
+                                onClick={() => handleDownloadVistoriaPdf(v)}
+                                className="px-2 py-0.5 bg-blue-500/10 hover:bg-blue-500/20 rounded border border-blue-500/20 text-blue-300 transition-all text-[10px] flex items-center gap-1 cursor-pointer"
+                                title="Baixar PDF desta Vistoria"
+                              >
+                                <Download className="w-3 h-3 text-blue-400" />
+                                <span>PDF</span>
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => handlePrintVistoriaPdf(v)}
+                                className="px-2 py-0.5 bg-white/5 hover:bg-white/10 rounded border border-white/10 text-gray-300 hover:text-white transition-all text-[10px] flex items-center gap-1 cursor-pointer"
+                                title="Visualizar e Imprimir Laudo de Vistoria"
+                              >
+                                <Printer className="w-3 h-3 text-amber-400" />
+                                <span>Imprimir</span>
+                              </button>
                               <button
                                 type="button"
                                 onClick={() => setExpandedVistoriaId(isExpanded ? null : v.id)}
@@ -4502,8 +4672,50 @@ _Enviado via sistema de gestão de frota._`;
                                 </div>
                               )}
 
-                              {onDeleteVistoria && (
-                                <div className="pt-2 border-t border-white/5 flex justify-end">
+                              <div className="pt-2 border-t border-white/5 flex flex-wrap items-center justify-between gap-2">
+                                <div className="flex items-center gap-1.5 flex-wrap">
+                                  {v.status !== 'approved' && onApproveVistoria ? (
+                                    <button
+                                      type="button"
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        onApproveVistoria(v);
+                                      }}
+                                      className="px-3 py-1 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg text-[11px] font-bold flex items-center gap-1.5 transition-all cursor-pointer shadow-md shadow-emerald-600/20"
+                                    >
+                                      <CheckCircle2 className="w-3.5 h-3.5" />
+                                      <span>Aprovar e Arquivar Vistoria</span>
+                                    </button>
+                                  ) : (
+                                    <span className="px-2.5 py-1 bg-emerald-500/15 border border-emerald-500/30 text-emerald-300 rounded-lg text-[10px] font-bold flex items-center gap-1">
+                                      <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />
+                                      <span>Arquivada em Documentos & Contratos</span>
+                                    </span>
+                                  )}
+                                  <button
+                                    type="button"
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      handleDownloadVistoriaPdf(v);
+                                    }}
+                                    className="px-2.5 py-1 bg-blue-500/15 hover:bg-blue-500/25 border border-blue-500/30 text-blue-300 rounded-lg text-[11px] font-bold flex items-center gap-1 transition-all cursor-pointer"
+                                  >
+                                    <Download className="w-3.5 h-3.5" />
+                                    <span>Salvar PDF</span>
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      handlePrintVistoriaPdf(v);
+                                    }}
+                                    className="px-2.5 py-1 bg-amber-500/15 hover:bg-amber-500/25 border border-amber-500/30 text-amber-300 rounded-lg text-[11px] font-bold flex items-center gap-1 transition-all cursor-pointer"
+                                  >
+                                    <Printer className="w-3.5 h-3.5" />
+                                    <span>Imprimir</span>
+                                  </button>
+                                </div>
+                                {onDeleteVistoria && (
                                   <button
                                     type="button"
                                     onClick={(e) => {
@@ -4515,8 +4727,8 @@ _Enviado via sistema de gestão de frota._`;
                                     <Trash2 className="w-3.5 h-3.5 text-rose-400" />
                                     <span>Excluir esta Vistoria</span>
                                   </button>
-                                </div>
-                              )}
+                                )}
+                              </div>
                             </div>
                           )}
                         </div>
@@ -5262,7 +5474,15 @@ _Enviado via sistema de gestão de frota._`;
                   <span className="font-bold text-gray-300 flex items-center gap-1.5 uppercase tracking-wider text-[10px]">
                     <Gauge className="w-3.5 h-3.5 text-orange-400" /> Gestão de Pneus
                   </span>
-                  <span className="text-[10px] text-gray-500 italic">Controle de troca e desgaste</span>
+                  <button
+                    type="button"
+                    onClick={() => setIsTiresModalOpen(true)}
+                    className="px-2.5 py-1 bg-orange-600/20 hover:bg-orange-600/30 border border-orange-500/30 text-orange-300 rounded-lg text-[10px] font-bold flex items-center gap-1 transition-all cursor-pointer shadow-xs"
+                    title="Abrir mapa visual do chassi e rodízio"
+                  >
+                    <CircleDot className="w-3 h-3 text-orange-400" />
+                    <span>Mapa Visual & Rodízio</span>
+                  </button>
                 </div>
 
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -5461,6 +5681,63 @@ _Enviado via sistema de gestão de frota._`;
               </div>
             </div>
           )}
+
+          {/* TAB 8: Multas */}
+          {activeTab === 'multas' && (
+            <div className="space-y-4 animate-in fade-in duration-150">
+              <div className="bg-white/[0.02] p-4 rounded-xl border border-white/5 space-y-4">
+                <div className="flex justify-between items-center border-b border-white/5 pb-2">
+                  <span className="font-bold text-gray-300 flex items-center gap-1.5 uppercase tracking-wider text-[10px]">
+                    <AlertOctagon className="w-3.5 h-3.5 text-rose-400" /> Central de Multas & Infrações
+                  </span>
+                  <button 
+                    type="button"
+                    onClick={() => setIsFinesModalOpen(true)}
+                    className="flex items-center gap-1 text-[10px] bg-rose-500/20 text-rose-300 hover:bg-rose-500/30 px-2.5 py-1 rounded-md border border-rose-500/30 font-bold transition-all cursor-pointer"
+                  >
+                    <Plus className="w-3 h-3" /> Gerenciar / Lançar Multa
+                  </button>
+                </div>
+
+                <div className="space-y-3">
+                  {(vehicle.fines || []).length === 0 ? (
+                    <div className="text-center py-8 bg-black/20 rounded-lg border border-dashed border-white/5">
+                      <AlertOctagon className="w-8 h-8 text-gray-700 mx-auto mb-2" />
+                      <p className="text-xs text-gray-500">Nenhuma multa registrada para este veículo.</p>
+                    </div>
+                  ) : (
+                    (vehicle.fines || []).map(fine => (
+                      <div key={fine.id} className="p-3 bg-black/40 border border-white/5 rounded-xl space-y-2 group relative">
+                        <div className="flex justify-between items-start">
+                          <div>
+                            <div className="flex items-center gap-2">
+                              <span className="text-[10px] font-mono text-gray-500">{fine.dataHora}</span>
+                              <span className="px-1.5 py-0.2 rounded text-[9px] font-bold bg-rose-500/20 text-rose-300 border border-rose-500/30">
+                                {fine.orgaoEmissor || 'DETRAN'}
+                              </span>
+                              <span className="text-[10px] text-gray-400">Auto: {fine.autoInfracao || 'S/N'}</span>
+                            </div>
+                            <h5 className="text-xs font-bold text-white mt-1">{fine.descricao}</h5>
+                            <p className="text-[10px] text-gray-400">
+                              Motorista: <strong>{fine.driverName || vehicle.driver || 'Não informado'}</strong> • Status: <span className="text-amber-400 font-bold">{fine.status}</span>
+                            </p>
+                          </div>
+                          <div className="text-right">
+                            <span className="text-xs font-bold text-rose-400 font-mono">
+                              R$ {(fine.valor || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                            </span>
+                            <span className="block text-[9px] text-amber-400 font-bold">
+                              {fine.gravidade || 'Média'} ({fine.pontos || 4} pts)
+                            </span>
+                          </div>
+                        </div>
+                      </div>
+                    ))
+                  )}
+                </div>
+              </div>
+            </div>
+          )}
         </div>
       </div>
     )}
@@ -5569,14 +5846,42 @@ _Enviado via sistema de gestão de frota._`;
             </div>
 
             {/* Footer */}
-            <div className="p-3 bg-[#111111] border-t border-white/5 flex justify-between items-center text-xs px-4">
+            <div className="p-3 bg-[#111111] border-t border-white/5 flex flex-wrap justify-between items-center gap-2 text-xs px-4">
               <span className="text-[10px] text-gray-500 font-mono">{previewDoc.fileSize || '---'}</span>
-              <button
-                onClick={() => setPreviewDoc(null)}
-                className="text-gray-400 hover:text-white font-semibold"
-              >
-                Fechar
-              </button>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => handleDownloadDoc(previewDoc)}
+                  className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg text-xs font-bold flex items-center gap-1.5 transition-colors cursor-pointer"
+                >
+                  <Download className="w-3.5 h-3.5" />
+                  <span>Salvar / Baixar</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (previewDoc.contentUrl && previewDoc.contentUrl.startsWith('data:image/')) {
+                      const printWin = window.open('', '_blank');
+                      if (printWin) {
+                        printWin.document.write(`<html><head><title>${previewDoc.name}</title></head><body style="margin:0;text-align:center;"><img src="${previewDoc.contentUrl}" style="max-width:100%;height:auto;"/><script>window.onload=function(){setTimeout(function(){window.print();},300);};</script></body></html>`);
+                        printWin.document.close();
+                      }
+                    } else {
+                      window.print();
+                    }
+                  }}
+                  className="px-3 py-1.5 bg-blue-600 hover:bg-blue-500 text-white rounded-lg text-xs font-bold flex items-center gap-1.5 transition-colors cursor-pointer"
+                >
+                  <Printer className="w-3.5 h-3.5" />
+                  <span>Imprimir</span>
+                </button>
+                <button
+                  onClick={() => setPreviewDoc(null)}
+                  className="px-3 py-1.5 bg-white/10 hover:bg-white/15 text-gray-200 hover:text-white rounded-lg font-semibold cursor-pointer"
+                >
+                  Fechar
+                </button>
+              </div>
             </div>
           </div>
         </div>
@@ -5795,6 +6100,41 @@ _Enviado via sistema de gestão de frota._`;
           </div>
         </div>
       )}
+
+      {/* Vistoria Comparator Modal */}
+      <VistoriaComparatorModal
+        isOpen={isComparatorOpen}
+        onClose={() => setIsComparatorOpen(false)}
+        vehicle={vehicle}
+        vistorias={vistorias}
+      />
+
+      {/* Vehicle Profitability / DRE Modal */}
+      <VehicleProfitabilityModal
+        isOpen={isProfitabilityOpen}
+        onClose={() => setIsProfitabilityOpen(false)}
+        vehicle={vehicle}
+        maintenanceLogs={maintenanceLogs}
+        expenseLogs={vehicleExpenses}
+        selectedMonth={selectedMonth}
+        selectedYear={selectedYear}
+      />
+
+      {/* Tires Management Modal */}
+      <TiresManagementModal
+        isOpen={isTiresModalOpen}
+        onClose={() => setIsTiresModalOpen(false)}
+        vehicle={vehicle}
+        onUpdateVehicle={onUpdateVehicle}
+      />
+
+      {/* Fines Management Modal */}
+      <FinesManagementModal
+        isOpen={isFinesModalOpen}
+        onClose={() => setIsFinesModalOpen(false)}
+        vehicle={vehicle}
+        onUpdateVehicle={onUpdateVehicle}
+      />
     </div>
   );
 };

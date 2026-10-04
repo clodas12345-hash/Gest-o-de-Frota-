@@ -66,16 +66,44 @@ export interface Vehicle {
   // New fields for Suggestions 1, 2, 6
   driverCnhExpiration?: string;
   driverCnhPhotoUrl?: string;
+  driverAddressProofUrl?: string;
+  insuranceExpirationDate?: string;
+  seguroVencimento?: string;
   tires?: TireState[];
+  fines?: Fine[];
 }
 
 export interface TireState {
   id: string;
   position: 'Frontal Esquerdo' | 'Frontal Direito' | 'Traseiro Esquerdo' | 'Traseiro Direito' | 'Estepe';
   brand: string;
+  model?: string;
   installedKm: number;
   expectedLifeKm: number; // e.g. 40000
+  installedDate?: string;
+  dot?: string;
   status: 'Good' | 'Warning' | 'Replace';
+  twiMm?: number;
+}
+
+export interface Fine {
+  id: string;
+  vehicleId: string;
+  autoInfracao?: string;
+  orgaoEmissor?: string;
+  dataHora: string;
+  local?: string;
+  descricao: string;
+  valor: number;
+  pontos?: number;
+  gravidade?: 'Leve' | 'Média' | 'Grave' | 'Gravíssima';
+  status: 'Pendente' | 'Repassada ao Motorista' | 'Paga pelo Locatário' | 'Paga pela Locadora';
+  driverName?: string;
+  driverPhone?: string;
+  notificationUrl?: string;
+  dueDate?: string;
+  addedToWeeklyInvoice?: boolean;
+  notes?: string;
 }
 
 export interface SinistroLog {
@@ -164,6 +192,9 @@ export interface Vistoria {
   photos: string[];
   notes?: string;
   km?: number;
+  status?: 'pending' | 'approved';
+  approvedAt?: string;
+  pdfDataUrl?: string;
 }
 
 export interface FinalizedContract {
