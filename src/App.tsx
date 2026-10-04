@@ -498,8 +498,10 @@ export default function App() {
   const pendingCloudSyncRef = useRef<Record<string, any>>({});
   const cloudSyncTimerRef = useRef<NodeJS.Timeout | null>(null);
 
+  const knownVistoriaIdsRef = useRef<Set<string>>(new Set());
+  const knownReceiptIdsRef = useRef<Set<string>>(new Set());
+
   const saveToCloud = (field: string, data: any) => {
-    if (!Capacitor.isNativePlatform()) return;
     if (!isCloudLoadedRef.current || isRemoteUpdateRef.current) return;
     
     try {
@@ -522,34 +524,38 @@ export default function App() {
         } catch (err) {
           console.warn('Error syncing fleetData to cloud:', err);
         }
-      }, 600);
+      }, 400);
     } catch (err) {
       console.warn('Error preparing saveToCloud:', err);
     }
   };
 
-  // Load initial data from Firestore and setup real-time listener for instant cloud saving & sync
+  // Load initial data from Firestore and setup real-time listener for instant cloud saving & sync across Web and Android
   useEffect(() => {
-    if (!Capacitor.isNativePlatform()) {
-      isCloudLoadedRef.current = true;
-      return;
-    }
-
     const docRef = doc(db, 'fleetData', 'main');
     
     getDoc(docRef).then((snap) => {
       if (snap.exists()) {
         const d = snap.data();
         if (d.vehicles && Array.isArray(d.vehicles)) {
-          setVehicles(ensureFuturePaymentsForVehicles(d.vehicles));
+          const loadedVehicles = ensureFuturePaymentsForVehicles(d.vehicles);
+          loadedVehicles.forEach((veh: Vehicle) => {
+            (veh.pendingReceipts || []).forEach((r) => knownReceiptIdsRef.current.add(r.id));
+          });
+          setVehicles(loadedVehicles);
         }
         if (d.contacts && Array.isArray(d.contacts)) setContacts(d.contacts);
         if (d.fuelLogs && Array.isArray(d.fuelLogs)) setFuelLogs(d.fuelLogs);
         if (d.maintenanceLogs && Array.isArray(d.maintenanceLogs)) setMaintenanceLogs(d.maintenanceLogs);
         if (d.expenseLogs && Array.isArray(d.expenseLogs)) setExpenseLogs(d.expenseLogs);
-        if (d.vistorias && Array.isArray(d.vistorias)) setVistorias(d.vistorias);
+        if (d.vistorias && Array.isArray(d.vistorias)) {
+          d.vistorias.forEach((vist: Vistoria) => knownVistoriaIdsRef.current.add(vist.id));
+          setVistorias(d.vistorias);
+        }
         if (d.finalizedContracts && Array.isArray(d.finalizedContracts)) setFinalizedContracts(d.finalizedContracts);
       } else {
+        vistorias.forEach((vist) => knownVistoriaIdsRef.current.add(vist.id));
+        vehicles.forEach((veh) => (veh.pendingReceipts || []).forEach((r) => knownReceiptIdsRef.current.add(r.id)));
         const initialPayload = sanitizeForCloud({
           vehicles: cleanVehiclesForCloud(vehicles),
           contacts,
@@ -565,6 +571,8 @@ export default function App() {
       isCloudLoadedRef.current = true;
     }).catch(err => {
       console.warn('Error fetching fleetData from cloud:', err);
+      vistorias.forEach((vist) => knownVistoriaIdsRef.current.add(vist.id));
+      vehicles.forEach((veh) => (veh.pendingReceipts || []).forEach((r) => knownReceiptIdsRef.current.add(r.id)));
       isCloudLoadedRef.current = true;
     });
 
@@ -572,14 +580,57 @@ export default function App() {
       if (snap.exists() && isCloudLoadedRef.current) {
         const d = snap.data();
         isRemoteUpdateRef.current = true;
-        if (d.vehicles && Array.isArray(d.vehicles)) {
-          setVehicles(ensureFuturePaymentsForVehicles(d.vehicles));
+
+        const incomingVehicles: Vehicle[] = (d.vehicles && Array.isArray(d.vehicles))
+          ? ensureFuturePaymentsForVehicles(d.vehicles)
+          : [];
+
+        // Check for newly arrived vistorias from driver links
+        if (d.vistorias && Array.isArray(d.vistorias)) {
+          const incomingVistorias: Vistoria[] = d.vistorias;
+          incomingVistorias.forEach((vist) => {
+            if (!knownVistoriaIdsRef.current.has(vist.id)) {
+              knownVistoriaIdsRef.current.add(vist.id);
+              const cleanPlate = (vist.vehiclePlate || '').replace(/[^A-Z0-9]/gi, '').toUpperCase();
+              const matchedVeh = incomingVehicles.find(
+                (v) =>
+                  v.id === vist.vehicleId ||
+                  (cleanPlate && v.plate.replace(/[^A-Z0-9]/gi, '').toUpperCase() === cleanPlate)
+              );
+              const vehTitle = matchedVeh
+                ? `${matchedVeh.brand} ${matchedVeh.model} (${matchedVeh.plate})`
+                : (vist.vehiclePlate || 'Veículo');
+              const photosCount = vist.photos?.length || 0;
+
+              sendAppNotification(`📋 Nova Vistoria Recebida: ${vehTitle}`, {
+                body: `O motorista enviou a vistoria (${vist.type || 'Periódica'}) com ${photosCount} foto(s)${vist.km ? ` e odômetro em ${vist.km.toLocaleString('pt-BR')} KM` : ''}.`,
+                eventKey: 'vistoria_completed',
+              });
+            }
+          });
+          setVistorias(incomingVistorias);
         }
+
+        // Check for newly arrived payment receipts from driver links
+        if (incomingVehicles.length > 0) {
+          incomingVehicles.forEach((veh) => {
+            (veh.pendingReceipts || []).forEach((rec) => {
+              if (!knownReceiptIdsRef.current.has(rec.id)) {
+                knownReceiptIdsRef.current.add(rec.id);
+                sendAppNotification(`🧾 Novo Comprovante Recebido: ${veh.brand} (${veh.plate})`, {
+                  body: `O motorista ${rec.driverName || veh.driver || ''} enviou um comprovante de R$ ${(rec.amount || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })} para aprovação.`,
+                  eventKey: 'receipt_received',
+                });
+              }
+            });
+          });
+          setVehicles(incomingVehicles);
+        }
+
         if (d.contacts && Array.isArray(d.contacts)) setContacts(d.contacts);
         if (d.fuelLogs && Array.isArray(d.fuelLogs)) setFuelLogs(d.fuelLogs);
         if (d.maintenanceLogs && Array.isArray(d.maintenanceLogs)) setMaintenanceLogs(d.maintenanceLogs);
         if (d.expenseLogs && Array.isArray(d.expenseLogs)) setExpenseLogs(d.expenseLogs);
-        if (d.vistorias && Array.isArray(d.vistorias)) setVistorias(d.vistorias);
         if (d.finalizedContracts && Array.isArray(d.finalizedContracts)) setFinalizedContracts(d.finalizedContracts);
         setTimeout(() => {
           isRemoteUpdateRef.current = false;
@@ -1099,16 +1150,21 @@ export default function App() {
   };
 
   const handleSaveVistoria = async (vistoria: Vistoria, pdfDataUrl?: string, pdfFileName?: string) => {
+    knownVistoriaIdsRef.current.add(vistoria.id);
+    const targetVehicle = vehicles.find(v => v.id === vistoria.vehicleId);
+    const enrichedVistoria: Vistoria = {
+      ...vistoria,
+      vehiclePlate: vistoria.vehiclePlate || targetVehicle?.plate
+    };
+
     setVistorias((prev) => {
-      const exists = prev.some((v) => v.id === vistoria.id);
+      const exists = prev.some((v) => v.id === enrichedVistoria.id);
       if (exists) {
-        return prev.map((v) => (v.id === vistoria.id ? vistoria : v));
+        return prev.map((v) => (v.id === enrichedVistoria.id ? enrichedVistoria : v));
       }
-      return [vistoria, ...prev];
+      return [enrichedVistoria, ...prev];
     });
 
-    // We will find the vehicle to generate the PDF
-    const targetVehicle = vehicles.find(v => v.id === vistoria.vehicleId);
     if (!targetVehicle) return;
 
     const typeLabel = vistoria.type ? ` (${vistoria.type})` : '';
@@ -1632,71 +1688,111 @@ export default function App() {
         checklistConfig={checklistConfig}
         isPaymentMode={isPaymentMode}
         onSavePaymentReceipt={(receipt) => {
+          knownReceiptIdsRef.current.add(receipt.id);
+          sendAppNotification(`🧾 Novo Comprovante Recebido: ${targetVehicle.brand} (${targetVehicle.plate})`, {
+            body: `Comprovante de pagamento de R$ ${(receipt.amount || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })} enviado com sucesso.`,
+            eventKey: 'receipt_received',
+          });
           setVehicles(prev => {
             const targetPlateSanitized = targetVehicle.plate.replace(/[^A-Z0-9]/gi, '').toUpperCase();
             const found = prev.some(v => v.id === targetVehicle.id || v.plate.replace(/[^A-Z0-9]/gi, '').toUpperCase() === targetPlateSanitized);
-            if (!found) {
-              return [{ ...targetVehicle, pendingReceipts: [receipt, ...(targetVehicle.pendingReceipts || [])] }, ...prev];
-            }
-            return prev.map(v => {
-              if (v.id === targetVehicle.id || v.plate.replace(/[^A-Z0-9]/gi, '').toUpperCase() === targetPlateSanitized) {
-                return {
-                  ...v,
-                  pendingReceipts: [receipt, ...(v.pendingReceipts || [])]
-                };
-              }
-              return v;
-            });
+            const nextVehicles = !found
+              ? [{ ...targetVehicle, pendingReceipts: [receipt, ...(targetVehicle.pendingReceipts || [])] }, ...prev]
+              : prev.map(v => {
+                  if (v.id === targetVehicle.id || v.plate.replace(/[^A-Z0-9]/gi, '').toUpperCase() === targetPlateSanitized) {
+                    return {
+                      ...v,
+                      pendingReceipts: [receipt, ...(v.pendingReceipts || [])]
+                    };
+                  }
+                  return v;
+                });
+
+            // Immediately push receipt to Firestore so the manager app receives it right away
+            setDoc(doc(db, 'fleetData', 'main'), sanitizeForCloud({
+              vehicles: cleanVehiclesForCloud(nextVehicles),
+              updatedAt: new Date().toISOString()
+            }), { merge: true }).catch(err => console.warn('Direct receipt cloud sync error:', err));
+
+            return nextVehicles;
           });
         }}
         onSaveVistoria={(newVistoria, pdfDataUrl, pdfFileName) => {
-          setVistorias(prev => [newVistoria, ...prev]);
+          knownVistoriaIdsRef.current.add(newVistoria.id);
+          const targetPlateSanitized = targetVehicle.plate.replace(/[^A-Z0-9]/gi, '').toUpperCase();
+          const matchedRealVehicle = vehicles.find(
+            v => v.id === targetVehicle.id || v.plate.replace(/[^A-Z0-9]/gi, '').toUpperCase() === targetPlateSanitized
+          );
+          const finalVistoria: Vistoria = {
+            ...newVistoria,
+            vehicleId: matchedRealVehicle ? matchedRealVehicle.id : newVistoria.vehicleId,
+            vehiclePlate: targetVehicle.plate
+          };
+
+          sendAppNotification(`📋 Vistoria Concluída: ${targetVehicle.brand} (${targetVehicle.plate})`, {
+            body: `Vistoria (${finalVistoria.type || 'Periódica'}) registrada com ${finalVistoria.photos?.length || 0} foto(s).`,
+            eventKey: 'vistoria_completed',
+          });
+
+          setVistorias(prev => {
+            const nextVistorias = [finalVistoria, ...prev];
+            setDoc(doc(db, 'fleetData', 'main'), sanitizeForCloud({
+              vistorias: nextVistorias,
+              updatedAt: new Date().toISOString()
+            }), { merge: true }).catch(err => console.warn('Direct vistoria cloud sync error:', err));
+            return nextVistorias;
+          });
           
-          const docName = pdfFileName || `Vistoria (${newVistoria.type}) - ${new Date(newVistoria.date + 'T12:00:00').toLocaleDateString('pt-BR')}.pdf`;
+          const docName = pdfFileName || `Vistoria (${finalVistoria.type}) - ${new Date(finalVistoria.date + 'T12:00:00').toLocaleDateString('pt-BR')}.pdf`;
           
           const attachDoc = (url?: string, size?: string, type?: string) => {
             const vistoriaDoc = {
               id: `doc-vist-${Date.now()}`,
               name: docName,
               category: 'Vistoria',
-              uploadDate: newVistoria.date,
+              uploadDate: finalVistoria.date,
               fileSize: size || 'Documento PDF',
               fileType: type || 'pdf',
               contentUrl: url
             };
-            const kmUpdate = (newVistoria.km && newVistoria.km > 0) ? {
-              currentKm: newVistoria.km,
-              preventiveMaintCurrentKm: newVistoria.km
+            const kmUpdate = (finalVistoria.km && finalVistoria.km > 0) ? {
+              currentKm: finalVistoria.km,
+              preventiveMaintCurrentKm: finalVistoria.km
             } : {};
 
             setVehicles(prev => {
-              const targetPlateSanitized = targetVehicle.plate.replace(/[^A-Z0-9]/gi, '').toUpperCase();
               const found = prev.some(v => v.id === targetVehicle.id || v.plate.replace(/[^A-Z0-9]/gi, '').toUpperCase() === targetPlateSanitized);
-              if (!found) {
-                return [{ ...targetVehicle, ...kmUpdate, documents: [vistoriaDoc, ...(targetVehicle.documents || [])] }, ...prev];
-              }
-              return prev.map(v => {
-                if (v.id === targetVehicle.id || v.plate.replace(/[^A-Z0-9]/gi, '').toUpperCase() === targetPlateSanitized) {
-                  return {
-                    ...v,
-                    ...kmUpdate,
-                    nextVistoriaDate: undefined,
-                    documents: [vistoriaDoc, ...(v.documents || []).filter(d => d.id !== vistoriaDoc.id)]
-                  };
-                }
-                return v;
-              });
+              const nextVehicles = !found
+                ? [{ ...targetVehicle, ...kmUpdate, documents: [vistoriaDoc, ...(targetVehicle.documents || [])] }, ...prev]
+                : prev.map(v => {
+                    if (v.id === targetVehicle.id || v.plate.replace(/[^A-Z0-9]/gi, '').toUpperCase() === targetPlateSanitized) {
+                      return {
+                        ...v,
+                        ...kmUpdate,
+                        nextVistoriaDate: undefined,
+                        documents: [vistoriaDoc, ...(v.documents || []).filter(d => d.id !== vistoriaDoc.id)]
+                      };
+                    }
+                    return v;
+                  });
+
+              setDoc(doc(db, 'fleetData', 'main'), sanitizeForCloud({
+                vehicles: cleanVehiclesForCloud(nextVehicles),
+                updatedAt: new Date().toISOString()
+              }), { merge: true }).catch(err => console.warn('Direct vehicle vistoria cloud sync error:', err));
+
+              return nextVehicles;
             });
           };
 
           if (pdfDataUrl) {
             attachDoc(pdfDataUrl, 'Documento PDF', 'pdf');
           } else {
-            generateVistoriaPDF(targetVehicle, newVistoria).then(({ pdfDataUrl: generatedUrl, fileName }) => {
+            generateVistoriaPDF(targetVehicle, finalVistoria).then(({ pdfDataUrl: generatedUrl }) => {
               attachDoc(generatedUrl, 'Documento PDF', 'pdf');
             }).catch(err => {
               console.error("Erro ao gerar PDF da Vistoria", err);
-              attachDoc(newVistoria.photos.length > 0 ? newVistoria.photos[0] : undefined, newVistoria.photos.length > 0 ? `${newVistoria.photos.length} foto(s)` : 'Checklist', newVistoria.photos.length > 0 ? 'image' : 'pdf');
+              attachDoc(finalVistoria.photos.length > 0 ? finalVistoria.photos[0] : undefined, finalVistoria.photos.length > 0 ? `${finalVistoria.photos.length} foto(s)` : 'Checklist', finalVistoria.photos.length > 0 ? 'image' : 'pdf');
             });
           }
         }}
@@ -1919,7 +2015,13 @@ export default function App() {
                   vehicle={car}
                   vehicleExpenses={expenseLogs.filter((log) => log.vehicleId === car.id)}
                   maintenanceLogs={maintenanceLogs.filter((log) => log.vehicleId === car.id)}
-                  vistorias={vistorias.filter((v) => v.vehicleId === car.id)}
+                  vistorias={vistorias.filter((v) => {
+                    if (v.vehicleId === car.id) return true;
+                    if (v.vehiclePlate) {
+                      return v.vehiclePlate.replace(/[^A-Z0-9]/gi, '').toUpperCase() === car.plate.replace(/[^A-Z0-9]/gi, '').toUpperCase();
+                    }
+                    return false;
+                  })}
                   checklistConfig={checklistConfig}
                   onUpdateChecklistConfig={setChecklistConfig}
                   onEdit={handleOpenEditVehicle}

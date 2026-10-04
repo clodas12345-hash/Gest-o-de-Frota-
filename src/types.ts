@@ -157,6 +157,7 @@ export interface AgendaContact {
 export interface Vistoria {
   id: string;
   vehicleId: string;
+  vehiclePlate?: string;
   date: string;
   type?: 'Entrega de Veículo' | 'Periódica' | 'Devolução de Veículo';
   checklist: Record<string, boolean>;

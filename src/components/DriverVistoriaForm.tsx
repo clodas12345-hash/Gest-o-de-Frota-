@@ -265,7 +265,7 @@ export function DriverVistoriaForm({
               const canvas = document.createElement('canvas');
               let width = img.width;
               let height = img.height;
-              const maxDim = 800;
+              const maxDim = 640;
               if (width > maxDim || height > maxDim) {
                 if (width > height) {
                   height = Math.round((height * maxDim) / width);
@@ -280,7 +280,7 @@ export function DriverVistoriaForm({
               const ctx = canvas.getContext('2d');
               if (ctx) {
                 ctx.drawImage(img, 0, 0, width, height);
-                const compressedDataUrl = canvas.toDataURL('image/jpeg', 0.7);
+                const compressedDataUrl = canvas.toDataURL('image/jpeg', 0.6);
                 if (targetPhotoItem) {
                   setChecklist(prev => ({
                     ...prev,
@@ -318,6 +318,7 @@ export function DriverVistoriaForm({
     const newVistoria: Vistoria = {
       id: `vist-pub-${Date.now()}`,
       vehicleId: vehicle?.id || 'unknown',
+      vehiclePlate: vehicle?.plate || plateRequested || undefined,
       date: new Date().toISOString().split('T')[0],
       type: vistoriaType,
       checklist: booleanChecklist,
