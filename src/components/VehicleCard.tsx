@@ -867,6 +867,10 @@ export const VehicleCard: React.FC<VehicleCardProps> = ({
       } else if (text.includes('📸 *RETORNO COM FOTOS:*')) {
         text = text.replace('📸 *RETORNO COM FOTOS:*', `*Itens a serem inspecionados:*\n${itemsListFormatted}\n\n📸 *RETORNO COM FOTOS:*`);
       }
+
+      if (!text.includes(returnUrlWithPlaca) && !text.includes('placa=')) {
+        text += `\n\n🔗 *Link para preencher vistoria e enviar fotos:*\n${returnUrlWithPlaca}`;
+      }
     }
     
     return text;
@@ -1072,7 +1076,7 @@ export const VehicleCard: React.FC<VehicleCardProps> = ({
 
   const revCountdown = getRevisionCountdown();
 
-  const vehicleVistorias = vistorias.filter((v) => v.vehicleId === vehicle.id);
+  const vehicleVistorias = vistorias;
   const hasCompletedVistoria = vehicleVistorias.length > 0 || (vehicle.documents || []).some((d) => d.category === 'Vistoria');
 
   // Derived documents filtered list
