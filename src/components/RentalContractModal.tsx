@@ -570,57 +570,55 @@ Por favor, preencha as fotos e o checklist de entrega ao retirar o veículo.`;
     return null;
   };
 
-  const downloadPdfFile = async (pdfDataUrl: string, fileName: string) => {
+  const downloadPdfFile = (pdfDataUrl: string, fileName: string) => {
     if (!pdfDataUrl) return;
 
-    // Always ensure inline viewer is shown on screen immediately
+    // Ensure inline viewer is shown on screen immediately
     setShowInlinePdfPreview(true);
 
-    // 1. Try Web Share API (native Android share sheet - saves to Drive, Files, etc.)
-    if (navigator.share && navigator.canShare) {
-      try {
-        const blobUrl = getPdfBlobUrl(pdfDataUrl);
-        if (blobUrl) {
-          const response = await fetch(blobUrl);
-          const blob = await response.blob();
-          const file = new File([blob], fileName, { type: 'application/pdf' });
-          if (navigator.canShare({ files: [file] })) {
-            await navigator.share({
-              title: fileName,
-              files: [file]
-            });
-            return;
-          }
-        }
-      } catch (err) {
-        console.warn('Web share failed:', err);
-      }
-    }
-
-    // 2. Try direct opening or blob navigation for mobile/APK
     try {
       const blobUrl = getPdfBlobUrl(pdfDataUrl);
       const targetUrl = blobUrl || pdfDataUrl;
+
+      // 1. Direct anchor download trigger
+      const a = document.createElement('a');
+      a.href = targetUrl;
+      a.download = fileName;
+      a.target = '_blank';
+      document.body.appendChild(a);
+      a.click();
+      setTimeout(() => {
+        if (document.body.contains(a)) document.body.removeChild(a);
+      }, 2000);
+
+      // 2. Open in new tab/window for APK and mobile browsers
       const win = window.open(targetUrl, '_blank');
       if (!win) {
-        const a = document.createElement('a');
-        a.href = targetUrl;
-        a.download = fileName;
-        a.target = '_blank';
-        document.body.appendChild(a);
-        a.click();
-        setTimeout(() => {
-          if (document.body.contains(a)) document.body.removeChild(a);
-        }, 2000);
+        console.warn('Popup blocked for download');
       }
     } catch (e) {
       console.warn('Download fallback error:', e);
+      try {
+        window.open(pdfDataUrl, '_blank');
+      } catch (err) {
+        console.error('Final download fallback failed:', err);
+      }
     }
   };
 
   const openPdfInNewTab = (pdfDataUrl: string) => {
     if (!pdfDataUrl) return;
-    // In mobile APK webview, open inline viewer on screen
+    try {
+      const blobUrl = getPdfBlobUrl(pdfDataUrl);
+      const targetUrl = blobUrl || pdfDataUrl;
+      const win = window.open(targetUrl, '_blank');
+      if (!win) {
+        window.location.href = targetUrl;
+      }
+    } catch (e) {
+      console.warn('Open in new tab error:', e);
+      window.open(pdfDataUrl, '_blank');
+    }
     setShowInlinePdfPreview(true);
   };
 
@@ -706,15 +704,15 @@ Por favor, preencha as fotos e o checklist de entrega ao retirar o veículo.`;
         });
       }
 
-      // Automatically trigger robust download
-      downloadPdfFile(result.pdfDataUrl, downloadName);
-
-      // Set state to display the dedicated success/preview view immediately
+      // Set state first
       setGeneratedPdfUrl(result.pdfDataUrl);
       setGeneratedPdfFileName(downloadName);
       setIsBlankContractSuccess(true);
       setShowInlinePdfPreview(true);
       setIsSuccess(true);
+
+      // Automatically trigger robust download and open in new tab
+      downloadPdfFile(result.pdfDataUrl, downloadName);
 
       sendAppNotification('📄 Contrato em Branco Gerado', {
         body: 'O modelo de contrato em branco foi gerado e salvo nos documentos do veículo.',
@@ -731,6 +729,9 @@ Por favor, preencha as fotos e o checklist de entrega ao retirar o veículo.`;
   const handleSendWhatsApp = (isBlank = false) => {
     if (!currentVehicle) return;
     let cleanPhone = (tenantPhone || currentVehicle.driverPhone || '').replace(/\D/g, '');
+    if (cleanPhone === '55' || cleanPhone.length < 8) {
+      cleanPhone = '';
+    }
     if (cleanPhone && !cleanPhone.startsWith('55')) {
       cleanPhone = '55' + cleanPhone;
     }
