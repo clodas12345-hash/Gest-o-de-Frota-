@@ -573,7 +573,10 @@ Por favor, preencha as fotos e o checklist de entrega ao retirar o veículo.`;
   const downloadPdfFile = async (pdfDataUrl: string, fileName: string) => {
     if (!pdfDataUrl) return;
 
-    // 1. Try Web Share API (native Android share sheet - saves to Drive, Files, WhatsApp, etc.)
+    // Always ensure inline viewer is shown on screen immediately
+    setShowInlinePdfPreview(true);
+
+    // 1. Try Web Share API (native Android share sheet - saves to Drive, Files, etc.)
     if (navigator.share && navigator.canShare) {
       try {
         const blobUrl = getPdfBlobUrl(pdfDataUrl);
@@ -594,28 +597,24 @@ Por favor, preencha as fotos e o checklist de entrega ao retirar o veículo.`;
       }
     }
 
-    // 2. Try Blob URL download
-    const blobUrl = getPdfBlobUrl(pdfDataUrl);
-    const targetUrl = blobUrl || pdfDataUrl;
-
+    // 2. Try direct opening or blob navigation for mobile/APK
     try {
-      const a = document.createElement('a');
-      a.href = targetUrl;
-      a.download = fileName;
-      a.target = '_blank';
-      a.rel = 'noopener noreferrer';
-      a.style.display = 'none';
-      document.body.appendChild(a);
-      a.click();
-      setTimeout(() => {
-        if (document.body.contains(a)) {
-          document.body.removeChild(a);
-        }
-        if (blobUrl) URL.revokeObjectURL(blobUrl);
-      }, 3000);
+      const blobUrl = getPdfBlobUrl(pdfDataUrl);
+      const targetUrl = blobUrl || pdfDataUrl;
+      const win = window.open(targetUrl, '_blank');
+      if (!win) {
+        const a = document.createElement('a');
+        a.href = targetUrl;
+        a.download = fileName;
+        a.target = '_blank';
+        document.body.appendChild(a);
+        a.click();
+        setTimeout(() => {
+          if (document.body.contains(a)) document.body.removeChild(a);
+        }, 2000);
+      }
     } catch (e) {
-      console.warn('Direct link download failed, fallback to inline viewer:', e);
-      setShowInlinePdfPreview(true);
+      console.warn('Download fallback error:', e);
     }
   };
 
