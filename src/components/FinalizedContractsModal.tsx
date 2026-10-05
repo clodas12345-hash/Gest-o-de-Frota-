@@ -3,6 +3,7 @@ import { FinalizedContract, Vehicle, Vistoria } from '../types';
 import { ConfirmDeleteModal } from './ConfirmDeleteModal';
 import { PdfViewer } from './PdfViewer';
 import { generateVistoriaPDF } from '../utils/pdfGenerator';
+import { printImage } from '../utils/printHelper';
 import { 
   FolderArchive, 
   X, 
@@ -590,6 +591,16 @@ export function FinalizedContractsModal({
                   </div>
                 </div>
                 <div className="flex items-center gap-2">
+                  {selectedPdfPreview.pdfDataUrl.startsWith('data:image/') && (
+                    <button
+                      onClick={() => printImage(selectedPdfPreview.pdfDataUrl, selectedPdfPreview.name)}
+                      className="flex items-center gap-1.5 text-xs font-bold text-blue-400 bg-blue-500/10 hover:bg-blue-500/20 px-3 py-1.5 rounded-xl border border-blue-500/20 cursor-pointer"
+                      title="Abrir opções de impressão nativa do celular / impressora"
+                    >
+                      <Printer className="w-3.5 h-3.5" />
+                      <span>Imprimir</span>
+                    </button>
+                  )}
                   <button
                     onClick={() => handleDownloadPdf(selectedPdfPreview.name, selectedPdfPreview.pdfDataUrl)}
                     className="flex items-center gap-1.5 text-xs font-bold text-emerald-400 bg-emerald-500/10 hover:bg-emerald-500/20 px-3 py-1.5 rounded-xl border border-emerald-500/20 cursor-pointer"

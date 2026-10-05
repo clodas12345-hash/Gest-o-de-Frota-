@@ -42,6 +42,7 @@ import {
   Download
 } from 'lucide-react';
 import { PdfViewer } from './PdfViewer';
+import { printPdfDataUrl } from '../utils/printHelper';
 
 interface RentalContractModalProps {
   isOpen: boolean;
@@ -625,7 +626,7 @@ Por favor, preencha as fotos e o checklist de entrega ao retirar o veículo.`;
 
   const handlePrintPdf = () => {
     if (!generatedPdfUrl) return;
-    openPdfInNewTab(generatedPdfUrl);
+    printPdfDataUrl(generatedPdfUrl, generatedPdfFileName || 'Contrato_Locacao.pdf');
   };
 
   const handleDownloadPdf = () => {
@@ -868,9 +869,19 @@ O contrato oficial em PDF já foi gerado e está arquivado nos documentos do ve�
 
                 <button
                   type="button"
+                  onClick={handlePrintPdf}
+                  className="px-4 py-2.5 bg-blue-600 hover:bg-blue-500 active:bg-blue-700 text-white font-bold text-xs rounded-xl flex items-center justify-center gap-2 transition-all shadow-md shadow-blue-500/20 cursor-pointer"
+                  title="Abrir opções de impressão nativa do celular / impressora"
+                >
+                  <Printer className="w-4 h-4" />
+                  <span>Imprimir</span>
+                </button>
+
+                <button
+                  type="button"
                   onClick={() => openPdfInNewTab(generatedPdfUrl || '')}
-                  className="px-4 py-2.5 bg-blue-600 hover:bg-blue-500 text-white font-bold text-xs rounded-xl flex items-center justify-center gap-2 transition-all shadow-md shadow-blue-500/20 cursor-pointer"
-                  title="Abrir PDF em nova aba ou visualizador nativo"
+                  className="px-4 py-2.5 bg-zinc-800 hover:bg-zinc-700 text-gray-200 border border-white/10 font-bold text-xs rounded-xl flex items-center justify-center gap-2 transition-all cursor-pointer shadow-xs"
+                  title="Abrir PDF em nova aba ou visualizador"
                 >
                   <ExternalLink className="w-4 h-4" />
                   <span>Abrir em Nova Aba</span>

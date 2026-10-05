@@ -60,6 +60,7 @@ import { VehicleProfitabilityModal } from './VehicleProfitabilityModal';
 import { TiresManagementModal } from './TiresManagementModal';
 import { FinesManagementModal } from './FinesManagementModal';
 import CurrencyInput from './CurrencyInput';
+import { printImage, printPdfDataUrl } from '../utils/printHelper';
 
 interface InlineEditProps {
   value: number;
@@ -5990,17 +5991,18 @@ _Enviado via sistema de gestão de frota._`;
                 <button
                   type="button"
                   onClick={() => {
-                    if (previewDoc.contentUrl && previewDoc.contentUrl.startsWith('data:image/')) {
-                      const printWin = window.open('', '_blank');
-                      if (printWin) {
-                        printWin.document.write(`<html><head><title>${previewDoc.name}</title></head><body style="margin:0;text-align:center;"><img src="${previewDoc.contentUrl}" style="max-width:100%;height:auto;"/><script>window.onload=function(){setTimeout(function(){window.print();},300);};</script></body></html>`);
-                        printWin.document.close();
+                    if (previewDoc.contentUrl) {
+                      if (previewDoc.contentUrl.startsWith('data:image/') || previewDoc.fileType === 'image') {
+                        printImage(previewDoc.contentUrl, previewDoc.name);
+                      } else {
+                        printPdfDataUrl(previewDoc.contentUrl, previewDoc.name);
                       }
                     } else {
                       window.print();
                     }
                   }}
-                  className="px-3 py-1.5 bg-blue-600 hover:bg-blue-500 text-white rounded-lg text-xs font-bold flex items-center gap-1.5 transition-colors cursor-pointer"
+                  className="px-3 py-1.5 bg-blue-600 hover:bg-blue-500 active:bg-blue-700 text-white rounded-lg text-xs font-bold flex items-center gap-1.5 transition-colors cursor-pointer"
+                  title="Abrir opções de impressão nativa do celular / impressora"
                 >
                   <Printer className="w-3.5 h-3.5" />
                   <span>Imprimir</span>

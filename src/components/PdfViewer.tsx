@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import * as pdfjsLib from 'pdfjs-dist';
-import { Loader2, AlertCircle, ZoomIn, ZoomOut, RotateCcw } from 'lucide-react';
+import { Loader2, AlertCircle, ZoomIn, ZoomOut, RotateCcw, Printer } from 'lucide-react';
+import { printImages } from '../utils/printHelper';
 
 // Configure PDF.js worker
 try {
@@ -145,21 +146,20 @@ export const PdfViewer: React.FC<PdfViewerProps> = ({
             <button
               type="button"
               onClick={() => {
-                const printWin = window.open('', '_blank');
-                if (printWin) {
-                  const imgsHtml = renderedPages
-                    .map((p) => `<div style="page-break-after:always;text-align:center;"><img src="${p.dataUrl}" style="max-width:100%;height:auto;"/></div>`)
-                    .join('');
-                  printWin.document.write(`<html><head><title>${fileName}</title><style>@media print { body { margin: 0; } }</style></head><body style="margin:0;background:#fff;">${imgsHtml}<script>window.onload=function(){setTimeout(function(){window.print();},300);};</script></body></html>`);
-                  printWin.document.close();
+                if (renderedPages.length > 0) {
+                  printImages(
+                    renderedPages.map((p) => p.dataUrl),
+                    fileName
+                  );
                 } else {
                   window.print();
                 }
               }}
-              className="px-2.5 py-1 bg-blue-600 hover:bg-blue-500 text-white font-bold text-[11px] rounded-lg transition-colors cursor-pointer flex items-center gap-1 shadow-xs"
-              title="Imprimir Documento"
+              className="px-2.5 py-1 bg-blue-600 hover:bg-blue-500 active:bg-blue-700 text-white font-bold text-[11px] rounded-lg transition-colors cursor-pointer flex items-center gap-1.5 shadow-xs"
+              title="Abrir opções de impressão nativa do celular / impressora"
             >
-              <span>🖨️ Imprimir</span>
+              <Printer className="w-3.5 h-3.5" />
+              <span>Imprimir</span>
             </button>
             <button
               type="button"
