@@ -227,7 +227,7 @@ export const RentalContractModal: React.FC<RentalContractModalProps> = ({
   };
 
   // Locador / Landlord Details (Pre-filled with custom settings or fallback default)
-  const [landlordName, setLandlordName] = useState(() => localStorage.getItem('fleet_landlord_name') || 'CLAUDIO OLIVEIRA DA SILVA');
+  const [landlordName, setLandlordName] = useState(() => localStorage.getItem('fleet_landlord_name') || 'Cláudio Oliveira da Silva');
   const [landlordCpfCnpj, setLandlordCpfCnpj] = useState(() => localStorage.getItem('fleet_landlord_cpf') || '065.426.576-30');
   const [landlordRg, setLandlordRg] = useState(() => localStorage.getItem('fleet_landlord_rg') || '39.508.321-7');
   const [landlordPhone, setLandlordPhone] = useState(() => localStorage.getItem('fleet_landlord_phone') || '(11) 95329-2570');
@@ -241,20 +241,20 @@ export const RentalContractModal: React.FC<RentalContractModalProps> = ({
   const [endDate, setEndDate] = useState('');
   const [rentalValue, setRentalValue] = useState<number>(0);
   const [paymentPeriod, setPaymentPeriod] = useState<string>('Semanal');
-  const [dueDay, setDueDay] = useState<string>('Toda sexta-feira até 23:59');
+  const [dueDay, setDueDay] = useState<string>('toda segunda-feira, com vencimento até às 23h59');
   const [caucaoValue, setCaucaoValue] = useState<number>(0);
   const [kmLimit, setKmLimit] = useState<string>('5.000 km por mês');
   const [workshopName, setWorkshopName] = useState('Pneus Andriatti (Penha, SP)');
   const [insuranceCompany, setInsuranceCompany] = useState('LOOVI SEGUROS');
-  const [insurancePhones, setInsurancePhones] = useState('0800 948 4888 (Assistência); 0800 607 2007 (Furto/Roubo); 4000 1762 (Central)');
+  const [insurancePhones, setInsurancePhones] = useState('Assistência 24h: 0800 948 4888 | Furto/Roubo: 0800 607 2007 | Central: 4000 1762');
   const [customClauses, setCustomClauses] = useState('');
   const [contractFineRate, setContractFineRate] = useState<number>(() => {
     const saved = localStorage.getItem('fleet_fine_rate_default');
-    return saved ? Number(saved) : 2.0;
+    return saved ? Number(saved) : 10.0;
   });
   const [contractInterestRate, setContractInterestRate] = useState<number>(() => {
     const saved = localStorage.getItem('fleet_daily_interest_rate_default');
-    return saved ? Number(saved) : 0.33;
+    return saved ? Number(saved) : 1.0;
   });
 
   // Generated state
@@ -389,19 +389,20 @@ Por favor, preencha as fotos e o checklist de entrega ao retirar o veículo.`;
     // 2. Puxar Valor Semanal do cadastro do carro
     const registeredWeekly = veh.valorSemanal !== undefined && Number(veh.valorSemanal) > 0
       ? Number(veh.valorSemanal)
-      : (Number(veh.valorRecebido) > 0 ? Number(veh.valorRecebido) : 0);
+      : (Number(veh.valorRecebido) > 0 ? Number(veh.valorRecebido) : 960);
     setRentalValue(registeredWeekly);
 
     // 3. Puxar Valor de Caução do cadastro do carro
     const registeredCaucao = veh.caucaoValor !== undefined && Number(veh.caucaoValor) > 0
       ? Number(veh.caucaoValor)
-      : 0;
+      : 1920;
     setCaucaoValue(registeredCaucao);
 
     setStartDate(veh.startDate || new Date().toISOString().split('T')[0]);
     setEndDate(veh.endDate || '');
     setContractNumber(veh.contractNumber || generateNextContractNumber(veh.plate, vehicles, `${veh.brand} ${veh.model}`));
-    setLandlordName(veh.rentalCompany || localStorage.getItem('fleet_landlord_name') || 'CLAUDIO OLIVEIRA DA SILVA');
+    setDueDay(veh.dueDay || 'toda segunda-feira, com vencimento até às 23h59');
+    setLandlordName(veh.rentalCompany || localStorage.getItem('fleet_landlord_name') || 'Cláudio Oliveira da Silva');
     setLandlordCpfCnpj(localStorage.getItem('fleet_landlord_cpf') || '065.426.576-30');
     setLandlordRg(localStorage.getItem('fleet_landlord_rg') || '39.508.321-7');
     setLandlordPhone(localStorage.getItem('fleet_landlord_phone') || '(11) 95329-2570');
@@ -411,13 +412,13 @@ Por favor, preencha as fotos e o checklist de entrega ao retirar o veículo.`;
       setContractFineRate(veh.fineRate);
     } else {
       const saved = localStorage.getItem('fleet_fine_rate_default');
-      setContractFineRate(saved ? Number(saved) : 2.0);
+      setContractFineRate(saved ? Number(saved) : 10.0);
     }
     if (veh.dailyInterestRate !== undefined) {
       setContractInterestRate(veh.dailyInterestRate);
     } else {
       const saved = localStorage.getItem('fleet_daily_interest_rate_default');
-      setContractInterestRate(saved ? Number(saved) : 0.33);
+      setContractInterestRate(saved ? Number(saved) : 1.0);
     }
   };
 
@@ -647,14 +648,14 @@ Por favor, preencha as fotos e o checklist de entrega ao retirar o veículo.`;
       } as any);
 
       const blankData: RentalContractData = {
-        contractNumber: 'MODELO EM BRANCO',
-        tenantName: '________________________________________________',
-        tenantCpfCnpj: '_________________________',
-        tenantRg: '_________________________',
-        tenantCnh: '_________________________',
-        tenantPhone: '_________________________',
-        tenantEmail: '_________________________',
-        tenantAddress: '________________________________________________',
+        contractNumber: 'MINUTA / EM BRANCO',
+        tenantName: '[Nome Completo]',
+        tenantCpfCnpj: '[Número do CPF]',
+        tenantRg: '[Número do RG]',
+        tenantCnh: '[Número da CNH]',
+        tenantPhone: '[Número de Telefone]',
+        tenantEmail: '',
+        tenantAddress: '[Endereço Completo]',
         landlordName: '',
         landlordCpfCnpj: '',
         landlordRg: '',
@@ -664,14 +665,15 @@ Por favor, preencha as fotos e o checklist de entrega ao retirar o veículo.`;
         startDate: '',
         rentalValue: Number(rentalValue) > 0 ? Number(rentalValue) : 960,
         paymentPeriod: paymentPeriod || 'Semanal',
+        dueDay: 'toda segunda-feira, com vencimento até às 23h59',
         caucaoValue: Number(caucaoValue) > 0 ? Number(caucaoValue) : 1920,
         workshopName: workshopName || 'Pneus Andriatti (Penha, SP)',
         kmLimit: kmLimit || '5.000 km por mês',
         insuranceCompany: insuranceCompany || 'LOOVI SEGUROS',
-        insurancePhones: insurancePhones || '0800 948 4888 (Assistência); 0800 607 2007 (Furto/Roubo); 4000 1762 (Central)',
+        insurancePhones: 'Assistência 24h: 0800 948 4888 | Furto/Roubo: 0800 607 2007 | Central: 4000 1762',
         customClauses: customClauses,
-        fineRate: Number(contractFineRate),
-        interestRate: Number(contractInterestRate),
+        fineRate: Number(contractFineRate) || 10,
+        interestRate: Number(contractInterestRate) || 1,
         hideLandlordPersonalData: true
       };
 
@@ -718,18 +720,18 @@ Por favor, preencha as fotos e o checklist de entrega ao retirar o veículo.`;
     }
   };
 
-  const handleSendWhatsApp = () => {
+  const handleSendWhatsApp = (isBlank = false) => {
     if (!currentVehicle) return;
     let cleanPhone = (tenantPhone || currentVehicle.driverPhone || '').replace(/\D/g, '');
-    if (!cleanPhone) {
-      alert('Por favor, informe o número de telefone do locatário.');
-      return;
-    }
-    if (!cleanPhone.startsWith('55')) {
+    if (cleanPhone && !cleanPhone.startsWith('55')) {
       cleanPhone = '55' + cleanPhone;
     }
 
-    const text = `📋 *CONTRATO DE LOCAÇÃO GERADO*
+    const text = isBlank
+      ? `📋 *MINUTA DE CONTRATO DE LOCAÇÃO EM BRANCO*
+🚗 *Veículo:* ${currentVehicle.brand} ${currentVehicle.model} (${currentVehicle.plate})
+📄 Segue o modelo de contrato de locação em branco para leitura prévia e conferência dos termos antes da assinatura definitiva.`
+      : `📋 *CONTRATO DE LOCAÇÃO GERADO*
 🚗 *Veículo:* ${currentVehicle.brand} ${currentVehicle.model} (${currentVehicle.plate})
 👤 *Locatário:* ${tenantName}
 💵 *Valor:* R$ ${Number(rentalValue).toLocaleString('pt-BR', { minimumFractionDigits: 2 })} / ${paymentPeriod}
@@ -738,7 +740,9 @@ Por favor, preencha as fotos e o checklist de entrega ao retirar o veículo.`;
 
 O contrato oficial em PDF já foi gerado e está arquivado nos documentos do veículo.`;
     
-    const url = `https://wa.me/${cleanPhone}?text=${encodeURIComponent(text)}`;
+    const url = cleanPhone
+      ? `https://wa.me/${cleanPhone}?text=${encodeURIComponent(text)}`
+      : `https://wa.me/?text=${encodeURIComponent(text)}`;
     window.open(url, '_blank');
   };
 
@@ -883,16 +887,15 @@ O contrato oficial em PDF já foi gerado e está arquivado nos documentos do ve�
                   </button>
                 )}
 
-                {!isBlankContractSuccess && tenantPhone && (
-                  <button
-                    type="button"
-                    onClick={handleSendWhatsApp}
-                    className="px-4 py-2.5 bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs rounded-xl flex items-center justify-center gap-2 transition-all shadow-lg shadow-emerald-500/20 cursor-pointer"
-                  >
-                    <Share2 className="w-4 h-4" />
-                    <span>Avisar no WhatsApp</span>
-                  </button>
-                )}
+                <button
+                  type="button"
+                  onClick={() => handleSendWhatsApp(isBlankContractSuccess)}
+                  className="px-4 py-2.5 bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs rounded-xl flex items-center justify-center gap-2 transition-all shadow-lg shadow-emerald-500/20 cursor-pointer"
+                  title="Compartilhar contrato no WhatsApp (selecione o contato na lista)"
+                >
+                  <Share2 className="w-4 h-4" />
+                  <span>{isBlankContractSuccess ? 'Compartilhar no WhatsApp' : 'Avisar no WhatsApp'}</span>
+                </button>
 
                 <button
                   type="button"

@@ -79,6 +79,7 @@ export interface Vehicle {
   fipeHistory?: { month: string; value: number }[];
   fineRate?: number;
   dailyInterestRate?: number;
+  dueDay?: string;
 }
 
 export interface TireState {

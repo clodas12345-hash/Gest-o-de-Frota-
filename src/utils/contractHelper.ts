@@ -47,6 +47,6 @@ export function generateNextContractNumber(
   const nextSeq = maxSeq + 1;
   const seqStr = String(nextSeq).padStart(2, '0');
 
-  return `CT-GKD-${carIdentifier}-${month}-${year}-${seqStr}`;
+  return `CT-${carIdentifier}-${year}-${seqStr}`;
 }
 

@@ -103,7 +103,7 @@ export function SettingsModal({
   const [mainTab, setMainTab] = useState<'settings' | 'calendar' | 'charts' | 'history'>(initialTab);
 
   // Default contract / landlord settings
-  const [landlordName, setLandlordName] = useState(() => localStorage.getItem('fleet_landlord_name') || 'CLAUDIO OLIVEIRA DA SILVA');
+  const [landlordName, setLandlordName] = useState(() => localStorage.getItem('fleet_landlord_name') || 'Cláudio Oliveira da Silva');
   const [landlordCpfCnpj, setLandlordCpfCnpj] = useState(() => localStorage.getItem('fleet_landlord_cpf') || '065.426.576-30');
   const [landlordRg, setLandlordRg] = useState(() => localStorage.getItem('fleet_landlord_rg') || '39.508.321-7');
   const [landlordPhone, setLandlordPhone] = useState(() => localStorage.getItem('fleet_landlord_phone') || '(11) 95329-2570');
@@ -111,11 +111,11 @@ export function SettingsModal({
   const [pixKey, setPixKey] = useState(() => localStorage.getItem('fleet_landlord_pix') || '11953292570');
   const [fineRate, setFineRate] = useState<number>(() => {
     const saved = localStorage.getItem('fleet_fine_rate_default');
-    return saved ? Number(saved) : 2.0;
+    return saved ? Number(saved) : 10.0;
   });
   const [interestRate, setInterestRate] = useState<number>(() => {
     const saved = localStorage.getItem('fleet_daily_interest_rate_default');
-    return saved ? Number(saved) : 0.33;
+    return saved ? Number(saved) : 1.0;
   });
   const [earlyFineRate, setEarlyFineRate] = useState<number>(() => {
     const saved = localStorage.getItem('fleet_early_return_fine_rate_default');
@@ -147,7 +147,7 @@ export function SettingsModal({
       checkNotificationPermission().then((granted) => {
         setPermissionState(granted ? 'granted' : 'default');
       });
-      setLandlordName(localStorage.getItem('fleet_landlord_name') || 'CLAUDIO OLIVEIRA DA SILVA');
+      setLandlordName(localStorage.getItem('fleet_landlord_name') || 'Cláudio Oliveira da Silva');
       setLandlordCpfCnpj(localStorage.getItem('fleet_landlord_cpf') || '065.426.576-30');
       setLandlordRg(localStorage.getItem('fleet_landlord_rg') || '39.508.321-7');
       setLandlordPhone(localStorage.getItem('fleet_landlord_phone') || '(11) 95329-2570');
@@ -155,9 +155,9 @@ export function SettingsModal({
       setPixKey(localStorage.getItem('fleet_landlord_pix') || '11953292570');
       
       const savedFine = localStorage.getItem('fleet_fine_rate_default');
-      setFineRate(savedFine ? Number(savedFine) : 2.0);
+      setFineRate(savedFine ? Number(savedFine) : 10.0);
       const savedInterest = localStorage.getItem('fleet_daily_interest_rate_default');
-      setInterestRate(savedInterest ? Number(savedInterest) : 0.33);
+      setInterestRate(savedInterest ? Number(savedInterest) : 1.0);
       const savedEarlyFine = localStorage.getItem('fleet_early_return_fine_rate_default');
       setEarlyFineRate(savedEarlyFine ? Number(savedEarlyFine) : 20.0);
     }
