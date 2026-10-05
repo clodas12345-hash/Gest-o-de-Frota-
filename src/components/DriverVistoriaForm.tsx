@@ -458,7 +458,13 @@ _Enviado via sistema de vistoria digital._`;
     window.open(waUrl, '_blank');
   };
 
-  const allPhotosTaken = isPaymentMode ? Boolean(paymentPhoto) : Object.values(checklist).every((state: any) => state.photoUrl !== null);
+  const allPhotosTaken = isPaymentMode 
+    ? Boolean(paymentPhoto) 
+    : Object.entries(checklist).every(([key, state]: [string, any]) => {
+        const lower = key.toLowerCase();
+        const isPhotoRequired = lower.includes('câmera') || lower.includes('camera') || lower.includes('cartão') || lower.includes('cartao') || lower.includes('memória') || lower.includes('memoria');
+        return !isPhotoRequired || state.photoUrl !== null;
+      });
 
   return (
     <div className="min-h-screen bg-black text-white font-sans flex flex-col fixed inset-0 z-50 overflow-y-auto items-center justify-start sm:py-6 sm:px-4 bg-gradient-to-b from-black via-zinc-950 to-black">
@@ -490,13 +496,21 @@ _Enviado via sistema de vistoria digital._`;
         </div>
         {vehicle && (
           <div className="flex items-center gap-2.5">
-            <div className="text-right">
-              <span className="text-[10px] text-gray-500 uppercase tracking-widest block">Placa</span>
-              <span className="text-xs font-mono font-bold text-white bg-white/10 px-2 py-0.5 rounded border border-white/20">
-                {vehicle.plate}
-              </span>
-            </div>
+          <button
+            type="button"
+            onClick={onExit}
+            className="p-2 bg-white/5 hover:bg-white/10 text-gray-400 hover:text-white rounded-xl transition-colors cursor-pointer"
+            title="Voltar"
+          >
+            <X className="w-5 h-5" />
+          </button>
+          <div className="text-right">
+            <span className="text-[10px] text-gray-500 uppercase tracking-widest block">Placa</span>
+            <span className="text-xs font-mono font-bold text-white bg-white/10 px-2 py-0.5 rounded border border-white/20">
+              {vehicle.plate}
+            </span>
           </div>
+        </div>
         )}
       </header>
       <main className="flex-1 p-4 max-w-lg w-full mx-auto pb-32">

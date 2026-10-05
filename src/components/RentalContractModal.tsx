@@ -532,6 +532,81 @@ Por favor, preencha as fotos e o checklist de entrega ao retirar o veículo.`;
     a.click();
   };
 
+  const handlePrintBlankContract = async () => {
+    setIsGenerating(true);
+    try {
+      const blankData: RentalContractData = {
+        contractNumber: 'EM BRANCO',
+        tenantName: '________________________________________________',
+        tenantCpfCnpj: '_________________________',
+        tenantRg: '_________________________',
+        tenantCnh: '_________________________',
+        tenantPhone: '_________________________',
+        tenantEmail: '_________________________',
+        tenantAddress: '________________________________________________',
+        landlordName: landlordName.trim() || 'CLAUDIO OLIVEIRA DA SILVA',
+        landlordCpfCnpj: landlordCpfCnpj.trim() || '065.426.576-30',
+        landlordRg: landlordRg.trim() || '39.508.321-7',
+        landlordPhone: landlordPhone.trim() || '(11) 95329-2570',
+        landlordAddress: landlordAddress.trim() || 'Rua Manuel Leiroz, 230, apto 1306 - Cangaíba, São Paulo/SP',
+        pixKey: pixKey.trim() || '11953292570',
+        startDate: '',
+        rentalValue: rentalValue,
+        paymentPeriod: paymentPeriod,
+        caucaoValue: caucaoValue,
+        workshopName: workshopName,
+        kmLimit: kmLimit,
+        insuranceCompany: insuranceCompany,
+        insurancePhones: insurancePhones,
+        customClauses: customClauses,
+        fineRate: contractFineRate,
+        interestRate: contractInterestRate
+      };
+
+      // Mock vehicle if none is selected
+      const mockVehicle: Vehicle = (initialVehicle || vehicles[0]) ? {
+        ...(initialVehicle || vehicles[0]!),
+        brand: initialVehicle?.brand || vehicles[0]?.brand || '__________',
+        model: initialVehicle?.model || vehicles[0]?.model || '__________',
+        plate: initialVehicle?.plate || vehicles[0]?.plate || '_______',
+        year: initialVehicle?.year || vehicles[0]?.year || '____',
+        color: initialVehicle?.color || vehicles[0]?.color || '____',
+      } : {
+        id: 'mock',
+        brand: '__________',
+        model: '__________',
+        plate: '_______',
+        year: '____',
+        color: '____',
+        initialKm: 0,
+        currentKm: 0,
+        status: 'available',
+        documents: [],
+        maintenanceLogs: [],
+        expenseLogs: [],
+        vistorias: [],
+        fuelLogs: []
+      } as any;
+
+      const result = await generateRentalContractPDF(mockVehicle, blankData);
+      
+      const link = document.createElement('a');
+      link.href = result.pdfDataUrl;
+      link.download = `Contrato_Modelo_Branco.pdf`;
+      link.click();
+      
+      sendAppNotification('📄 Modelo Gerado', {
+        body: 'O modelo de contrato em branco foi gerado e o download iniciado.',
+        eventKey: 'contract_generated'
+      });
+    } catch (error) {
+      console.error('Error generating blank contract:', error);
+      alert('Erro ao gerar contrato em branco. Verifique os dados do locador.');
+    } finally {
+      setIsGenerating(false);
+    }
+  };
+
   const handleSendWhatsApp = () => {
     if (!currentVehicle) return;
     let cleanPhone = (tenantPhone || currentVehicle.driverPhone || '').replace(/\D/g, '');
@@ -740,7 +815,7 @@ O contrato oficial em PDF já foi gerado e está arquivado nos documentos do ve�
                     className="px-4 py-3 bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs rounded-xl flex items-center justify-center gap-2 transition-all cursor-pointer shadow-lg shadow-emerald-500/20 hover:scale-[1.01]"
                   >
                     <Share2 className="w-4 h-4 text-emerald-100" />
-                    <span>Enviar Link no WhatsApp</span>
+                    <span>Enviar Vistoria no WhatsApp</span>
                   </button>
 
                   <button
@@ -1336,6 +1411,18 @@ O contrato oficial em PDF já foi gerado e está arquivado nos documentos do ve�
                   >
                     <ClipboardCheck className="w-4 h-4 text-purple-400" />
                     <span>Vistoria de Entrega</span>
+                  </button>
+
+                  {/* Botão Contrato em Branco */}
+                  <button
+                    type="button"
+                    onClick={handlePrintBlankContract}
+                    disabled={isGenerating}
+                    className="px-4 py-2.5 bg-white/5 hover:bg-white/10 text-gray-300 border border-white/10 font-bold rounded-xl flex items-center justify-center gap-1.5 transition-all cursor-pointer text-xs"
+                    title="Imprimir contrato em branco para o locatário ler antes de assinar"
+                  >
+                    <Printer className="w-4 h-4 text-gray-400" />
+                    <span>Contrato em Branco</span>
                   </button>
 
                   {/* Botão 3: Gerar PDF */}
