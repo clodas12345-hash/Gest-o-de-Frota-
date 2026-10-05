@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { Vehicle, FuelLog, MaintenanceLog, ExpenseLog, Vistoria } from '../types';
-import { BarChart3, History, X, PieChart, FileDown } from 'lucide-react';
+import { BarChart3, History, X, PieChart, FileDown, Gauge } from 'lucide-react';
 import { VisualCharts } from './VisualCharts';
 import { HistoryLogs } from './HistoryLogs';
 import { generateExecutiveMonthlyPDF } from '../utils/pdfGenerator';
@@ -24,6 +24,7 @@ interface ReportsAndHistoryModalProps {
   onUpdateExpense: (log: ExpenseLog) => void;
   onUpdateVistoria: (log: Vistoria) => void;
   onClearAllVistorias: () => void;
+  onOpenBatchOdometer?: () => void;
 }
 
 export function ReportsAndHistoryModal({
@@ -45,6 +46,7 @@ export function ReportsAndHistoryModal({
   onUpdateExpense,
   onUpdateVistoria,
   onClearAllVistorias,
+  onOpenBatchOdometer,
 }: ReportsAndHistoryModalProps) {
   const [activeTab, setActiveTab] = useState<'charts' | 'history'>('charts');
   const [isExportingExecPdf, setIsExportingExecPdf] = useState(false);
@@ -91,7 +93,22 @@ export function ReportsAndHistoryModal({
             </div>
           </div>
 
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 flex-wrap">
+            {onOpenBatchOdometer && (
+              <button
+                type="button"
+                onClick={() => {
+                  onClose();
+                  onOpenBatchOdometer();
+                }}
+                className="px-3.5 py-2 bg-cyan-500/15 hover:bg-cyan-500/25 text-cyan-300 border border-cyan-500/30 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer shadow-xs"
+                title="Atualizar KM de todos os veículos da frota em lote"
+              >
+                <Gauge className="w-4 h-4 text-cyan-400" />
+                <span>Modo Odômetro (KM em Lote)</span>
+              </button>
+            )}
+
             <button
               type="button"
               onClick={handleExportExecutivePdf}

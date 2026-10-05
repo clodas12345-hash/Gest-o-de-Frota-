@@ -18,7 +18,9 @@ import {
   MessageCircle,
   Wrench,
   Fuel,
-  BellRing
+  BellRing,
+  Gauge,
+  FileDown
 } from 'lucide-react';
 
 interface HeaderActionsMenuProps {
@@ -35,6 +37,8 @@ interface HeaderActionsMenuProps {
   onOpenNotificationCenter?: () => void;
   onOpenChecklistConfig?: () => void;
   onOpenInterestCalculator?: () => void;
+  onOpenBatchOdometer?: () => void;
+  onDownloadExecutivePdf?: () => void;
   onDownloadBackup: () => void;
   onUploadBackup: (e: React.ChangeEvent<HTMLInputElement>) => void;
   onResetData: () => void;
@@ -54,6 +58,8 @@ export function HeaderActionsMenu({
   onOpenNotificationCenter,
   onOpenChecklistConfig,
   onOpenInterestCalculator,
+  onOpenBatchOdometer,
+  onDownloadExecutivePdf,
   onDownloadBackup,
   onUploadBackup,
   onResetData
@@ -185,19 +191,36 @@ export function HeaderActionsMenu({
               </button>
             )}
 
-            {/* Option: Calculadora de Juros & Atraso */}
-            {onOpenInterestCalculator && (
+            {/* Option: Modo Odômetro (KM em Lote) */}
+            {onOpenBatchOdometer && (
               <button
                 type="button"
-                onClick={() => handleAction(onOpenInterestCalculator)}
-                className="w-full flex items-center gap-3 p-3 rounded-xl bg-amber-500/10 hover:bg-amber-500/20 text-left group transition-all cursor-pointer border border-amber-500/20 hover:border-amber-500/40"
+                onClick={() => handleAction(onOpenBatchOdometer)}
+                className="w-full flex items-center gap-3 p-3 rounded-xl bg-cyan-500/10 hover:bg-cyan-500/20 text-left group transition-all cursor-pointer border border-cyan-500/20 hover:border-cyan-500/40"
               >
-                <div className="p-2 bg-amber-500 text-slate-950 rounded-lg group-hover:scale-105 transition-transform shadow-md shadow-amber-500/20">
-                  <Sparkles className="w-4 h-4" />
+                <div className="p-2 bg-cyan-500 text-slate-950 rounded-lg group-hover:scale-105 transition-transform shadow-md shadow-cyan-500/20">
+                  <Gauge className="w-4 h-4" />
                 </div>
                 <div>
-                  <p className="text-xs font-bold text-white group-hover:text-amber-300">Calc. Juros & Multa de Atraso</p>
-                  <p className="text-[10px] text-gray-400">Calcular e enviar cobrança no WhatsApp</p>
+                  <p className="text-xs font-bold text-white group-hover:text-cyan-300">Modo Odômetro (KM em Lote)</p>
+                  <p className="text-[10px] text-gray-400">Atualizar quilometragem de todos os carros</p>
+                </div>
+              </button>
+            )}
+
+            {/* Option: Relatório Mensal PDF (Contador) */}
+            {onDownloadExecutivePdf && (
+              <button
+                type="button"
+                onClick={() => handleAction(onDownloadExecutivePdf)}
+                className="w-full flex items-center gap-3 p-3 rounded-xl bg-emerald-500/10 hover:bg-emerald-500/20 text-left group transition-all cursor-pointer border border-emerald-500/20 hover:border-emerald-500/40"
+              >
+                <div className="p-2 bg-emerald-500 text-slate-950 rounded-lg group-hover:scale-105 transition-transform shadow-md shadow-emerald-500/20">
+                  <FileDown className="w-4 h-4" />
+                </div>
+                <div>
+                  <p className="text-xs font-bold text-white group-hover:text-emerald-300">Relatório Mensal PDF (Contador)</p>
+                  <p className="text-[10px] text-gray-400">Resumo executivo de 1 página em PDF</p>
                 </div>
               </button>
             )}

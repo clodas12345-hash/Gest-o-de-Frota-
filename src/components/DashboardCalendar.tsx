@@ -10,7 +10,9 @@ import {
   ChevronDown, 
   ChevronUp,
   Clock,
-  Car
+  Car,
+  Gauge,
+  FileDown
 } from 'lucide-react';
 
 interface DashboardCalendarProps {
@@ -20,6 +22,8 @@ interface DashboardCalendarProps {
   selectedMonth: number; // 0-indexed (6 = July)
   selectedYear: number;
   onMonthChange: (year: number, month: number) => void;
+  onOpenBatchOdometer?: () => void;
+  onDownloadExecutivePdf?: () => void;
 }
 
 const MONTH_NAMES = [
@@ -35,7 +39,9 @@ export function DashboardCalendar({
   vistorias,
   selectedMonth,
   selectedYear,
-  onMonthChange
+  onMonthChange,
+  onOpenBatchOdometer,
+  onDownloadExecutivePdf,
 }: DashboardCalendarProps) {
   const [isExpanded, setIsExpanded] = useState(false);
   const [selectedDayEvents, setSelectedDayEvents] = useState<{
@@ -205,14 +211,41 @@ export function DashboardCalendar({
             </button>
           </div>
 
-          <button
-            type="button"
-            onClick={() => setIsExpanded(!isExpanded)}
-            className="flex items-center gap-1.5 text-xs font-semibold text-blue-400 bg-blue-500/10 hover:bg-blue-500/20 px-3 py-1.5 rounded-xl border border-blue-500/20 transition-all cursor-pointer"
-          >
-            <span>{isExpanded ? 'Ocultar' : 'Exibir Calendário'}</span>
-            {isExpanded ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
-          </button>
+          {/* Quick Action Buttons */}
+          <div className="flex items-center gap-1.5 flex-wrap">
+            {onOpenBatchOdometer && (
+              <button
+                type="button"
+                onClick={onOpenBatchOdometer}
+                className="px-2.5 py-1.5 bg-cyan-500/15 hover:bg-cyan-500/25 text-cyan-300 border border-cyan-500/30 rounded-xl text-xs font-bold flex items-center gap-1 transition-all cursor-pointer shadow-xs"
+                title="Atualizar KM de todos os veículos da frota em uma única tela"
+              >
+                <Gauge className="w-3.5 h-3.5 text-cyan-400" />
+                <span className="hidden md:inline">Modo Odômetro</span>
+              </button>
+            )}
+
+            {onDownloadExecutivePdf && (
+              <button
+                type="button"
+                onClick={onDownloadExecutivePdf}
+                className="px-2.5 py-1.5 bg-emerald-500/15 hover:bg-emerald-500/25 text-emerald-300 border border-emerald-500/30 rounded-xl text-xs font-bold flex items-center gap-1 transition-all cursor-pointer shadow-xs"
+                title="Gerar PDF executivo do mês para Contador / Investidor"
+              >
+                <FileDown className="w-3.5 h-3.5 text-emerald-400" />
+                <span className="hidden md:inline">Relatório PDF</span>
+              </button>
+            )}
+
+            <button
+              type="button"
+              onClick={() => setIsExpanded(!isExpanded)}
+              className="flex items-center gap-1.5 text-xs font-semibold text-blue-400 bg-blue-500/10 hover:bg-blue-500/20 px-3 py-1.5 rounded-xl border border-blue-500/20 transition-all cursor-pointer"
+            >
+              <span>{isExpanded ? 'Ocultar' : 'Exibir Calendário'}</span>
+              {isExpanded ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
+            </button>
+          </div>
         </div>
       </div>
 

@@ -876,10 +876,11 @@ export default function App() {
   ]);
 
   // Trigger Form Handlers
-  const handleOpenForm = (type: 'vehicle' | 'fuel' | 'maintenance' | 'expense', vId: string = '') => {
-    setActiveFormType(type);
+  const handleOpenForm = (type: 'vehicle' | 'fuel' | 'maintenance' | 'expense' | 'sinistro', vId: string = '') => {
+    setActiveFormType(type as any);
     setSelectedVehicleId(vId || (vehicles[0]?.id || ''));
     setVehicleToEdit(null);
+    setGlobalPrefilledData(null);
     setIsFormOpen(true);
   };
 
@@ -887,6 +888,7 @@ export default function App() {
     setActiveFormType('vehicle');
     setVehicleToEdit(vehicle);
     setSelectedVehicleId(vehicle.id);
+    setGlobalPrefilledData(null);
     setIsFormOpen(true);
   };
 
@@ -903,6 +905,20 @@ export default function App() {
       return nextVehicles;
     });
     setSelectedVehicleId(vehicle.id);
+  };
+
+  // Helper to switch month view automatically to log date
+  const autoSwitchMonthToDate = (dateStr: string) => {
+    if (!dateStr) return;
+    const parts = dateStr.split('-');
+    if (parts.length === 3) {
+      const y = parseInt(parts[0], 10);
+      const m = parseInt(parts[1], 10) - 1;
+      if (!isNaN(y) && !isNaN(m) && m >= 0 && m <= 11) {
+        setSelectedYear(y);
+        setSelectedMonth(m);
+      }
+    }
   };
 
   const handleUpdateVehicle = (vehicle: Vehicle) => {
@@ -982,6 +998,7 @@ export default function App() {
     const newLog: FuelLog = { ...log, id: newId };
     
     setFuelLogs((prev) => [newLog, ...prev]);
+    if (log.date) autoSwitchMonthToDate(log.date);
 
     // Automate: Update odometer of the vehicle & fuel level
     setVehicles((prevVehicles) =>
@@ -1003,6 +1020,8 @@ export default function App() {
     const newId = `maint-${Date.now()}`;
     const newLog: MaintenanceLog = { ...log, id: newId };
     setMaintenanceLogs((prev) => [newLog, ...prev]);
+    if (log.date) autoSwitchMonthToDate(log.date);
+
     const targetV = vehicles.find((v) => v.id === log.vehicleId);
     sendAppNotification(`🛠️ Manutenção Registrada: ${targetV ? `${targetV.brand} (${targetV.plate})` : log.type}`, {
       body: `${log.type}: ${log.description} — R$ ${(log.cost || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}.`,
@@ -1015,6 +1034,7 @@ export default function App() {
     const newId = `exp-${Date.now()}`;
     const newLog: ExpenseLog = { ...log, id: newId };
     setExpenseLogs((prev) => [newLog, ...prev]);
+    if (log.date) autoSwitchMonthToDate(log.date);
   };
 
   const handleUpdateExpense = (updatedLog: ExpenseLog) => {
@@ -2097,6 +2117,21 @@ export default function App() {
                 setInterestCalcVehicle(null);
                 setIsInterestCalcOpen(true);
               }}
+              onOpenBatchOdometer={() => setIsBatchOdometerOpen(true)}
+              onDownloadExecutivePdf={async () => {
+                try {
+                  const { doc, fileName } = await generateExecutiveMonthlyPDF(
+                    sortedVehicles,
+                    maintenanceLogs,
+                    expenseLogs,
+                    selectedMonth,
+                    selectedYear
+                  );
+                  doc.save(fileName);
+                } catch (err) {
+                  console.error('Erro ao gerar relatório executivo:', err);
+                }
+              }}
               onDownloadBackup={handleDownloadBackup}
               onUploadBackup={handleUploadBackup}
               onResetData={handleResetData}
@@ -2175,43 +2210,6 @@ export default function App() {
               </h2>
               <p className="text-xs text-gray-400">Detalhamento de despesas, pagamentos semanais e nível de tanque entregue.</p>
             </div>
-
-            {vehicles.length > 0 && (
-              <div className="flex items-center gap-2 flex-wrap">
-                <button
-                  type="button"
-                  onClick={() => setIsBatchOdometerOpen(true)}
-                  className="px-3 py-1.5 bg-cyan-500/15 hover:bg-cyan-500/25 text-cyan-300 border border-cyan-500/30 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer shadow-xs"
-                  title="Atualizar KM de todos os veículos da frota em uma única tela (#9)"
-                >
-                  <Gauge className="w-3.5 h-3.5 text-cyan-400" />
-                  <span>Modo Odômetro (KM em Lote)</span>
-                </button>
-
-                <button
-                  type="button"
-                  onClick={async () => {
-                    try {
-                      const { doc, fileName } = await generateExecutiveMonthlyPDF(
-                        sortedVehicles,
-                        maintenanceLogs,
-                        expenseLogs,
-                        selectedMonth,
-                        selectedYear
-                      );
-                      doc.save(fileName);
-                    } catch (err) {
-                      console.error('Erro ao gerar relatório executivo:', err);
-                    }
-                  }}
-                  className="px-3 py-1.5 bg-emerald-500/15 hover:bg-emerald-500/25 text-emerald-300 border border-emerald-500/30 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer shadow-xs"
-                  title="Gerar PDF executivo de 1 página para Contador / Investidor (#10)"
-                >
-                  <FileDown className="w-3.5 h-3.5 text-emerald-400" />
-                  <span>Relatório Mensal PDF (Contador)</span>
-                </button>
-              </div>
-            )}
           </div>
 
           {vehicles.length === 0 ? (
@@ -2318,40 +2316,6 @@ export default function App() {
             <span className="text-xs font-bold uppercase tracking-tight truncate">Despesa</span>
           </button>
         </div>
-
-        {/* 3. Dashboard Calendar */}
-        <DashboardCalendar 
-          vehicles={sortedVehicles}
-          maintenanceLogs={maintenanceLogs}
-          vistorias={vistorias}
-          selectedMonth={selectedMonth}
-          selectedYear={selectedYear}
-          onMonthChange={(yr, mo) => {
-            setSelectedYear(yr);
-            setSelectedMonth(mo);
-          }}
-        />
-
-        {/* Reports & History Modal Trigger Card */}
-        <div className="bg-[#111111] border border-white/10 rounded-2xl p-6 text-center shadow-xl flex flex-col sm:flex-row items-center justify-between gap-4">
-          <div className="flex items-center gap-3 text-left">
-            <div className="p-3 bg-blue-500/10 border border-blue-500/20 rounded-xl text-blue-400">
-              <BarChart3 className="w-6 h-6" />
-            </div>
-            <div>
-              <h3 className="text-sm font-bold text-white">Painel Consolidado de Gráficos & Histórico Geral</h3>
-              <p className="text-xs text-gray-400">Visualize comparativos de despesas, distribuição de orçamento e todo o histórico de lançamentos em um único modal.</p>
-            </div>
-          </div>
-          <button
-            type="button"
-            onClick={() => setIsReportsModalOpen(true)}
-            className="px-5 py-2.5 bg-blue-600 hover:bg-blue-500 text-white font-bold text-xs rounded-xl transition-all shadow-lg shadow-blue-600/20 cursor-pointer shrink-0 flex items-center gap-2"
-          >
-            <BarChart3 className="w-4 h-4" />
-            <span>Abrir Painel em Modal</span>
-          </button>
-        </div>
         
       </main>
 
@@ -2431,8 +2395,28 @@ export default function App() {
         onToggleFridayReminder={handleToggleFridayReminder}
         maintNotificationsEnabled={maintNotificationsEnabled}
         onToggleMaintNotifications={handleToggleMaintNotifications}
-        vehicles={vehicles}
+        vehicles={sortedVehicles}
         onTriggerMaintNotificationCheck={triggerMaintNotificationCheck}
+        fuelLogs={fuelLogs}
+        maintenanceLogs={maintenanceLogs}
+        expenseLogs={expenseLogs}
+        vistorias={vistorias}
+        selectedMonth={selectedMonth}
+        selectedYear={selectedYear}
+        onMonthChange={(yr, mo) => {
+          setSelectedYear(yr);
+          setSelectedMonth(mo);
+        }}
+        onDeleteFuel={handleDeleteFuel}
+        onDeleteMaintenance={handleDeleteMaintenance}
+        onDeleteExpense={handleDeleteExpense}
+        onDeleteVistoria={handleDeleteVistoria}
+        onUpdateFuel={handleUpdateFuel}
+        onUpdateMaintenance={handleUpdateMaintenance}
+        onUpdateExpense={handleUpdateExpense}
+        onUpdateVistoria={handleUpdateVistoria}
+        onClearAllVistorias={handleClearAllVistorias}
+        onOpenBatchOdometer={() => setIsBatchOdometerOpen(true)}
       />
 
       {/* Centro de Notificações Modal */}

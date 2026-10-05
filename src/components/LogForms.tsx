@@ -670,28 +670,41 @@ export function LogForms({
           setDriverAddressFileName('');
         }
       }
-    } else if (formType === 'fuel' && currentSelectedCar) {
-      setFuelKm(currentSelectedCar.currentKm);
+    } else if (formType === 'fuel') {
+      setFuelKm(currentSelectedCar ? currentSelectedCar.currentKm : 0);
       setFuelLiters(0);
       setFuelPricePerLiter(0);
       setFuelTotalCost(0);
       setFuelType('Gasolina');
       setFuelStation('');
       setFuelDate(getTodayStr());
-    } else if (formType === 'maintenance' && currentSelectedCar) {
+      setAiPrompt('');
+    } else if (formType === 'maintenance') {
       setMaintDate(getTodayStr());
       setMaintType('Revisão');
       setMaintDescription('');
       setMaintCost(0);
       setMaintShop('');
-      setMaintNextKm(currentSelectedCar.currentKm + 10000);
+      setMaintNextKm(currentSelectedCar ? currentSelectedCar.currentKm + 10000 : undefined);
+      setMaintBoNumber('');
+      setMaintPartsReplaced('');
       setMaintParcelasPagas(undefined);
       setMaintParcelasTotais(undefined);
+      setAiPrompt('');
     } else if (formType === 'expense') {
       setExpDate(getTodayStr());
       setExpCategory('' as any);
       setExpDescription('');
       setExpCost(0);
+      setAiPrompt('');
+    } else if (formType === 'sinistro') {
+      setSinistroDate(getTodayStr());
+      setSinistroDescription('');
+      setSinistroRepairCost(0);
+      setSinistroPhotos([]);
+      setSinistroBoUrl('');
+      setSinistroLocation('');
+      setAiPrompt('');
     }
   }, [isOpen, formType, vehicleToEdit, selectedVehicleId, prefilledData]);
 
