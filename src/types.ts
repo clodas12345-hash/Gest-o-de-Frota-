@@ -71,6 +71,12 @@ export interface Vehicle {
   seguroVencimento?: string;
   tires?: TireState[];
   fines?: Fine[];
+  // Official FIPE fields
+  fipeCode?: string;
+  fipeValue?: number;
+  fipeRefMonth?: string;
+  fipeLastUpdate?: string; // Format: YYYY-MM
+  fipeHistory?: { month: string; value: number }[];
 }
 
 export interface TireState {
@@ -157,6 +163,7 @@ export interface MaintenanceLog {
   description: string;
   cost: number;
   shopName?: string;
+  shopPhone?: string;
   nextKm?: number;
   boNumber?: string;
   partsReplaced?: string;
@@ -164,6 +171,9 @@ export interface MaintenanceLog {
   parcelasTotais?: number;
   // Related to sinistro if applicable
   sinistroId?: string;
+  // Uploaded invoice / receipt
+  receiptUrl?: string;
+  invoiceFileName?: string;
 }
 
 export interface ExpenseLog {
@@ -173,6 +183,8 @@ export interface ExpenseLog {
   category: 'Seguro' | 'Multa' | 'Lavagem' | 'Estacionamento' | 'Outros';
   description: string;
   cost: number;
+  receiptUrl?: string;
+  invoiceFileName?: string;
 }
 
 export interface AgendaContact {

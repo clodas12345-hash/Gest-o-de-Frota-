@@ -2,6 +2,7 @@ import React, { useState, useRef, useEffect } from 'react';
 import { Vehicle, ExpenseLog, WeeklyPayment, Vistoria, VehicleDocument, MaintenanceLog, FuelLog, SinistroLog } from '../types';
 import { generateVistoriaPDF, generatePaymentReceiptPDF } from '../utils/pdfGenerator';
 import { sendAppNotification, requestNotificationPermission } from '../utils/notifications';
+import { syncVehicleFipe } from '../utils/fipeService';
 import { PdfViewer } from './PdfViewer';
 import { 
   Calendar, 
@@ -463,6 +464,7 @@ export const VehicleCard: React.FC<VehicleCardProps> = ({
   const [isProfitabilityOpen, setIsProfitabilityOpen] = useState(false);
   const [isTiresModalOpen, setIsTiresModalOpen] = useState(false);
   const [isFinesModalOpen, setIsFinesModalOpen] = useState(false);
+  const [isLoadingFipe, setIsLoadingFipe] = useState(false);
   const [copiedPortalLink, setCopiedPortalLink] = useState(false);
   const historyRef = useRef<HTMLDivElement>(null);
 
@@ -1005,8 +1007,13 @@ export const VehicleCard: React.FC<VehicleCardProps> = ({
 
   const isCurrentMonth = (dateStr: string) => {
     if (!dateStr) return false;
-    const d = new Date(dateStr + 'T12:00:00');
-    return d.getMonth() === currentMonth && d.getFullYear() === currentYear;
+    const parts = dateStr.split('-');
+    if (parts.length === 3) {
+      const y = parseInt(parts[0], 10);
+      const m = parseInt(parts[1], 10) - 1;
+      return m === currentMonth && y === currentYear;
+    }
+    return false;
   };
 
   // Sum up weekly payments for the current month
@@ -5059,6 +5066,65 @@ _Enviado via sistema de gestão de frota._`;
                             placeholder="Ex: Localiza, Movida, Frota Própria"
                             onSave={(val) => handleUpdateField('rentalCompany', val)}
                           />
+                        </div>
+                      </div>
+
+                      {/* Tabela FIPE Card */}
+                      <div className="bg-gradient-to-r from-blue-950/40 via-indigo-950/40 to-blue-900/40 border border-blue-500/30 p-3 rounded-xl space-y-2 col-span-1 sm:col-span-2">
+                        <div className="flex items-center justify-between">
+                          <div className="flex items-center gap-1.5">
+                            <span className="p-1 bg-blue-500/20 text-blue-300 rounded-lg border border-blue-500/30">
+                              <Building2 className="w-3.5 h-3.5" />
+                            </span>
+                            <div>
+                              <p className="text-[10px] font-bold text-blue-300 uppercase tracking-wider">Valor Tabela FIPE (Oficial Governamental)</p>
+                              <p className="text-[10px] text-gray-400">Ref: {vehicle.fipeRefMonth || 'Busca Mensal'}</p>
+                            </div>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={async () => {
+                              setIsLoadingFipe(true);
+                              try {
+                                const { updatedVehicle, updated } = await syncVehicleFipe(vehicle);
+                                if (updated || updatedVehicle.fipeValue) {
+                                  onUpdateVehicle?.(updatedVehicle);
+                                  sendAppNotification(`🚘 FIPE Atualizada: ${vehicle.brand} ${vehicle.model}`, {
+                                    body: `Valor de mercado FIPE: R$ ${(updatedVehicle.fipeValue || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })} (${updatedVehicle.fipeRefMonth || ''})`,
+                                    eventKey: 'fipe_updated'
+                                  });
+                                }
+                              } catch (e) {
+                                console.error('Erro ao atualizar FIPE:', e);
+                              } finally {
+                                setIsLoadingFipe(false);
+                              }
+                            }}
+                            disabled={isLoadingFipe}
+                            className="px-2.5 py-1 bg-blue-600/30 hover:bg-blue-600/50 text-blue-200 border border-blue-500/30 rounded-lg text-[10px] font-bold flex items-center gap-1 transition-all cursor-pointer disabled:opacity-50"
+                            title="Consultar Tabela FIPE oficial do Governo agora"
+                          >
+                            <Sparkles className={`w-3 h-3 ${isLoadingFipe ? 'animate-spin' : ''}`} />
+                            <span>{isLoadingFipe ? 'Consultando...' : '🔄 Atualizar FIPE'}</span>
+                          </button>
+                        </div>
+
+                        <div className="flex items-baseline justify-between pt-1 border-t border-white/10">
+                          <div>
+                            <span className="text-base sm:text-lg font-bold font-mono text-emerald-400">
+                              {vehicle.fipeValue ? `R$ ${vehicle.fipeValue.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}` : 'Não Consultado (Clique para atualizar)'}
+                            </span>
+                            {vehicle.fipeCode && (
+                              <span className="ml-2 text-[10px] font-mono text-gray-400 bg-black/40 px-1.5 py-0.5 rounded border border-white/10">
+                                Cód: {vehicle.fipeCode}
+                              </span>
+                            )}
+                          </div>
+                          {vehicle.fipeHistory && vehicle.fipeHistory.length > 0 && (
+                            <div className="text-[10px] text-blue-300 font-mono flex items-center gap-1">
+                              <span>Histórico: {vehicle.fipeHistory.length} mês(es)</span>
+                            </div>
+                          )}
                         </div>
                       </div>
                     </div>

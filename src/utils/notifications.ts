@@ -27,7 +27,9 @@ export type NotificationEventKey =
   | 'fuel_low_alert'
   | 'document_uploaded'
   | 'caucao_updated'
-  | 'backup_completed';
+  | 'backup_completed'
+  | 'fipe_updated'
+  | 'fipe_monthly_sync';
 
 export interface NotificationOptionDefinition {
   key: NotificationEventKey;
@@ -253,7 +255,9 @@ export const DEFAULT_NOTIFICATION_PREFERENCES: Record<NotificationEventKey, bool
   fuel_low_alert: true,
   document_uploaded: true,
   caucao_updated: true,
-  backup_completed: true
+  backup_completed: true,
+  fipe_updated: true,
+  fipe_monthly_sync: true
 };
 
 export function getNotificationPreferences(): Record<NotificationEventKey, boolean> {

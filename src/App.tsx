@@ -28,6 +28,7 @@ import { HelpModal } from './components/HelpModal';
 import { DashboardCalendar } from './components/DashboardCalendar';
 import { FinalizedContractsModal } from './components/FinalizedContractsModal';
 import { HeaderActionsMenu } from './components/HeaderActionsMenu';
+import { syncVehicleFipe } from './utils/fipeService';
 import { SettingsModal } from './components/SettingsModal';
 import { NotificationCenterModal } from './components/NotificationCenterModal';
 import { ChecklistConfigModal } from './components/ChecklistConfigModal';
@@ -469,6 +470,39 @@ export default function App() {
       }
     });
   }, [vehicles.length, disableFridayReminder]);
+
+  // 3. Background Monthly Automatic FIPE Sync
+  useEffect(() => {
+    if (vehicles.length === 0) return;
+    const now = new Date();
+    const currentMonthKey = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+    const lastFipeSync = localStorage.getItem('fleet_last_fipe_sync');
+
+    if (lastFipeSync !== currentMonthKey) {
+      localStorage.setItem('fleet_last_fipe_sync', currentMonthKey);
+      (async () => {
+        let updatedCount = 0;
+        const updatedVehicles = await Promise.all(
+          vehicles.map(async (v) => {
+            try {
+              const { updatedVehicle, updated } = await syncVehicleFipe(v);
+              if (updated) updatedCount++;
+              return updatedVehicle;
+            } catch (e) {
+              return v;
+            }
+          })
+        );
+        if (updatedCount > 0) {
+          setVehicles(updatedVehicles);
+          sendAppNotification(`🚘 Tabela FIPE Atualizada (${currentMonthKey})`, {
+            body: `Os valores de mercado da Tabela FIPE do Governo foram atualizados para ${updatedCount} veículo(s) da frota.`,
+            eventKey: 'fipe_monthly_sync'
+          });
+        }
+      })();
+    }
+  }, [vehicles.length]);
 
   React.useEffect(() => {
     localStorage.setItem('fleet_checklist_config', JSON.stringify(checklistConfig));
@@ -914,9 +948,13 @@ export default function App() {
     if (parts.length === 3) {
       const y = parseInt(parts[0], 10);
       const m = parseInt(parts[1], 10) - 1;
+      const today = new Date();
       if (!isNaN(y) && !isNaN(m) && m >= 0 && m <= 11) {
-        setSelectedYear(y);
-        setSelectedMonth(m);
+        // Only auto-switch if the log date is for current month or if current month is active
+        if (y === today.getFullYear() && m === today.getMonth()) {
+          setSelectedYear(y);
+          setSelectedMonth(m);
+        }
       }
     }
   };

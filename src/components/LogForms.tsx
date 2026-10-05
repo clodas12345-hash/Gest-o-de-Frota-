@@ -1,7 +1,10 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Vehicle, FuelLog, MaintenanceLog, ExpenseLog, AgendaContact, SinistroLog, TireState } from '../types';
-import { X, Save, AlertCircle, Users, BookOpen, Sparkles, Mic, MicOff, Calculator, Plus, Trash2, User, Phone, Search, Smartphone, Check, Upload, ExternalLink, AlertTriangle, Car, Calendar, Camera, Shield, Bell } from 'lucide-react';
+import { X, Save, AlertCircle, Users, BookOpen, Sparkles, Mic, MicOff, Calculator, Plus, Trash2, User, Phone, Search, Smartphone, Check, Upload, ExternalLink, AlertTriangle, Car, Calendar, Camera, Shield, Bell, Paperclip, Eye, FileText, Building2 } from 'lucide-react';
+import { Contacts } from '@capacitor-community/contacts';
+import { Capacitor } from '@capacitor/core';
 import { generateNextContractNumber } from '../utils/contractHelper';
+import { fetchFipeByCode, fetchFipeByDetails } from '../utils/fipeService';
 import CurrencyInput from './CurrencyInput';
 
 const getTodayStr = (): string => {
@@ -135,6 +138,10 @@ export function LogForms({
   const [expenseTotalVal, setExpenseTotalVal] = useState<number>(0);
   const [expenseNumParcelas, setExpenseNumParcelas] = useState<number>(10);
   const [extraExpenses, setExtraExpenses] = useState<{ id: string; label: string; value: number; parcelasPagas?: number; parcelasTotais?: number; startDate?: string; }[]>([]);
+  const [fipeCode, setFipeCode] = useState('');
+  const [fipeValue, setFipeValue] = useState<number | undefined>(undefined);
+  const [fipeRefMonth, setFipeRefMonth] = useState('');
+  const [isFipeLoading, setIsFipeLoading] = useState(false);
 
   // 2. Fuel Form State
   const [fuelDate, setFuelDate] = useState(getTodayStr);
@@ -151,11 +158,15 @@ export function LogForms({
   const [maintDescription, setMaintDescription] = useState('');
   const [maintCost, setMaintCost] = useState(0);
   const [maintShop, setMaintShop] = useState('');
+  const [maintShopPhone, setMaintShopPhone] = useState('');
   const [maintNextKm, setMaintNextKm] = useState<number | undefined>(undefined);
   const [maintBoNumber, setMaintBoNumber] = useState('');
   const [maintPartsReplaced, setMaintPartsReplaced] = useState('');
   const [maintParcelasPagas, setMaintParcelasPagas] = useState<number | undefined>(undefined);
   const [maintParcelasTotais, setMaintParcelasTotais] = useState<number | undefined>(undefined);
+  const [maintReceiptUrl, setMaintReceiptUrl] = useState('');
+  const [maintInvoiceFileName, setMaintInvoiceFileName] = useState('');
+  const maintInvoiceInputRef = useRef<HTMLInputElement>(null);
   
   // 5. Sinistro Form State
   const [sinistroDate, setSinistroDate] = useState(getTodayStr);
@@ -170,6 +181,13 @@ export function LogForms({
   const [expCategory, setExpCategory] = useState<ExpenseLog['category']>('' as any);
   const [expDescription, setExpDescription] = useState('');
   const [expCost, setExpCost] = useState(0);
+  const [expReceiptUrl, setExpReceiptUrl] = useState('');
+  const [expInvoiceFileName, setExpInvoiceFileName] = useState('');
+  const expInvoiceInputRef = useRef<HTMLInputElement>(null);
+
+  // Agenda Contact Selection Modal State
+  const [showContactPickerModal, setShowContactPickerModal] = useState(false);
+  const [contactSearchQuery, setContactSearchQuery] = useState('');
 
   // 6. AI Fill State
   const [aiPrompt, setAiPrompt] = useState('');
@@ -589,6 +607,9 @@ export function LogForms({
         setCustoExtra(vehicleToEdit.custoExtra || 0);
         setCustoExtraLabel(vehicleToEdit.custoExtraLabel || 'Outras Despesas');
         setExtraExpenses(vehicleToEdit.extraExpenses || (vehicleToEdit.custoExtra ? [{ id: 'default', label: vehicleToEdit.custoExtraLabel || 'Outras Despesas', value: vehicleToEdit.custoExtra, parcelasPagas: vehicleToEdit.custoExtraParcelasPagas, parcelasTotais: vehicleToEdit.custoExtraParcelasTotais }] : []));
+        setFipeCode(vehicleToEdit.fipeCode || '');
+        setFipeValue(vehicleToEdit.fipeValue);
+        setFipeRefMonth(vehicleToEdit.fipeRefMonth || '');
         if (vehicleToEdit.custoExtra && vehicleToEdit.custoExtra > 0) {
           setShowAddExpense(true);
         }
@@ -671,40 +692,53 @@ export function LogForms({
         }
       }
     } else if (formType === 'fuel') {
-      setFuelKm(currentSelectedCar ? currentSelectedCar.currentKm : 0);
-      setFuelLiters(0);
-      setFuelPricePerLiter(0);
-      setFuelTotalCost(0);
-      setFuelType('Gasolina');
-      setFuelStation('');
-      setFuelDate(getTodayStr());
-      setAiPrompt('');
+      if (!prefilledData) {
+        setFuelKm(currentSelectedCar ? currentSelectedCar.currentKm : 0);
+        setFuelLiters(0);
+        setFuelPricePerLiter(0);
+        setFuelTotalCost(0);
+        setFuelType('Gasolina');
+        setFuelStation('');
+        setFuelDate(getTodayStr());
+        setAiPrompt('');
+      }
     } else if (formType === 'maintenance') {
-      setMaintDate(getTodayStr());
-      setMaintType('Revisão');
-      setMaintDescription('');
-      setMaintCost(0);
-      setMaintShop('');
-      setMaintNextKm(currentSelectedCar ? currentSelectedCar.currentKm + 10000 : undefined);
-      setMaintBoNumber('');
-      setMaintPartsReplaced('');
-      setMaintParcelasPagas(undefined);
-      setMaintParcelasTotais(undefined);
-      setAiPrompt('');
+      if (!prefilledData) {
+        setMaintDate(getTodayStr());
+        setMaintType('Revisão');
+        setMaintDescription('');
+        setMaintCost(0);
+        setMaintShop('');
+        setMaintShopPhone('');
+        setMaintNextKm(currentSelectedCar ? currentSelectedCar.currentKm + 10000 : undefined);
+        setMaintBoNumber('');
+        setMaintPartsReplaced('');
+        setMaintParcelasPagas(undefined);
+        setMaintParcelasTotais(undefined);
+        setMaintReceiptUrl('');
+        setMaintInvoiceFileName('');
+        setAiPrompt('');
+      }
     } else if (formType === 'expense') {
-      setExpDate(getTodayStr());
-      setExpCategory('' as any);
-      setExpDescription('');
-      setExpCost(0);
-      setAiPrompt('');
+      if (!prefilledData) {
+        setExpDate(getTodayStr());
+        setExpCategory('' as any);
+        setExpDescription('');
+        setExpCost(0);
+        setExpReceiptUrl('');
+        setExpInvoiceFileName('');
+        setAiPrompt('');
+      }
     } else if (formType === 'sinistro') {
-      setSinistroDate(getTodayStr());
-      setSinistroDescription('');
-      setSinistroRepairCost(0);
-      setSinistroPhotos([]);
-      setSinistroBoUrl('');
-      setSinistroLocation('');
-      setAiPrompt('');
+      if (!prefilledData) {
+        setSinistroDate(getTodayStr());
+        setSinistroDescription('');
+        setSinistroRepairCost(0);
+        setSinistroPhotos([]);
+        setSinistroBoUrl('');
+        setSinistroLocation('');
+        setAiPrompt('');
+      }
     }
   }, [isOpen, formType, vehicleToEdit, selectedVehicleId, prefilledData]);
 
@@ -853,7 +887,17 @@ export function LogForms({
             });
           }
           return baseDocs;
-        })()
+        })(),
+        fipeCode: fipeCode.trim() || undefined,
+        fipeValue: fipeValue ? Number(fipeValue) : undefined,
+        fipeRefMonth: fipeRefMonth || undefined,
+        fipeLastUpdate: fipeValue ? `${new Date().getFullYear()}-${String(new Date().getMonth() + 1).padStart(2, '0')}` : vehicleToEdit?.fipeLastUpdate,
+        fipeHistory: fipeValue ? (
+          vehicleToEdit?.fipeHistory ? [
+            ...vehicleToEdit.fipeHistory.filter(h => h.month !== `${new Date().getFullYear()}-${String(new Date().getMonth() + 1).padStart(2, '0')}`),
+            { month: `${new Date().getFullYear()}-${String(new Date().getMonth() + 1).padStart(2, '0')}`, value: Number(fipeValue) }
+          ] : [{ month: `${new Date().getFullYear()}-${String(new Date().getMonth() + 1).padStart(2, '0')}`, value: Number(fipeValue) }]
+        ) : vehicleToEdit?.fipeHistory
       };
 
       onSaveVehicle(vehicleData);
@@ -925,11 +969,14 @@ export function LogForms({
         description: maintDescription,
         cost: Number(maintCost),
         shopName: maintShop,
+        shopPhone: maintShopPhone || undefined,
         nextKm: maintNextKm ? Number(maintNextKm) : undefined,
         boNumber: maintBoNumber.trim() || undefined,
         partsReplaced: maintPartsReplaced.trim() || undefined,
         parcelasPagas: maintParcelasPagas,
-        parcelasTotais: maintParcelasTotais
+        parcelasTotais: maintParcelasTotais,
+        receiptUrl: maintReceiptUrl || undefined,
+        invoiceFileName: maintInvoiceFileName || undefined
       });
       onClose();
     }
@@ -944,7 +991,9 @@ export function LogForms({
         date: expDate,
         category: expCategory,
         description: expDescription,
-        cost: Number(expCost)
+        cost: Number(expCost),
+        receiptUrl: expReceiptUrl || undefined,
+        invoiceFileName: expInvoiceFileName || undefined
       });
       onClose();
     }
@@ -1158,6 +1207,80 @@ export function LogForms({
                     className="w-full text-xs bg-white/[0.03] border border-white/10 rounded-xl px-3 py-2 text-white placeholder-gray-500 focus:outline-hidden focus:border-blue-500/50 focus:bg-[#1a1a1a]"
                   />
                 </div>
+              </div>
+
+              {/* Consulta Tabela FIPE no Cadastro */}
+              <div className="bg-blue-950/30 border border-blue-500/20 rounded-xl p-3 space-y-2">
+                <div className="flex items-center justify-between">
+                  <span className="text-[10px] font-bold text-blue-400 uppercase tracking-wider flex items-center gap-1.5">
+                    <Building2 className="w-3.5 h-3.5 text-blue-400" /> Tabela FIPE (Consulta do Governo)
+                  </span>
+                  <button
+                    type="button"
+                    onClick={async () => {
+                      if (!brand || !model) {
+                        setError('Informe ao menos a Marca e o Modelo para consultar a FIPE.');
+                        return;
+                      }
+                      setIsFipeLoading(true);
+                      setError('');
+                      try {
+                        let res: any = null;
+                        if (fipeCode) {
+                          res = await fetchFipeByCode(fipeCode, Number(yearModel || yearFab || new Date().getFullYear()));
+                        }
+                        if (!res) {
+                          res = await fetchFipeByDetails(brand, model, Number(yearModel || yearFab || new Date().getFullYear()));
+                        }
+                        if (res) {
+                          setFipeValue(res.fipeValue);
+                          setFipeCode(res.fipeCode);
+                          setFipeRefMonth(res.refMonth);
+                        } else {
+                          setError('Não foi possível localizar o modelo na Tabela FIPE. Verifique Marca/Modelo ou digite o Código FIPE.');
+                        }
+                      } catch (e) {
+                        console.error('Erro consulta FIPE:', e);
+                        setError('Erro ao conectar à API da Tabela FIPE.');
+                      } finally {
+                        setIsFipeLoading(false);
+                      }
+                    }}
+                    disabled={isFipeLoading}
+                    className="px-2.5 py-1 bg-blue-600 hover:bg-blue-500 text-white rounded-lg text-[10px] font-bold transition-all flex items-center gap-1 cursor-pointer disabled:opacity-50"
+                    title="Consultar Tabela FIPE oficial do Governo"
+                  >
+                    <Sparkles className={`w-3 h-3 ${isFipeLoading ? 'animate-spin' : ''}`} />
+                    <span>{isFipeLoading ? 'Buscando...' : '🔍 Consultar FIPE'}</span>
+                  </button>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                  <div className="space-y-1">
+                    <label className="text-[10px] font-semibold text-gray-400">Código FIPE (Opcional)</label>
+                    <input
+                      type="text"
+                      value={fipeCode}
+                      onChange={e => setFipeCode(e.target.value)}
+                      placeholder="Ex: 001460-5"
+                      className="w-full text-xs bg-black/40 border border-white/10 rounded-lg px-2.5 py-1.5 text-white placeholder-gray-500 focus:outline-hidden font-mono"
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <label className="text-[10px] font-semibold text-gray-400">Valor FIPE Consultado (R$)</label>
+                    <CurrencyInput
+                      value={fipeValue || 0}
+                      onChange={(val) => setFipeValue(val)}
+                      placeholder="0,00"
+                      className="w-full text-xs bg-black/40 border border-white/10 rounded-lg px-2.5 py-1.5 text-emerald-400 font-mono font-bold focus:outline-hidden"
+                    />
+                  </div>
+                </div>
+                {fipeRefMonth && (
+                  <p className="text-[10px] text-blue-300 font-mono">
+                    Mês de Referência: {fipeRefMonth}
+                  </p>
+                )}
               </div>
 
               <div className="grid grid-cols-2 gap-4">
@@ -1939,7 +2062,46 @@ export function LogForms({
                   />
                 </div>
                 <div className="space-y-1">
-                  <label className="font-semibold text-gray-400">Oficina / Estabelecimento</label>
+                  <div className="flex items-center justify-between">
+                    <label className="font-semibold text-gray-400">Oficina / Estabelecimento</label>
+                    <button
+                      type="button"
+                      onClick={async () => {
+                        try {
+                          if (Capacitor.isNativePlatform()) {
+                            const permission = await Contacts.requestPermissions();
+                            if (permission.contacts === 'granted') {
+                              setShowContactPickerModal(true);
+                              return;
+                            }
+                          }
+                        } catch (err) {
+                          console.log('Capacitor contacts error:', err);
+                        }
+                        if ('contacts' in navigator && 'select' in (navigator as any).contacts) {
+                          try {
+                            const selected = await (navigator as any).contacts.select(['name', 'tel'], { multiple: false });
+                            if (selected && selected.length > 0) {
+                              const c = selected[0];
+                              const name = c.name?.[0] || '';
+                              const phone = c.tel?.[0] || '';
+                              if (name) setMaintShop(toTitleCase(name));
+                              if (phone) setMaintShopPhone(phone);
+                              return;
+                            }
+                          } catch (err) {
+                            console.log('Web contacts selection:', err);
+                          }
+                        }
+                        setShowContactPickerModal(true);
+                      }}
+                      className="text-[10px] font-bold text-blue-400 hover:text-blue-300 flex items-center gap-1 bg-blue-500/10 px-2 py-0.5 rounded-lg border border-blue-500/20 transition-all cursor-pointer"
+                      title="Buscar contato de oficina na agenda do celular"
+                    >
+                      <BookOpen className="w-3 h-3" />
+                      <span>Buscar na Agenda</span>
+                    </button>
+                  </div>
                   <input 
                     type="text" 
                     value={maintShop} 
@@ -1947,6 +2109,11 @@ export function LogForms({
                     placeholder="Ex: Concessionária Fiat"
                     className="w-full text-xs bg-white/[0.03] border border-white/10 rounded-xl px-3 py-2 text-white placeholder-gray-500 focus:outline-hidden focus:border-blue-500/50 focus:bg-[#1a1a1a]"
                   />
+                  {maintShopPhone && (
+                    <p className="text-[10px] text-emerald-400 flex items-center gap-1 mt-0.5">
+                      <Phone className="w-3 h-3" /> {maintShopPhone}
+                    </p>
+                  )}
                 </div>
               </div>
 
@@ -1990,6 +2157,73 @@ export function LogForms({
                   placeholder="Descreva detalhadamente o serviço efetuado..."
                   className="w-full text-xs bg-white/[0.03] border border-white/10 rounded-xl px-3 py-2 text-white placeholder-gray-500 focus:outline-hidden focus:border-blue-500/50 focus:bg-[#1a1a1a] h-20 resize-none"
                 />
+              </div>
+
+              {/* Upload da Nota Fiscal / Recibo da Manutenção */}
+              <div className="space-y-1.5 pt-1">
+                <label className="font-semibold text-gray-400 flex items-center justify-between text-xs">
+                  <span>Nota Fiscal / Recibo de Manutenção</span>
+                </label>
+                <input
+                  type="file"
+                  ref={maintInvoiceInputRef}
+                  accept="image/*,application/pdf"
+                  className="hidden"
+                  onChange={(e) => {
+                    const file = e.target.files?.[0];
+                    if (file) {
+                      if (file.size > 10 * 1024 * 1024) {
+                        setError('Arquivo muito grande (máximo 10MB).');
+                        return;
+                      }
+                      const reader = new FileReader();
+                      reader.onload = () => {
+                        setMaintReceiptUrl(reader.result as string);
+                        setMaintInvoiceFileName(file.name);
+                      };
+                      reader.readAsDataURL(file);
+                    }
+                  }}
+                />
+                {maintReceiptUrl ? (
+                  <div className="flex items-center justify-between p-2.5 bg-emerald-500/10 border border-emerald-500/30 rounded-xl text-emerald-300 text-xs">
+                    <div className="flex items-center gap-2 truncate">
+                      <FileText className="w-4 h-4 shrink-0" />
+                      <span className="font-medium truncate">{maintInvoiceFileName || 'Nota_Fiscal.pdf'}</span>
+                    </div>
+                    <div className="flex items-center gap-1.5 shrink-0">
+                      <a
+                        href={maintReceiptUrl}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="p-1 hover:bg-emerald-500/20 rounded-lg text-emerald-300 transition-colors"
+                        title="Visualizar Nota Fiscal"
+                      >
+                        <Eye className="w-3.5 h-3.5" />
+                      </a>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setMaintReceiptUrl('');
+                          setMaintInvoiceFileName('');
+                        }}
+                        className="p-1 hover:bg-red-500/20 rounded-lg text-red-400 transition-colors"
+                        title="Remover anexo"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+                  </div>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() => maintInvoiceInputRef.current?.click()}
+                    className="w-full py-2.5 px-3 bg-white/[0.03] hover:bg-white/[0.08] border border-dashed border-white/20 hover:border-blue-500/50 rounded-xl text-gray-300 flex items-center justify-center gap-2 transition-all text-xs cursor-pointer"
+                  >
+                    <Upload className="w-4 h-4 text-blue-400" />
+                    <span>Upload da Nota Fiscal / Recibo (Foto ou PDF)</span>
+                  </button>
+                )}
               </div>
 
               {maintType === 'Preventiva' && (
@@ -2380,6 +2614,101 @@ export function LogForms({
                 className="px-4 py-1.5 bg-white/10 hover:bg-white/15 text-white rounded-xl text-xs font-semibold cursor-pointer"
               >
                 Fechar
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Workshop Contact Selection Modal */}
+      {showContactPickerModal && (
+        <div className="fixed inset-0 bg-black/80 backdrop-blur-xs z-[100] flex items-center justify-center p-3 animate-in fade-in duration-150">
+          <div className="bg-[#181818] border border-white/10 rounded-2xl max-w-md w-full overflow-hidden shadow-2xl space-y-3 p-4">
+            <div className="flex items-center justify-between pb-2 border-b border-white/10">
+              <div className="flex items-center gap-2 text-blue-400">
+                <BookOpen className="w-5 h-5" />
+                <h3 className="text-sm font-bold text-white">Buscar Oficina na Agenda</h3>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowContactPickerModal(false)}
+                className="p-1 hover:bg-white/10 rounded-lg text-gray-400 hover:text-white cursor-pointer"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <div className="relative">
+              <Search className="w-3.5 h-3.5 text-gray-400 absolute left-3 top-1/2 -translate-y-1/2" />
+              <input
+                type="text"
+                placeholder="Nome da oficina, mecânico ou telefone..."
+                value={contactSearchQuery}
+                onChange={(e) => setContactSearchQuery(e.target.value)}
+                className="w-full text-xs bg-black/40 border border-white/10 rounded-xl pl-9 pr-3 py-2 text-white placeholder-gray-500 focus:outline-hidden focus:border-blue-500/50"
+              />
+            </div>
+
+            <div className="space-y-1.5 max-h-[250px] overflow-y-auto pr-1">
+              {contacts
+                ?.filter((c) => {
+                  const q = contactSearchQuery.toLowerCase();
+                  return (
+                    c.name.toLowerCase().includes(q) ||
+                    (c.phone && c.phone.includes(q)) ||
+                    (c.region && c.region.toLowerCase().includes(q))
+                  );
+                })
+                .map((c) => (
+                  <button
+                    key={c.id}
+                    type="button"
+                    onClick={() => {
+                      setMaintShop(toTitleCase(c.name));
+                      if (c.phone) setMaintShopPhone(c.phone);
+                      setShowContactPickerModal(false);
+                    }}
+                    className="w-full text-left p-2.5 rounded-xl bg-white/[0.03] hover:bg-blue-600/20 border border-white/5 hover:border-blue-500/30 transition-all flex items-center justify-between group cursor-pointer"
+                  >
+                    <div>
+                      <p className="text-xs font-bold text-white group-hover:text-blue-300">{c.name}</p>
+                      <p className="text-[10px] text-gray-400 font-mono flex items-center gap-1 mt-0.5">
+                        <Phone className="w-3 h-3 text-emerald-400" />
+                        <span>{c.phone || 'Sem telefone'}</span>
+                      </p>
+                    </div>
+                    <span className="text-[10px] text-blue-400 font-semibold px-2 py-1 bg-blue-500/10 rounded-md group-hover:bg-blue-500/20">
+                      Usar
+                    </span>
+                  </button>
+                ))}
+
+              {(!contacts || contacts.length === 0 || (contactSearchQuery && contacts.filter(c => c.name.toLowerCase().includes(contactSearchQuery.toLowerCase()) || c.phone?.includes(contactSearchQuery)).length === 0)) && (
+                <div className="p-4 text-center space-y-2">
+                  <p className="text-xs text-gray-400">Nenhum contato encontrado com esse termo.</p>
+                  {contactSearchQuery && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setMaintShop(toTitleCase(contactSearchQuery));
+                        setShowContactPickerModal(false);
+                      }}
+                      className="px-3 py-1.5 bg-blue-600 hover:bg-blue-500 text-white font-bold text-xs rounded-xl transition-all cursor-pointer"
+                    >
+                      Usar "{contactSearchQuery}" como Oficina
+                    </button>
+                  )}
+                </div>
+              )}
+            </div>
+
+            <div className="pt-2 border-t border-white/10 flex justify-end">
+              <button
+                type="button"
+                onClick={() => setShowContactPickerModal(false)}
+                className="px-4 py-1.5 bg-white/10 hover:bg-white/15 text-white rounded-xl text-xs font-semibold cursor-pointer"
+              >
+                Cancelar
               </button>
             </div>
           </div>

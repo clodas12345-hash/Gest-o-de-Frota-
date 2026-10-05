@@ -25,8 +25,13 @@ export function DashboardStats({
   // Helper to check if a date string belongs to current month and year
   const isCurrentMonth = (dateStr: string) => {
     if (!dateStr) return false;
-    const d = new Date(dateStr + 'T12:00:00');
-    return d.getMonth() === currentMonth && d.getFullYear() === currentYear;
+    const parts = dateStr.split('-');
+    if (parts.length === 3) {
+      const y = parseInt(parts[0], 10);
+      const m = parseInt(parts[1], 10) - 1;
+      return m === currentMonth && y === currentYear;
+    }
+    return false;
   };
 
   // 1. Total Valor Recebido (Revenue)

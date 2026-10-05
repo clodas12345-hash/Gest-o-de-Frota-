@@ -34,35 +34,58 @@ export function ConfirmFinalizeContractModal({
   const [descontoCombustivel, setDescontoCombustivel] = useState<number>(0);
   const [descontoMultas, setDescontoMultas] = useState<number>(0);
   const [observacoesAcerto, setObservacoesAcerto] = useState<string>('');
-  const [calculatedDaysOpen, setCalculatedDaysOpen] = useState<number>(0);
+  const [earlyFineRatePct, setEarlyFineRatePct] = useState<number>(() => {
+    const saved = localStorage.getItem('fleet_early_return_fine_rate_default');
+    return saved ? Number(saved) : 20;
+  });
+  const [daysUsed, setDaysUsed] = useState<number>(0);
+  const [missingDays, setMissingDays] = useState<number>(0);
+  const [earlyFineAmount, setEarlyFineAmount] = useState<number>(0);
 
   useEffect(() => {
     if (isOpen && vehicle) {
       setCaucaoOriginal(vehicle.caucaoValor || 0);
       
       let calculatedPending = 0;
-      let daysOpen = 0;
+      let used = 0;
+      let faltantes = 0;
+      let fineAmt = 0;
+
       if (vehicle.startDate) {
         const start = new Date(vehicle.startDate + 'T12:00:00');
         const now = new Date();
-        const diffDays = Math.max(0, Math.floor((now.getTime() - start.getTime()) / (1000 * 60 * 60 * 24))) + 1;
+        used = Math.max(1, Math.floor((now.getTime() - start.getTime()) / (1000 * 60 * 60 * 24))) + 1;
         const weeklyRate = vehicle.valorSemanal || vehicle.valorRecebido || 0;
         const dailyRate = weeklyRate > 0 ? weeklyRate / 7 : 0;
-        const expectedTotal = diffDays * dailyRate;
 
-        const totalPaid = (vehicle.weeklyPayments || []).reduce((sum, p) => sum + (p.amount || 0), 0);
-        calculatedPending = Math.max(0, expectedTotal - totalPaid);
-        daysOpen = dailyRate > 0 ? Math.round(calculatedPending / dailyRate) : 0;
+        // Minimum contract duration = 30 days
+        if (used < 30) {
+          faltantes = 30 - used;
+          const valorDiasFaltantes = faltantes * dailyRate;
+          fineAmt = valorDiasFaltantes * (earlyFineRatePct / 100);
+          const valor30Dias = 30 * dailyRate;
+          const expectedTotal = valor30Dias + fineAmt;
+          const totalPaid = (vehicle.weeklyPayments || []).reduce((sum, p) => sum + (p.amount || 0), 0);
+          calculatedPending = Math.max(0, expectedTotal - totalPaid);
+        } else {
+          faltantes = 0;
+          fineAmt = 0;
+          const expectedTotal = used * dailyRate;
+          const totalPaid = (vehicle.weeklyPayments || []).reduce((sum, p) => sum + (p.amount || 0), 0);
+          calculatedPending = Math.max(0, expectedTotal - totalPaid);
+        }
       }
 
       setDescontoAluguelPendente(calculatedPending);
-      setCalculatedDaysOpen(daysOpen);
+      setDaysUsed(used);
+      setMissingDays(faltantes);
+      setEarlyFineAmount(fineAmt);
       setDescontoAvarias(0);
       setDescontoCombustivel(0);
       setDescontoMultas(0);
       setObservacoesAcerto('');
     }
-  }, [isOpen, vehicle]);
+  }, [isOpen, vehicle, earlyFineRatePct]);
 
   if (!isOpen || !vehicle) return null;
 
@@ -169,7 +192,7 @@ export function ConfirmFinalizeContractModal({
                   <span>(-) Aluguéis / Dias em Aberto</span>
                   {vehicle.startDate && (
                     <span className="text-[9px] text-amber-300 font-mono">
-                      (~{calculatedDaysOpen} dias em aberto)
+                      ({daysUsed} dias rodados{missingDays > 0 ? ` + ${missingDays}d faltantes` : ''})
                     </span>
                   )}
                 </label>
@@ -181,10 +204,40 @@ export function ConfirmFinalizeContractModal({
                 />
                 {vehicle.startDate && (
                   <p className="text-[9px] text-gray-400 mt-1 italic leading-tight">
-                    Calculado: Início em {new Date(vehicle.startDate + 'T12:00:00').toLocaleDateString('pt-BR')}, abatidos pagamentos.
+                    Calculado: Início {new Date(vehicle.startDate + 'T12:00:00').toLocaleDateString('pt-BR')} (mínimo 30 dias{missingDays > 0 ? ` + ${earlyFineRatePct}% multa` : ''}).
                   </p>
                 )}
               </div>
+
+              {missingDays > 0 && (
+                <div className="col-span-2 bg-amber-950/40 border border-amber-500/30 p-3 rounded-xl space-y-2">
+                  <div className="flex items-center justify-between text-[11px] font-bold text-amber-300">
+                    <span>⚠️ Devolução Antes de 30 Dias (Tempo Mínimo)</span>
+                    <span className="font-mono text-[10px]">{daysUsed}d rodados / {missingDays}d faltantes</span>
+                  </div>
+                  <p className="text-[10px] text-gray-300 leading-relaxed">
+                    O contrato exige tempo mínimo de 30 dias. É cobrado o período base de 30 dias mais a multa percentual sobre os {missingDays} dias não cumpridos.
+                  </p>
+                  <div className="flex items-center justify-between pt-1.5 border-t border-amber-500/20">
+                    <label className="text-[10px] font-semibold text-gray-300">Multa sobre dias faltantes (%):</label>
+                    <div className="flex items-center gap-1">
+                      <input
+                        type="number"
+                        min="0"
+                        max="100"
+                        value={earlyFineRatePct}
+                        onChange={(e) => {
+                          const val = Math.max(0, Number(e.target.value));
+                          setEarlyFineRatePct(val);
+                          localStorage.setItem('fleet_early_return_fine_rate_default', String(val));
+                        }}
+                        className="w-16 px-2 py-0.5 bg-black border border-amber-500/40 rounded text-amber-300 font-mono font-bold text-xs text-right"
+                      />
+                      <span className="text-amber-300 font-bold text-xs">%</span>
+                    </div>
+                  </div>
+                </div>
+              )}
 
               <div>
                 <label className="text-[10px] text-gray-400 block mb-1 font-semibold">
