@@ -570,25 +570,31 @@ Por favor, preencha as fotos e o checklist de entrega ao retirar o veículo.`;
     return null;
   };
 
-  const downloadPdfFile = (pdfDataUrl: string, fileName: string) => {
+  const downloadPdfFile = async (pdfDataUrl: string, fileName: string) => {
     if (!pdfDataUrl) return;
 
-    // Detect mobile / APK / Android WebView
-    const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
-
-    if (isMobile) {
+    // 1. Try Web Share API (native Android share sheet - saves to Drive, Files, WhatsApp, etc.)
+    if (navigator.share && navigator.canShare) {
       try {
-        const win = window.open(pdfDataUrl, '_blank');
-        if (!win) {
-          window.location.href = pdfDataUrl;
+        const blobUrl = getPdfBlobUrl(pdfDataUrl);
+        if (blobUrl) {
+          const response = await fetch(blobUrl);
+          const blob = await response.blob();
+          const file = new File([blob], fileName, { type: 'application/pdf' });
+          if (navigator.canShare({ files: [file] })) {
+            await navigator.share({
+              title: fileName,
+              files: [file]
+            });
+            return;
+          }
         }
-      } catch (e) {
-        window.location.href = pdfDataUrl;
+      } catch (err) {
+        console.warn('Web share failed:', err);
       }
-      return;
     }
 
-    // 1. Try Blob URL download (recommended for desktop Chrome & iframes)
+    // 2. Try Blob URL download
     const blobUrl = getPdfBlobUrl(pdfDataUrl);
     const targetUrl = blobUrl || pdfDataUrl;
 
@@ -608,21 +614,15 @@ Por favor, preencha as fotos e o checklist de entrega ao retirar o veículo.`;
         if (blobUrl) URL.revokeObjectURL(blobUrl);
       }, 3000);
     } catch (e) {
-      console.warn('Direct link download failed, fallback to window.open:', e);
-      window.open(targetUrl, '_blank');
+      console.warn('Direct link download failed, fallback to inline viewer:', e);
+      setShowInlinePdfPreview(true);
     }
   };
 
   const openPdfInNewTab = (pdfDataUrl: string) => {
     if (!pdfDataUrl) return;
-    try {
-      const win = window.open(pdfDataUrl, '_blank');
-      if (!win) {
-        window.location.href = pdfDataUrl;
-      }
-    } catch (e) {
-      window.location.href = pdfDataUrl;
-    }
+    // In mobile APK webview, open inline viewer on screen
+    setShowInlinePdfPreview(true);
   };
 
   const handlePrintPdf = () => {
