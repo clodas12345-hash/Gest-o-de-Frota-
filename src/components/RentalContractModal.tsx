@@ -573,7 +573,22 @@ Por favor, preencha as fotos e o checklist de entrega ao retirar o veículo.`;
   const downloadPdfFile = (pdfDataUrl: string, fileName: string) => {
     if (!pdfDataUrl) return;
 
-    // 1. Try Blob URL download (recommended for Android Chrome & iframes)
+    // Detect mobile / APK / Android WebView
+    const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
+
+    if (isMobile) {
+      try {
+        const win = window.open(pdfDataUrl, '_blank');
+        if (!win) {
+          window.location.href = pdfDataUrl;
+        }
+      } catch (e) {
+        window.location.href = pdfDataUrl;
+      }
+      return;
+    }
+
+    // 1. Try Blob URL download (recommended for desktop Chrome & iframes)
     const blobUrl = getPdfBlobUrl(pdfDataUrl);
     const targetUrl = blobUrl || pdfDataUrl;
 
@@ -600,19 +615,13 @@ Por favor, preencha as fotos e o checklist de entrega ao retirar o veículo.`;
 
   const openPdfInNewTab = (pdfDataUrl: string) => {
     if (!pdfDataUrl) return;
-    const blobUrl = getPdfBlobUrl(pdfDataUrl);
-    const target = blobUrl || pdfDataUrl;
-    const win = window.open(target, '_blank');
-    if (!win) {
-      // If popup blocker intervened, fallback to click
-      const a = document.createElement('a');
-      a.href = target;
-      a.target = '_blank';
-      a.rel = 'noopener noreferrer';
-      a.click();
-    }
-    if (blobUrl) {
-      setTimeout(() => URL.revokeObjectURL(blobUrl), 30000);
+    try {
+      const win = window.open(pdfDataUrl, '_blank');
+      if (!win) {
+        window.location.href = pdfDataUrl;
+      }
+    } catch (e) {
+      window.location.href = pdfDataUrl;
     }
   };
 
