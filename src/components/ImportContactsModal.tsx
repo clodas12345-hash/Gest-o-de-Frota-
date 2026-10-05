@@ -1,8 +1,8 @@
 import React, { useState, useRef } from 'react';
 import { X, Upload, FileText, Check, AlertCircle, Smartphone, ClipboardList, CheckSquare, Square, Trash2 } from 'lucide-react';
 import { AgendaContact } from '../types';
-import { Contacts } from '@capacitor-community/contacts';
-import { Capacitor } from '@capacitor/core';
+import { Capacitor, registerPlugin } from '@capacitor/core';
+const Contacts = registerPlugin<any>('Contacts');
 
 export const toTitleCase = (str: string): string => {
   if (!str) return '';

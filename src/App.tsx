@@ -9,9 +9,11 @@ import {
 } from './mockData';
 import { db } from './firebase';
 import { doc, getDoc, setDoc, onSnapshot } from 'firebase/firestore';
-import { Filesystem, Directory, Encoding } from '@capacitor/filesystem';
-import { Share } from '@capacitor/share';
-import { Capacitor } from '@capacitor/core';
+import { Capacitor, registerPlugin } from '@capacitor/core';
+const Filesystem = registerPlugin<any>('Filesystem');
+const Share = registerPlugin<any>('Share');
+const Directory = { Cache: 'CACHE', Documents: 'DOCUMENTS', Data: 'DATA' };
+const Encoding = { UTF8: 'utf8' };
 
 // Component Imports
 import { DashboardStats } from './components/DashboardStats';

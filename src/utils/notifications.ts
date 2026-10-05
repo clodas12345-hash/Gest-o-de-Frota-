@@ -1,5 +1,5 @@
 import { Capacitor, registerPlugin } from '@capacitor/core';
-import { LocalNotifications } from '@capacitor/local-notifications';
+const LocalNotifications = registerPlugin<any>('LocalNotifications');
 
 const CHANNEL_ID = 'fleet_notifications';
 const PREFS_STORAGE_KEY = 'fleet_notification_preferences';
