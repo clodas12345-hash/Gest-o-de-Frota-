@@ -4,7 +4,7 @@ import { generateRentalContractPDF, RentalContractData } from '../utils/pdfGener
 import { generateNextContractNumber } from '../utils/contractHelper';
 import { sendAppNotification } from '../utils/notifications';
 import { DriverVistoriaForm } from './DriverVistoriaForm';
-import { Capacitor } from '@capacitor/core';
+import { Capacitor, registerPlugin } from '@capacitor/core';
 import CurrencyInput from './CurrencyInput';
 import { 
   X, 
@@ -579,16 +579,14 @@ Por favor, preencha as fotos e o checklist de entrega ao retirar o veículo.`;
 
     if (Capacitor.isNativePlatform()) {
       try {
-        const [{ Filesystem, Directory }, { Share }] = await Promise.all([
-          import('@capacitor/filesystem'),
-          import('@capacitor/share')
-        ]);
+        const Filesystem = registerPlugin<any>('Filesystem');
+        const Share = registerPlugin<any>('Share');
 
         const base64Data = pdfDataUrl.includes('base64,') ? pdfDataUrl.split('base64,')[1] : pdfDataUrl;
         const writeResult = await Filesystem.writeFile({
           path: fileName,
           data: base64Data,
-          directory: Directory.Cache
+          directory: 'CACHE'
         });
 
         await Share.share({
