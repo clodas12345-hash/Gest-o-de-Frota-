@@ -1,5 +1,5 @@
 import { initializeApp } from 'firebase/app';
-import { getFirestore, initializeFirestore, persistentLocalCache, persistentMultipleTabManager } from 'firebase/firestore';
+import { getFirestore, initializeFirestore, persistentLocalCache, persistentMultipleTabManager, Firestore } from 'firebase/firestore';
 import config from '../firebase-applet-config.json';
 
 const firebaseConfig = {
@@ -14,8 +14,21 @@ const firebaseConfig = {
 
 export const app = initializeApp(firebaseConfig);
 
-export const db = config.firestoreDatabaseId && config.firestoreDatabaseId !== '(default)'
-  ? initializeFirestore(app, {
-      localCache: persistentLocalCache({ tabManager: persistentMultipleTabManager() })
-    }, config.firestoreDatabaseId)
-  : getFirestore(app);
+let firestoreInstance: Firestore;
+const dbId = config.firestoreDatabaseId && config.firestoreDatabaseId !== '(default)' ? config.firestoreDatabaseId : undefined;
+
+try {
+  firestoreInstance = initializeFirestore(app, {
+    localCache: persistentLocalCache({ tabManager: persistentMultipleTabManager() })
+  }, dbId);
+} catch (e) {
+  console.warn('Failed to initialize Firestore with persistent tab cache, falling back to default:', e);
+  try {
+    firestoreInstance = dbId ? getFirestore(app, dbId) : getFirestore(app);
+  } catch (err2) {
+    console.error('Failed to initialize Firestore instance fallback:', err2);
+    firestoreInstance = getFirestore(app);
+  }
+}
+
+export const db = firestoreInstance;

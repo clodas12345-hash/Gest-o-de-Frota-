@@ -652,113 +652,119 @@ export default function App() {
       isCloudLoadedRef.current = true;
       return; // Disconnected from cloud in preview (uses localStorage only)
     }
-    const docRef = doc(db, 'fleetData', 'main');
-    
-    getDoc(docRef).then((snap) => {
-      if (snap.exists()) {
-        const d = snap.data();
-        if (d.vehicles && Array.isArray(d.vehicles)) {
-          const loadedVehicles = ensureFuturePaymentsForVehicles(d.vehicles);
-          loadedVehicles.forEach((veh: Vehicle) => {
-            (veh.pendingReceipts || []).forEach((r) => knownReceiptIdsRef.current.add(r.id));
+    let unsubscribe: () => void = () => {};
+    try {
+      const docRef = doc(db, 'fleetData', 'main');
+      
+      getDoc(docRef).then((snap) => {
+        if (snap.exists()) {
+          const d = snap.data();
+          if (d.vehicles && Array.isArray(d.vehicles)) {
+            const loadedVehicles = ensureFuturePaymentsForVehicles(d.vehicles);
+            loadedVehicles.forEach((veh: Vehicle) => {
+              (veh.pendingReceipts || []).forEach((r) => knownReceiptIdsRef.current.add(r.id));
+            });
+            setVehicles(loadedVehicles);
+          }
+          if (d.contacts && Array.isArray(d.contacts)) setContacts(d.contacts);
+          if (d.fuelLogs && Array.isArray(d.fuelLogs)) setFuelLogs(d.fuelLogs);
+          if (d.maintenanceLogs && Array.isArray(d.maintenanceLogs)) setMaintenanceLogs(d.maintenanceLogs);
+          if (d.expenseLogs && Array.isArray(d.expenseLogs)) setExpenseLogs(d.expenseLogs);
+          if (d.vistorias && Array.isArray(d.vistorias)) {
+            d.vistorias.forEach((vist: Vistoria) => knownVistoriaIdsRef.current.add(vist.id));
+            setVistorias(d.vistorias);
+          }
+          if (d.finalizedContracts && Array.isArray(d.finalizedContracts)) setFinalizedContracts(d.finalizedContracts);
+        } else {
+          vistorias.forEach((vist) => knownVistoriaIdsRef.current.add(vist.id));
+          vehicles.forEach((veh) => (veh.pendingReceipts || []).forEach((r) => knownReceiptIdsRef.current.add(r.id)));
+          const initialPayload = sanitizeForCloud({
+            vehicles: cleanVehiclesForCloud(vehicles),
+            contacts,
+            fuelLogs,
+            maintenanceLogs,
+            expenseLogs,
+            vistorias,
+            finalizedContracts,
+            updatedAt: new Date().toISOString()
           });
-          setVehicles(loadedVehicles);
+          setDoc(docRef, initialPayload, { merge: true }).catch(err => console.warn('Error initializing fleetData in cloud:', err));
         }
-        if (d.contacts && Array.isArray(d.contacts)) setContacts(d.contacts);
-        if (d.fuelLogs && Array.isArray(d.fuelLogs)) setFuelLogs(d.fuelLogs);
-        if (d.maintenanceLogs && Array.isArray(d.maintenanceLogs)) setMaintenanceLogs(d.maintenanceLogs);
-        if (d.expenseLogs && Array.isArray(d.expenseLogs)) setExpenseLogs(d.expenseLogs);
-        if (d.vistorias && Array.isArray(d.vistorias)) {
-          d.vistorias.forEach((vist: Vistoria) => knownVistoriaIdsRef.current.add(vist.id));
-          setVistorias(d.vistorias);
-        }
-        if (d.finalizedContracts && Array.isArray(d.finalizedContracts)) setFinalizedContracts(d.finalizedContracts);
-      } else {
-        vistorias.forEach((vist) => knownVistoriaIdsRef.current.add(vist.id));
-        vehicles.forEach((veh) => (veh.pendingReceipts || []).forEach((r) => knownReceiptIdsRef.current.add(r.id)));
-        const initialPayload = sanitizeForCloud({
-          vehicles: cleanVehiclesForCloud(vehicles),
-          contacts,
-          fuelLogs,
-          maintenanceLogs,
-          expenseLogs,
-          vistorias,
-          finalizedContracts,
-          updatedAt: new Date().toISOString()
-        });
-        setDoc(docRef, initialPayload, { merge: true }).catch(err => console.warn('Error initializing fleetData in cloud:', err));
-      }
-      isCloudLoadedRef.current = true;
-    }).catch(err => {
-      console.warn('Error fetching fleetData from cloud:', err);
-      vistorias.forEach((vist) => knownVistoriaIdsRef.current.add(vist.id));
-      vehicles.forEach((veh) => (veh.pendingReceipts || []).forEach((r) => knownReceiptIdsRef.current.add(r.id)));
-      isCloudLoadedRef.current = true;
-    });
+        isCloudLoadedRef.current = true;
+      }).catch(err => {
+        console.warn('Error fetching fleetData from cloud:', err);
+        isCloudLoadedRef.current = true;
+      });
 
-    const unsubscribe = onSnapshot(docRef, (snap) => {
-      if (snap.exists() && isCloudLoadedRef.current) {
-        const d = snap.data();
-        isRemoteUpdateRef.current = true;
+      unsubscribe = onSnapshot(docRef, (snap) => {
+        if (snap.exists() && isCloudLoadedRef.current) {
+          const d = snap.data();
+          isRemoteUpdateRef.current = true;
 
-        const incomingVehicles: Vehicle[] = (d.vehicles && Array.isArray(d.vehicles))
-          ? ensureFuturePaymentsForVehicles(d.vehicles)
-          : [];
+          const incomingVehicles: Vehicle[] = (d.vehicles && Array.isArray(d.vehicles))
+            ? ensureFuturePaymentsForVehicles(d.vehicles)
+            : [];
 
-        // Check for newly arrived vistorias from driver links
-        if (d.vistorias && Array.isArray(d.vistorias)) {
-          const incomingVistorias: Vistoria[] = d.vistorias;
-          incomingVistorias.forEach((vist) => {
-            if (!knownVistoriaIdsRef.current.has(vist.id)) {
-              knownVistoriaIdsRef.current.add(vist.id);
-              const cleanPlate = (vist.vehiclePlate || '').replace(/[^A-Z0-9]/gi, '').toUpperCase();
-              const matchedVeh = incomingVehicles.find(
-                (v) =>
-                  v.id === vist.vehicleId ||
-                  (cleanPlate && v.plate.replace(/[^A-Z0-9]/gi, '').toUpperCase() === cleanPlate)
-              );
-              const vehTitle = matchedVeh
-                ? `${matchedVeh.brand} ${matchedVeh.model} (${matchedVeh.plate})`
-                : (vist.vehiclePlate || 'Veículo');
-              const photosCount = vist.photos?.length || 0;
+          if (d.vistorias && Array.isArray(d.vistorias)) {
+            const incomingVistorias: Vistoria[] = d.vistorias;
+            incomingVistorias.forEach((vist) => {
+              if (!knownVistoriaIdsRef.current.has(vist.id)) {
+                knownVistoriaIdsRef.current.add(vist.id);
+                const cleanPlate = (vist.vehiclePlate || '').replace(/[^A-Z0-9]/gi, '').toUpperCase();
+                const matchedVeh = incomingVehicles.find(
+                  (v) =>
+                    v.id === vist.vehicleId ||
+                    (cleanPlate && v.plate.replace(/[^A-Z0-9]/gi, '').toUpperCase() === cleanPlate)
+                );
+                const vehTitle = matchedVeh
+                  ? `${matchedVeh.brand} ${matchedVeh.model} (${matchedVeh.plate})`
+                  : (vist.vehiclePlate || 'Veículo');
+                const photosCount = vist.photos?.length || 0;
 
-              sendAppNotification(`📋 Nova Vistoria Recebida: ${vehTitle}`, {
-                body: `O motorista enviou a vistoria (${vist.type || 'Periódica'}) com ${photosCount} foto(s)${vist.km ? ` e odômetro em ${vist.km.toLocaleString('pt-BR')} KM` : ''}.`,
-                eventKey: 'vistoria_completed',
-              });
-            }
-          });
-          setVistorias(incomingVistorias);
-        }
-
-        // Check for newly arrived payment receipts from driver links
-        if (incomingVehicles.length > 0) {
-          incomingVehicles.forEach((veh) => {
-            (veh.pendingReceipts || []).forEach((rec) => {
-              if (!knownReceiptIdsRef.current.has(rec.id)) {
-                knownReceiptIdsRef.current.add(rec.id);
-                sendAppNotification(`🧾 Novo Comprovante Recebido: ${veh.brand} (${veh.plate})`, {
-                  body: `O motorista ${rec.driverName || veh.driver || ''} enviou um comprovante de R$ ${(rec.amount || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })} para aprovação.`,
-                  eventKey: 'receipt_received',
+                sendAppNotification(`📋 Nova Vistoria Recebida: ${vehTitle}`, {
+                  body: `O motorista enviou a vistoria (${vist.type || 'Periódica'}) com ${photosCount} foto(s)${vist.km ? ` e odômetro em ${vist.km.toLocaleString('pt-BR')} KM` : ''}.`,
+                  eventKey: 'vistoria_completed',
                 });
               }
             });
-          });
-          setVehicles(incomingVehicles);
+            setVistorias(incomingVistorias);
+          }
+
+          if (incomingVehicles.length > 0) {
+            incomingVehicles.forEach((veh) => {
+              (veh.pendingReceipts || []).forEach((rec) => {
+                if (!knownReceiptIdsRef.current.has(rec.id)) {
+                  knownReceiptIdsRef.current.add(rec.id);
+                  sendAppNotification(`🧾 Novo Comprovante Recebido: ${veh.brand} (${veh.plate})`, {
+                    body: `O motorista ${rec.driverName || veh.driver || ''} enviou um comprovante de R$ ${(rec.amount || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })} para aprovação.`,
+                    eventKey: 'receipt_received',
+                  });
+                }
+              });
+            });
+            setVehicles(incomingVehicles);
+          }
+
+          if (d.contacts && Array.isArray(d.contacts)) setContacts(d.contacts);
+          if (d.fuelLogs && Array.isArray(d.fuelLogs)) setFuelLogs(d.fuelLogs);
+          if (d.maintenanceLogs && Array.isArray(d.maintenanceLogs)) setMaintenanceLogs(d.maintenanceLogs);
+          if (d.expenseLogs && Array.isArray(d.expenseLogs)) setExpenseLogs(d.expenseLogs);
+          if (d.finalizedContracts && Array.isArray(d.finalizedContracts)) setFinalizedContracts(d.finalizedContracts);
+          setTimeout(() => {
+            isRemoteUpdateRef.current = false;
+          }, 150);
         }
+      }, (err) => {
+        console.warn('Firestore snapshot error:', err);
+      });
+    } catch (err) {
+      console.warn('Error setting up Firestore listener:', err);
+      isCloudLoadedRef.current = true;
+    }
 
-        if (d.contacts && Array.isArray(d.contacts)) setContacts(d.contacts);
-        if (d.fuelLogs && Array.isArray(d.fuelLogs)) setFuelLogs(d.fuelLogs);
-        if (d.maintenanceLogs && Array.isArray(d.maintenanceLogs)) setMaintenanceLogs(d.maintenanceLogs);
-        if (d.expenseLogs && Array.isArray(d.expenseLogs)) setExpenseLogs(d.expenseLogs);
-        if (d.finalizedContracts && Array.isArray(d.finalizedContracts)) setFinalizedContracts(d.finalizedContracts);
-        setTimeout(() => {
-          isRemoteUpdateRef.current = false;
-        }, 150);
-      }
-    });
-
-    return () => unsubscribe();
+    return () => {
+      try { unsubscribe(); } catch (e) {}
+    };
   }, []);
 
   useEffect(() => {
