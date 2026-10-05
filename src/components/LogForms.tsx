@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Vehicle, FuelLog, MaintenanceLog, ExpenseLog, AgendaContact, SinistroLog, TireState } from '../types';
-import { X, Save, AlertCircle, Users, BookOpen, Sparkles, Mic, MicOff, Calculator, Plus, Trash2, User, Phone, Search, Smartphone, Check, Upload, ExternalLink, AlertTriangle, Car, Calendar, Camera, Shield, Bell, Paperclip, Eye, FileText, Building2 } from 'lucide-react';
+import { Vehicle, VehicleDocument, FuelLog, MaintenanceLog, ExpenseLog, AgendaContact, SinistroLog, TireState } from '../types';
+import { X, Save, AlertCircle, Users, BookOpen, Sparkles, Mic, MicOff, Calculator, Plus, Trash2, User, Phone, Search, Smartphone, Check, Upload, ExternalLink, AlertTriangle, Car, Calendar, Camera, Shield, Bell, Paperclip, Eye, FileText, Building2, FilePlus, Layers, FileCheck, Loader2 } from 'lucide-react';
 import { Contacts } from '@capacitor-community/contacts';
 import { Capacitor } from '@capacitor/core';
 import { generateNextContractNumber } from '../utils/contractHelper';
@@ -50,6 +50,87 @@ const formatDateBR = (dateStr?: string): string => {
     return `${parts[2]}/${parts[1]}/${parts[0]}`;
   }
   return dateStr;
+};
+
+const processUploadedFileAsync = (file: File, defaultCategory: string = 'Documentos'): Promise<VehicleDocument> => {
+  return new Promise((resolve) => {
+    const sizeInMb = (file.size / (1024 * 1024)).toFixed(2);
+    const sizeStr = Number(sizeInMb) < 0.1 
+      ? `${(file.size / 1024).toFixed(0)} KB` 
+      : `${sizeInMb} MB`;
+    const todayStr = getTodayStr();
+    const isImage = file.type.startsWith('image/');
+    const isPdf = file.type.includes('pdf') || file.name.toLowerCase().endsWith('.pdf');
+
+    if (isImage) {
+      const reader = new FileReader();
+      reader.onload = (ev) => {
+        const img = new Image();
+        img.onload = () => {
+          const canvas = document.createElement('canvas');
+          let w = img.width;
+          let h = img.height;
+          const maxD = 900;
+          if (w > maxD || h > maxD) {
+            if (w > h) { h = Math.round((h * maxD) / w); w = maxD; }
+            else { w = Math.round((w * maxD) / h); h = maxD; }
+          }
+          canvas.width = w;
+          canvas.height = h;
+          const ctx = canvas.getContext('2d');
+          if (ctx) {
+            ctx.drawImage(img, 0, 0, w, h);
+            resolve({
+              id: `doc-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
+              name: file.name,
+              category: defaultCategory,
+              uploadDate: todayStr,
+              fileSize: sizeStr,
+              fileType: 'image',
+              contentUrl: canvas.toDataURL('image/jpeg', 0.7)
+            });
+          } else {
+            resolve({
+              id: `doc-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
+              name: file.name,
+              category: defaultCategory,
+              uploadDate: todayStr,
+              fileSize: sizeStr,
+              fileType: 'image',
+              contentUrl: ev.target?.result as string
+            });
+          }
+        };
+        img.onerror = () => {
+          resolve({
+            id: `doc-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
+            name: file.name,
+            category: defaultCategory,
+            uploadDate: todayStr,
+            fileSize: sizeStr,
+            fileType: 'image',
+            contentUrl: ev.target?.result as string
+          });
+        };
+        img.src = ev.target?.result as string;
+      };
+      reader.readAsDataURL(file);
+    } else {
+      const reader = new FileReader();
+      reader.onload = (ev) => {
+        resolve({
+          id: `doc-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
+          name: file.name,
+          category: defaultCategory,
+          uploadDate: todayStr,
+          fileSize: sizeStr,
+          fileType: isPdf ? 'pdf' : 'other',
+          contentUrl: ev.target?.result as string
+        });
+      };
+      reader.readAsDataURL(file);
+    }
+  });
 };
 
 interface LogFormsProps {
@@ -125,6 +206,10 @@ export function LogForms({
   const [driverAddressFileName, setDriverAddressFileName] = useState('');
   const cnhFileInputRef = useRef<HTMLInputElement>(null);
   const addressFileInputRef = useRef<HTMLInputElement>(null);
+  const extraDocsFileInputRef = useRef<HTMLInputElement>(null);
+  const [attachedDocs, setAttachedDocs] = useState<VehicleDocument[]>([]);
+  const [isProcessingDocs, setIsProcessingDocs] = useState(false);
+  const [previewModalDoc, setPreviewModalDoc] = useState<VehicleDocument | null>(null);
   const [tires, setTires] = useState<TireState[]>([]);
   const [caucaoValor, setCaucaoValor] = useState(0);
   const [caucaoData, setCaucaoData] = useState('');
@@ -438,6 +523,7 @@ export function LogForms({
     setFuelLevel(8);
     setDriver('');
     setDriverPhone('');
+    setAttachedDocs([]);
     setCaucaoValor(1500);
     setCaucaoData(new Date().toISOString().split('T')[0]);
     setCaucaoObservacoes('');
@@ -623,6 +709,7 @@ export function LogForms({
         setDriverCnhFileName(vehicleToEdit.driverCnhPhotoUrl ? 'CNH Anexada' : '');
         setDriverAddressProofUrl(vehicleToEdit.driverAddressProofUrl || '');
         setDriverAddressFileName(vehicleToEdit.driverAddressProofUrl ? 'Comprovante de Endereço Anexado' : '');
+        setAttachedDocs(vehicleToEdit.documents || []);
         setTires(vehicleToEdit.tires || []);
         setCustoExtra(vehicleToEdit.custoExtra || 0);
         setCustoExtraLabel(vehicleToEdit.custoExtraLabel || 'Outras Despesas');
@@ -666,6 +753,7 @@ export function LogForms({
             setDriverCnhFileName(draft.driverCnhPhotoUrl ? 'CNH Anexada' : '');
             setDriverAddressProofUrl(draft.driverAddressProofUrl ?? '');
             setDriverAddressFileName(draft.driverAddressProofUrl ? 'Comprovante de Endereço Anexado' : '');
+            setAttachedDocs([]);
             setTires(draft.tires ?? []);
             setCaucaoValor(draft.caucaoValor ?? 1500);
             setCaucaoData(draft.caucaoData ?? new Date().toISOString().split('T')[0]);
@@ -1045,9 +1133,9 @@ export function LogForms({
         tires: tires || [],
         extraExpenses,
         documents: (() => {
-          const baseDocs = [...(vehicleToEdit?.documents || [])];
+          const baseDocs = [...attachedDocs];
           const todayStr = getTodayStr();
-          if (driverCnhPhotoUrl && driverCnhPhotoUrl !== vehicleToEdit?.driverCnhPhotoUrl) {
+          if (driverCnhPhotoUrl && !baseDocs.some(d => d.contentUrl === driverCnhPhotoUrl)) {
             baseDocs.unshift({
               id: `doc-cnh-${Date.now()}`,
               name: driverCnhFileName || `CNH - ${driver || plate.toUpperCase()}`,
@@ -1058,7 +1146,7 @@ export function LogForms({
               contentUrl: driverCnhPhotoUrl
             });
           }
-          if (driverAddressProofUrl && driverAddressProofUrl !== vehicleToEdit?.driverAddressProofUrl) {
+          if (driverAddressProofUrl && !baseDocs.some(d => d.contentUrl === driverAddressProofUrl)) {
             baseDocs.unshift({
               id: `doc-end-${Date.now() + 1}`,
               name: driverAddressFileName || `Comprovante de Endereço - ${driver || plate.toUpperCase()}`,
@@ -2009,172 +2097,316 @@ export function LogForms({
                     />
                   </div>
 
-                  {/* Upload de Foto / PDF da CNH e Comprovante de Endereço */}
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                    {/* Upload CNH */}
-                    <div className="space-y-1.5">
-                      <label className="font-semibold text-gray-400 text-xs flex items-center gap-1.5">
-                        <Camera className="w-3.5 h-3.5 text-blue-400" /> Foto / Arquivo da CNH
-                      </label>
-                      <input
-                        ref={cnhFileInputRef}
-                        type="file"
-                        accept="image/*,application/pdf"
-                        className="hidden"
-                        onChange={(e) => {
-                          const file = e.target.files?.[0];
-                          if (!file) return;
-                          setDriverCnhFileName(file.name);
-                          if (file.type.startsWith('image/')) {
-                            const reader = new FileReader();
-                            reader.onload = (ev) => {
-                              const img = new Image();
-                              img.onload = () => {
-                                const canvas = document.createElement('canvas');
-                                let w = img.width;
-                                let h = img.height;
-                                const maxD = 900;
-                                if (w > maxD || h > maxD) {
-                                  if (w > h) { h = Math.round((h * maxD) / w); w = maxD; }
-                                  else { w = Math.round((w * maxD) / h); h = maxD; }
-                                }
-                                canvas.width = w;
-                                canvas.height = h;
-                                const ctx = canvas.getContext('2d');
-                                if (ctx) {
-                                  ctx.drawImage(img, 0, 0, w, h);
-                                  setDriverCnhPhotoUrl(canvas.toDataURL('image/jpeg', 0.7));
-                                }
+                  {/* Upload de Foto / PDF da CNH, Comprovante de Endereço e Múltiplos Documentos */}
+                  <div className="space-y-3">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                      {/* Upload CNH */}
+                      <div className="space-y-1.5">
+                        <label className="font-semibold text-gray-400 text-xs flex items-center gap-1.5">
+                          <Camera className="w-3.5 h-3.5 text-blue-400" /> Foto / Arquivo da CNH
+                        </label>
+                        <input
+                          ref={cnhFileInputRef}
+                          type="file"
+                          multiple
+                          accept="image/*,application/pdf"
+                          className="hidden"
+                          onChange={async (e) => {
+                            const files = Array.from(e.target.files || []);
+                            if (files.length === 0) return;
+                            const firstFile = files[0];
+                            setDriverCnhFileName(firstFile.name);
+                            if (firstFile.type.startsWith('image/')) {
+                              const reader = new FileReader();
+                              reader.onload = (ev) => {
+                                const img = new Image();
+                                img.onload = () => {
+                                  const canvas = document.createElement('canvas');
+                                  let w = img.width;
+                                  let h = img.height;
+                                  const maxD = 900;
+                                  if (w > maxD || h > maxD) {
+                                    if (w > h) { h = Math.round((h * maxD) / w); w = maxD; }
+                                    else { w = Math.round((w * maxD) / h); h = maxD; }
+                                  }
+                                  canvas.width = w;
+                                  canvas.height = h;
+                                  const ctx = canvas.getContext('2d');
+                                  if (ctx) {
+                                    ctx.drawImage(img, 0, 0, w, h);
+                                    setDriverCnhPhotoUrl(canvas.toDataURL('image/jpeg', 0.7));
+                                  }
+                                };
+                                img.src = ev.target?.result as string;
                               };
-                              img.src = ev.target?.result as string;
-                            };
-                            reader.readAsDataURL(file);
-                          } else {
-                            const reader = new FileReader();
-                            reader.onload = (ev) => {
-                              if (ev.target?.result) setDriverCnhPhotoUrl(ev.target.result as string);
-                            };
-                            reader.readAsDataURL(file);
-                          }
-                          e.target.value = '';
-                        }}
-                      />
-                      <div className="flex items-center gap-2">
-                        <button
-                          type="button"
-                          onClick={() => cnhFileInputRef.current?.click()}
-                          className={`flex-1 py-2.5 px-3 rounded-xl border text-xs font-bold flex items-center justify-center gap-2 transition-all cursor-pointer ${
-                            driverCnhPhotoUrl
-                              ? 'bg-emerald-500/15 border-emerald-500/40 text-emerald-300 hover:bg-emerald-500/25'
-                              : 'bg-blue-500/10 border-blue-500/30 text-blue-300 hover:bg-blue-500/20'
-                          }`}
-                        >
-                          <Upload className="w-4 h-4 shrink-0" />
-                          <span className="truncate">
-                            {driverCnhPhotoUrl ? (driverCnhFileName || 'Alterar CNH') : 'Enviar Foto / PDF da CNH'}
-                          </span>
-                        </button>
-                        {driverCnhPhotoUrl && (
+                              reader.readAsDataURL(firstFile);
+                            } else {
+                              const reader = new FileReader();
+                              reader.onload = (ev) => {
+                                if (ev.target?.result) setDriverCnhPhotoUrl(ev.target.result as string);
+                              };
+                              reader.readAsDataURL(firstFile);
+                            }
+
+                            // If user selected multiple files, process remaining files as extra attached documents
+                            if (files.length > 1) {
+                              setIsProcessingDocs(true);
+                              const extraFiles = files.slice(1);
+                              const processedList = await Promise.all(
+                                extraFiles.map((f) => processUploadedFileAsync(f, 'CNH / Motorista'))
+                              );
+                              setAttachedDocs((prev) => [...processedList, ...prev]);
+                              setIsProcessingDocs(false);
+                            }
+                            e.target.value = '';
+                          }}
+                        />
+                        <div className="flex items-center gap-2">
                           <button
                             type="button"
-                            onClick={() => {
-                              setDriverCnhPhotoUrl('');
-                              setDriverCnhFileName('');
-                            }}
-                            className="p-2.5 bg-rose-500/15 hover:bg-rose-500/25 text-rose-400 border border-rose-500/30 rounded-xl transition-colors cursor-pointer shrink-0"
-                            title="Remover arquivo da CNH"
+                            onClick={() => cnhFileInputRef.current?.click()}
+                            className={`flex-1 py-2.5 px-3 rounded-xl border text-xs font-bold flex items-center justify-center gap-2 transition-all cursor-pointer ${
+                              driverCnhPhotoUrl
+                                ? 'bg-emerald-500/15 border-emerald-500/40 text-emerald-300 hover:bg-emerald-500/25'
+                                : 'bg-blue-500/10 border-blue-500/30 text-blue-300 hover:bg-blue-500/20'
+                            }`}
                           >
-                            <Trash2 className="w-4 h-4" />
+                            <Upload className="w-4 h-4 shrink-0" />
+                            <span className="truncate">
+                              {driverCnhPhotoUrl ? (driverCnhFileName || 'Alterar CNH') : 'Enviar Foto / PDF da CNH'}
+                            </span>
                           </button>
+                          {driverCnhPhotoUrl && (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setDriverCnhPhotoUrl('');
+                                setDriverCnhFileName('');
+                              }}
+                              className="p-2.5 bg-rose-500/15 hover:bg-rose-500/25 text-rose-400 border border-rose-500/30 rounded-xl transition-colors cursor-pointer shrink-0"
+                              title="Remover arquivo da CNH"
+                            >
+                              <Trash2 className="w-4 h-4" />
+                            </button>
+                          )}
+                        </div>
+                        {driverCnhPhotoUrl && driverCnhPhotoUrl.startsWith('data:image') && (
+                          <div className="mt-1 rounded-xl overflow-hidden border border-emerald-500/30 h-20 bg-black/40 flex items-center justify-center">
+                            <img src={driverCnhPhotoUrl} alt="CNH Preview" className="h-full w-full object-cover" />
+                          </div>
                         )}
                       </div>
-                      {driverCnhPhotoUrl && driverCnhPhotoUrl.startsWith('data:image') && (
-                        <div className="mt-1 rounded-xl overflow-hidden border border-emerald-500/30 h-20 bg-black/40 flex items-center justify-center">
-                          <img src={driverCnhPhotoUrl} alt="CNH Preview" className="h-full w-full object-cover" />
+
+                      {/* Upload Comprovante de Endereço */}
+                      <div className="space-y-1.5">
+                        <label className="font-semibold text-gray-400 text-xs flex items-center gap-1.5">
+                          <Upload className="w-3.5 h-3.5 text-emerald-400" /> Comprovante de Endereço
+                        </label>
+                        <input
+                          ref={addressFileInputRef}
+                          type="file"
+                          multiple
+                          accept="image/*,application/pdf"
+                          className="hidden"
+                          onChange={async (e) => {
+                            const files = Array.from(e.target.files || []);
+                            if (files.length === 0) return;
+                            const firstFile = files[0];
+                            setDriverAddressFileName(firstFile.name);
+                            if (firstFile.type.startsWith('image/')) {
+                              const reader = new FileReader();
+                              reader.onload = (ev) => {
+                                const img = new Image();
+                                img.onload = () => {
+                                  const canvas = document.createElement('canvas');
+                                  let w = img.width;
+                                  let h = img.height;
+                                  const maxD = 900;
+                                  if (w > maxD || h > maxD) {
+                                    if (w > h) { h = Math.round((h * maxD) / w); w = maxD; }
+                                    else { w = Math.round((w * maxD) / h); h = maxD; }
+                                  }
+                                  canvas.width = w;
+                                  canvas.height = h;
+                                  const ctx = canvas.getContext('2d');
+                                  if (ctx) {
+                                    ctx.drawImage(img, 0, 0, w, h);
+                                    setDriverAddressProofUrl(canvas.toDataURL('image/jpeg', 0.7));
+                                  }
+                                };
+                                img.src = ev.target?.result as string;
+                              };
+                              reader.readAsDataURL(firstFile);
+                            } else {
+                              const reader = new FileReader();
+                              reader.onload = (ev) => {
+                                if (ev.target?.result) setDriverAddressProofUrl(ev.target.result as string);
+                              };
+                              reader.readAsDataURL(firstFile);
+                            }
+
+                            // If user selected multiple files, process remaining files as extra attached documents
+                            if (files.length > 1) {
+                              setIsProcessingDocs(true);
+                              const extraFiles = files.slice(1);
+                              const processedList = await Promise.all(
+                                extraFiles.map((f) => processUploadedFileAsync(f, 'Comprovante de Endereço'))
+                              );
+                              setAttachedDocs((prev) => [...processedList, ...prev]);
+                              setIsProcessingDocs(false);
+                            }
+                            e.target.value = '';
+                          }}
+                        />
+                        <div className="flex items-center gap-2">
+                          <button
+                            type="button"
+                            onClick={() => addressFileInputRef.current?.click()}
+                            className={`flex-1 py-2.5 px-3 rounded-xl border text-xs font-bold flex items-center justify-center gap-2 transition-all cursor-pointer ${
+                              driverAddressProofUrl
+                                ? 'bg-emerald-500/15 border-emerald-500/40 text-emerald-300 hover:bg-emerald-500/25'
+                                : 'bg-emerald-500/10 border-emerald-500/30 text-emerald-300 hover:bg-emerald-500/20'
+                            }`}
+                          >
+                            <Upload className="w-4 h-4 shrink-0" />
+                            <span className="truncate">
+                              {driverAddressProofUrl ? (driverAddressFileName || 'Alterar Endereço') : 'Enviar Comprov. Endereço'}
+                            </span>
+                          </button>
+                          {driverAddressProofUrl && (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setDriverAddressProofUrl('');
+                                setDriverAddressFileName('');
+                              }}
+                              className="p-2.5 bg-rose-500/15 hover:bg-rose-500/25 text-rose-400 border border-rose-500/30 rounded-xl transition-colors cursor-pointer shrink-0"
+                              title="Remover comprovante de endereço"
+                            >
+                              <Trash2 className="w-4 h-4" />
+                            </button>
+                          )}
                         </div>
-                      )}
+                        {driverAddressProofUrl && driverAddressProofUrl.startsWith('data:image') && (
+                          <div className="mt-1 rounded-xl overflow-hidden border border-emerald-500/30 h-20 bg-black/40 flex items-center justify-center">
+                            <img src={driverAddressProofUrl} alt="Comprovante de Endereço Preview" className="h-full w-full object-cover" />
+                          </div>
+                        )}
+                      </div>
                     </div>
 
-                    {/* Upload Comprovante de Endereço */}
-                    <div className="space-y-1.5">
-                      <label className="font-semibold text-gray-400 text-xs flex items-center gap-1.5">
-                        <Upload className="w-3.5 h-3.5 text-emerald-400" /> Comprovante de Endereço
-                      </label>
+                    {/* Múltiplos Documentos Extras (CRLV, Contratos, Antecedentes, Comprovantes, etc.) */}
+                    <div className="pt-2 border-t border-white/10 space-y-2">
+                      <div className="flex items-center justify-between">
+                        <label className="font-semibold text-gray-300 text-xs flex items-center gap-1.5">
+                          <Layers className="w-3.5 h-3.5 text-blue-400" /> Outros Documentos & Arquivos ({attachedDocs.length})
+                        </label>
+                        <span className="text-[10px] text-gray-400">CRLV, Contratos, RG, Antecedentes, etc.</span>
+                      </div>
+
                       <input
-                        ref={addressFileInputRef}
+                        ref={extraDocsFileInputRef}
                         type="file"
-                        accept="image/*,application/pdf"
+                        multiple
+                        accept="image/*,application/pdf,.doc,.docx"
                         className="hidden"
-                        onChange={(e) => {
-                          const file = e.target.files?.[0];
-                          if (!file) return;
-                          setDriverAddressFileName(file.name);
-                          if (file.type.startsWith('image/')) {
-                            const reader = new FileReader();
-                            reader.onload = (ev) => {
-                              const img = new Image();
-                              img.onload = () => {
-                                const canvas = document.createElement('canvas');
-                                let w = img.width;
-                                let h = img.height;
-                                const maxD = 900;
-                                if (w > maxD || h > maxD) {
-                                  if (w > h) { h = Math.round((h * maxD) / w); w = maxD; }
-                                  else { w = Math.round((w * maxD) / h); h = maxD; }
-                                }
-                                canvas.width = w;
-                                canvas.height = h;
-                                const ctx = canvas.getContext('2d');
-                                if (ctx) {
-                                  ctx.drawImage(img, 0, 0, w, h);
-                                  setDriverAddressProofUrl(canvas.toDataURL('image/jpeg', 0.7));
-                                }
-                              };
-                              img.src = ev.target?.result as string;
-                            };
-                            reader.readAsDataURL(file);
-                          } else {
-                            const reader = new FileReader();
-                            reader.onload = (ev) => {
-                              if (ev.target?.result) setDriverAddressProofUrl(ev.target.result as string);
-                            };
-                            reader.readAsDataURL(file);
+                        onChange={async (e) => {
+                          const files = Array.from(e.target.files || []);
+                          if (files.length === 0) return;
+                          setIsProcessingDocs(true);
+                          try {
+                            const newDocs = await Promise.all(
+                              files.map((file) => processUploadedFileAsync(file, 'Documento Extra'))
+                            );
+                            setAttachedDocs((prev) => [...newDocs, ...prev]);
+                          } catch (err) {
+                            console.error('Erro ao processar documentos:', err);
+                          } finally {
+                            setIsProcessingDocs(false);
+                            e.target.value = '';
                           }
-                          e.target.value = '';
                         }}
                       />
-                      <div className="flex items-center gap-2">
-                        <button
-                          type="button"
-                          onClick={() => addressFileInputRef.current?.click()}
-                          className={`flex-1 py-2.5 px-3 rounded-xl border text-xs font-bold flex items-center justify-center gap-2 transition-all cursor-pointer ${
-                            driverAddressProofUrl
-                              ? 'bg-emerald-500/15 border-emerald-500/40 text-emerald-300 hover:bg-emerald-500/25'
-                              : 'bg-emerald-500/10 border-emerald-500/30 text-emerald-300 hover:bg-emerald-500/20'
-                          }`}
-                        >
-                          <Upload className="w-4 h-4 shrink-0" />
-                          <span className="truncate">
-                            {driverAddressProofUrl ? (driverAddressFileName || 'Alterar Endereço') : 'Enviar Comprov. Endereço'}
-                          </span>
-                        </button>
-                        {driverAddressProofUrl && (
-                          <button
-                            type="button"
-                            onClick={() => {
-                              setDriverAddressProofUrl('');
-                              setDriverAddressFileName('');
-                            }}
-                            className="p-2.5 bg-rose-500/15 hover:bg-rose-500/25 text-rose-400 border border-rose-500/30 rounded-xl transition-colors cursor-pointer shrink-0"
-                            title="Remover comprovante de endereço"
-                          >
-                            <Trash2 className="w-4 h-4" />
-                          </button>
+
+                      <button
+                        type="button"
+                        onClick={() => extraDocsFileInputRef.current?.click()}
+                        disabled={isProcessingDocs}
+                        className="w-full py-2.5 px-3 rounded-xl border border-dashed border-blue-500/40 bg-blue-500/10 hover:bg-blue-500/20 text-blue-300 font-bold text-xs flex items-center justify-center gap-2 transition-all cursor-pointer"
+                      >
+                        {isProcessingDocs ? (
+                          <>
+                            <Loader2 className="w-4 h-4 animate-spin text-blue-400" />
+                            <span>Processando arquivos anexados...</span>
+                          </>
+                        ) : (
+                          <>
+                            <FilePlus className="w-4 h-4 text-blue-400" />
+                            <span>+ Anexar Mais Documentos (Permite Vários de uma vez)</span>
+                          </>
                         )}
-                      </div>
-                      {driverAddressProofUrl && driverAddressProofUrl.startsWith('data:image') && (
-                        <div className="mt-1 rounded-xl overflow-hidden border border-emerald-500/30 h-20 bg-black/40 flex items-center justify-center">
-                          <img src={driverAddressProofUrl} alt="Comprovante de Endereço Preview" className="h-full w-full object-cover" />
+                      </button>
+
+                      {/* Lista de Documentos Anexados */}
+                      {attachedDocs.length > 0 && (
+                        <div className="space-y-1.5 max-h-48 overflow-y-auto pr-1">
+                          {attachedDocs.map((docItem, idx) => (
+                            <div
+                              key={docItem.id || `doc-idx-${idx}`}
+                              className="p-2 bg-black/40 border border-white/10 hover:border-white/20 rounded-xl flex items-center justify-between gap-2 text-xs transition-all"
+                            >
+                              <div className="flex items-center gap-2 min-w-0 flex-1">
+                                {docItem.contentUrl && docItem.contentUrl.startsWith('data:image') ? (
+                                  <img
+                                    src={docItem.contentUrl}
+                                    alt={docItem.name}
+                                    className="w-8 h-8 rounded-lg object-cover border border-white/10 shrink-0 cursor-pointer"
+                                    onClick={() => setPreviewModalDoc(docItem)}
+                                  />
+                                ) : (
+                                  <div
+                                    className="w-8 h-8 rounded-lg bg-red-500/20 text-red-400 border border-red-500/30 flex items-center justify-center shrink-0 cursor-pointer"
+                                    onClick={() => setPreviewModalDoc(docItem)}
+                                  >
+                                    <FileText className="w-4 h-4" />
+                                  </div>
+                                )}
+                                <div className="min-w-0 flex-1">
+                                  <p className="text-white font-medium truncate text-[11px]">{docItem.name}</p>
+                                  <div className="flex items-center gap-1.5 text-[9px] text-gray-400">
+                                    <span className="px-1.5 py-0.2 bg-white/10 rounded-md font-mono text-gray-300">
+                                      {docItem.category || 'Geral'}
+                                    </span>
+                                    <span>•</span>
+                                    <span>{docItem.fileSize || 'Arquivo'}</span>
+                                  </div>
+                                </div>
+                              </div>
+
+                              <div className="flex items-center gap-1 shrink-0">
+                                {docItem.contentUrl && (
+                                  <button
+                                    type="button"
+                                    onClick={() => setPreviewModalDoc(docItem)}
+                                    className="p-1.5 text-gray-400 hover:text-white bg-white/5 hover:bg-white/10 rounded-lg transition-colors cursor-pointer"
+                                    title="Visualizar documento"
+                                  >
+                                    <Eye className="w-3.5 h-3.5" />
+                                  </button>
+                                )}
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setAttachedDocs((prev) => prev.filter((_, i) => i !== idx));
+                                  }}
+                                  className="p-1.5 text-rose-400 hover:text-rose-300 bg-rose-500/10 hover:bg-rose-500/20 rounded-lg transition-colors cursor-pointer"
+                                  title="Remover este documento"
+                                >
+                                  <Trash2 className="w-3.5 h-3.5" />
+                                </button>
+                              </div>
+                            </div>
+                          ))}
                         </div>
                       )}
                     </div>
@@ -3085,6 +3317,65 @@ export function LogForms({
                 className="px-4 py-1.5 bg-white/10 hover:bg-white/15 text-white rounded-xl text-xs font-semibold cursor-pointer"
               >
                 Cancelar
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Document Preview Submodal */}
+      {previewModalDoc && (
+        <div className="fixed inset-0 bg-black/85 backdrop-blur-xs z-[110] flex items-center justify-center p-3 animate-in fade-in duration-150">
+          <div className="bg-[#181818] border border-white/10 rounded-2xl max-w-lg w-full max-h-[90vh] flex flex-col overflow-hidden shadow-2xl">
+            <div className="p-3 border-b border-white/10 flex items-center justify-between bg-black/40">
+              <div className="min-w-0 flex-1 pr-2">
+                <h4 className="text-sm font-bold text-white truncate">{previewModalDoc.name}</h4>
+                <p className="text-[10px] text-gray-400">
+                  {previewModalDoc.category || 'Documento'} • {previewModalDoc.fileSize || 'Arquivo'}
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setPreviewModalDoc(null)}
+                className="p-1 hover:bg-white/10 rounded-lg text-gray-400 hover:text-white cursor-pointer"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            <div className="p-4 flex-1 overflow-auto flex items-center justify-center bg-black/60">
+              {previewModalDoc.contentUrl && previewModalDoc.contentUrl.startsWith('data:image') ? (
+                <img
+                  src={previewModalDoc.contentUrl}
+                  alt={previewModalDoc.name}
+                  className="max-h-[70vh] max-w-full object-contain rounded-xl border border-white/10"
+                />
+              ) : (
+                <div className="text-center p-6 space-y-3">
+                  <div className="w-16 h-16 rounded-2xl bg-red-500/20 text-red-400 border border-red-500/30 mx-auto flex items-center justify-center">
+                    <FileText className="w-8 h-8" />
+                  </div>
+                  <p className="text-xs text-white font-bold">{previewModalDoc.name}</p>
+                  <p className="text-[11px] text-gray-400">Arquivo PDF ou formato digital salvo e anexado com sucesso.</p>
+                  {previewModalDoc.contentUrl && (
+                    <a
+                      href={previewModalDoc.contentUrl}
+                      download={previewModalDoc.name}
+                      className="inline-flex items-center gap-1.5 px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded-xl text-xs font-bold transition-all shadow-md cursor-pointer"
+                    >
+                      <Upload className="w-3.5 h-3.5 rotate-180" />
+                      <span>Baixar Documento</span>
+                    </a>
+                  )}
+                </div>
+              )}
+            </div>
+            <div className="p-3 border-t border-white/10 bg-black/40 flex justify-end">
+              <button
+                type="button"
+                onClick={() => setPreviewModalDoc(null)}
+                className="px-4 py-1.5 bg-white/10 hover:bg-white/15 text-white rounded-xl text-xs font-semibold cursor-pointer"
+              >
+                Fechar
               </button>
             </div>
           </div>
