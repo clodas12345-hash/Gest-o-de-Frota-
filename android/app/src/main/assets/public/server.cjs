@@ -29,21 +29,76 @@ var import_genai = require("@google/genai");
 async function startServer() {
   const app = (0, import_express.default)();
   const PORT = 3e3;
-  app.use(import_express.default.json());
+  app.use(import_express.default.json({ limit: "25mb" }));
+  app.post("/api/ocr-image", async (req, res) => {
+    try {
+      const { imageBase64, mode } = req.body;
+      if (!process.env.GEMINI_API_KEY) {
+        return res.status(500).json({ error: "GEMINI_API_KEY is missing." });
+      }
+      if (!imageBase64) {
+        return res.status(400).json({ error: "Imagem n\xE3o fornecida." });
+      }
+      const ai = new import_genai.GoogleGenAI({
+        apiKey: process.env.GEMINI_API_KEY,
+        httpOptions: {
+          headers: {
+            "User-Agent": "aistudio-build"
+          }
+        }
+      });
+      const match = String(imageBase64).match(/^data:(image\/[a-zA-Z0-9+.-]+);base64,(.+)$/);
+      const mimeType = match ? match[1] : "image/jpeg";
+      const base64Data = match ? match[2] : String(imageBase64);
+      const promptText = mode === "odometer" ? `Analyze this vehicle dashboard/odometer photo and extract the total odometer mileage (KM) and fuel level (0 to 8 eighths, where 8 is full tank and 1 is reserve). Return ONLY raw JSON: { "km": number | null, "fuelEighths": number | null, "notes": string }` : `Analyze this payment receipt (Comprovante Pix / transfer\xEAncia) and extract the payment amount (in BRL number, e.g. 650.00), the payment date (in YYYY-MM-DD format), and payer/sender name if visible. Return ONLY raw JSON: { "amount": number | null, "date": string | null, "payerName": string | null, "summary": string }`;
+      const response = await ai.models.generateContent({
+        model: "gemini-3.8-flash",
+        contents: {
+          parts: [
+            {
+              inlineData: {
+                mimeType,
+                data: base64Data
+              }
+            },
+            { text: promptText }
+          ]
+        },
+        config: {
+          temperature: 0.1,
+          responseMimeType: "application/json"
+        }
+      });
+      let responseText = response.text || "{}";
+      responseText = responseText.replace(/```json/g, "").replace(/```/g, "").trim();
+      const extracted = JSON.parse(responseText);
+      res.json({ success: true, data: extracted });
+    } catch (error) {
+      console.error("AI OCR Error:", error);
+      res.status(500).json({ error: error.message || "Falha ao ler imagem com IA" });
+    }
+  });
   app.post("/api/fill-form", async (req, res) => {
     try {
       const { prompt, formType } = req.body;
       if (!process.env.GEMINI_API_KEY) {
         return res.status(500).json({ error: "GEMINI_API_KEY is missing." });
       }
-      const ai = new import_genai.GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
+      const ai = new import_genai.GoogleGenAI({
+        apiKey: process.env.GEMINI_API_KEY,
+        httpOptions: {
+          headers: {
+            "User-Agent": "aistudio-build"
+          }
+        }
+      });
       let schemaText = "";
       if (formType === "auto") {
         schemaText = `Determine the type of record the user wants to add, and extract the details. If the user mentions a car name, brand, model, or short identifier like 'GKD', 'Onix', 'Cronos', etc., or says 'cadastrar', 'novo carro', classify as type "vehicle" with brand or model set to that name. 
         JSON format: {
           "type": "vehicle" | "fuel" | "maintenance" | "trip" | "expense" | "unknown",
           "data": { 
-            // If vehicle: { brand?, model?, plate?, color?, rentalCompany?, startDate?, endDate?, initialKm?, contractNumber?, valorRecebido?, valorSemanal?, financiamento?, seguro?, ipva?, manutencaoPreventiva?, currentKm?, fuelLevel?, driver?, driverPhone?, caucaoValor?, caucaoData?, caucaoObservacoes?, nextVistoriaDate? }
+            // If vehicle: { brand?, model?, plate?, color?, rentalCompany?, startDate?, endDate?, initialKm?, contractNumber?, valorRecebido?, valorSemanal?, financiamento?, seguro?, ipva?, manutencaoPreventiva?, currentKm?, preventiveMaintNextKm?, fuelLevel?, driver?, driverPhone?, caucaoValor?, caucaoData?, caucaoObservacoes?, nextVistoriaDate? }
             // If fuel: { fuelDate?, fuelKm?, fuelLiters?, fuelPricePerLiter?, fuelTotalCost?, fuelType?, fuelStation? }
             // If maintenance: { maintDate?, maintType?, maintDescription?, maintCost?, maintShop?, maintNextKm? }
             // If trip: { tripDate?, tripDriver?, tripStartKm?, tripEndKm?, tripPurpose? }
@@ -51,7 +106,7 @@ async function startServer() {
           }
         }`;
       } else if (formType === "vehicle") {
-        schemaText = `Extract vehicle details. JSON format: { brand?: string, model?: string, plate?: string, color?: string, rentalCompany?: string, startDate?: string (YYYY-MM-DD), endDate?: string (YYYY-MM-DD), initialKm?: number, contractNumber?: string, valorRecebido?: number, valorSemanal?: number, financiamento?: number, seguro?: number, ipva?: number, manutencaoPreventiva?: number, currentKm?: number, fuelLevel?: number, driver?: string, driverPhone?: string, caucaoValor?: number, caucaoData?: string (YYYY-MM-DD), caucaoObservacoes?: string, nextVistoriaDate?: string (YYYY-MM-DD) }`;
+        schemaText = `Extract vehicle details. JSON format: { brand?: string, model?: string, plate?: string, color?: string, rentalCompany?: string, startDate?: string (YYYY-MM-DD), endDate?: string (YYYY-MM-DD), initialKm?: number, contractNumber?: string, valorRecebido?: number, valorSemanal?: number, financiamento?: number, seguro?: number, ipva?: number, manutencaoPreventiva?: number, currentKm?: number, preventiveMaintNextKm?: number, fuelLevel?: number, driver?: string, driverPhone?: string, caucaoValor?: number, caucaoData?: string (YYYY-MM-DD), caucaoObservacoes?: string, nextVistoriaDate?: string (YYYY-MM-DD) }`;
       } else if (formType === "fuel") {
         schemaText = `Extract fuel log details. JSON format: { fuelDate?: string (YYYY-MM-DD), fuelKm?: number, fuelLiters?: number, fuelPricePerLiter?: number, fuelTotalCost?: number, fuelType?: "Gasolina" | "Etanol" | "Diesel" | "Flex", fuelStation?: string }`;
       } else if (formType === "maintenance") {
@@ -67,7 +122,7 @@ async function startServer() {
       
 Schema requirement: ${schemaText}`;
       const response = await ai.models.generateContent({
-        model: "gemini-2.5-flash",
+        model: "gemini-3.8-flash",
         contents: prompt,
         config: {
           systemInstruction: systemPrompt,

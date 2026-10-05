@@ -586,25 +586,13 @@ Por favor, preencha as fotos e o checklist de entrega ao retirar o veículo.`;
       const a = document.createElement('a');
       a.href = targetUrl;
       a.download = fileName;
-      a.target = '_blank';
       document.body.appendChild(a);
       a.click();
       setTimeout(() => {
         if (document.body.contains(a)) document.body.removeChild(a);
       }, 2000);
-
-      // 2. Open in new tab/window for APK and mobile browsers
-      const win = window.open(targetUrl, '_blank');
-      if (!win) {
-        console.warn('Popup blocked for download');
-      }
     } catch (e) {
-      console.warn('Download fallback error:', e);
-      try {
-        window.open(pdfDataUrl, '_blank');
-      } catch (err) {
-        console.error('Final download fallback failed:', err);
-      }
+      console.warn('Download error:', e);
     }
   };
 

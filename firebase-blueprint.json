@@ -1,0 +1,25 @@
+{
+  "entities": {
+    "FleetData": {
+      "title": "Fleet Data",
+      "description": "Main fleet database containing vehicles, contacts, logs and vistorias",
+      "type": "object",
+      "properties": {
+        "vehicles": { "type": "array" },
+        "contacts": { "type": "array" },
+        "fuelLogs": { "type": "array" },
+        "maintenanceLogs": { "type": "array" },
+        "expenseLogs": { "type": "array" },
+        "vistorias": { "type": "array" },
+        "finalizedContracts": { "type": "array" },
+        "updatedAt": { "type": "string" }
+      }
+    }
+  },
+  "firestore": {
+    "/fleetData/{docId}": {
+      "schema": "FleetData",
+      "description": "Stores all synced fleet information between APK and Web"
+    }
+  }
+}

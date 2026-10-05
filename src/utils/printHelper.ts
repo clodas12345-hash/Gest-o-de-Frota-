@@ -1,4 +1,5 @@
 import * as pdfjsLib from 'pdfjs-dist';
+import { Capacitor, registerPlugin } from '@capacitor/core';
 
 // Configure PDF.js worker
 try {
@@ -7,38 +8,16 @@ try {
   console.warn('PDF.js worker initialization:', e);
 }
 
+interface NativePrintPlugin {
+  print(options: { html?: string; title?: string }): Promise<{ success: boolean }>;
+}
+
+const NativePrint = registerPlugin<NativePrintPlugin>('NativePrint');
+
 /**
- * Native in-app print helper for Android / iOS / Web without opening external browser tabs.
- * Uses a hidden iframe within the current webview/page so the OS print dialog / Print Spooler is invoked directly.
+ * Builds printable HTML document for images
  */
-export function printImages(images: string[], title = 'Documento'): void {
-  if (!images || images.length === 0) return;
-
-  // Remove any previous print iframe to avoid DOM clutter
-  const existingIframe = document.getElementById('fleet-print-iframe');
-  if (existingIframe) {
-    existingIframe.remove();
-  }
-
-  const iframe = document.createElement('iframe');
-  iframe.id = 'fleet-print-iframe';
-  iframe.style.position = 'fixed';
-  iframe.style.right = '0';
-  iframe.style.bottom = '0';
-  iframe.style.width = '0';
-  iframe.style.height = '0';
-  iframe.style.border = '0';
-  iframe.style.zIndex = '-9999';
-  iframe.style.visibility = 'hidden';
-
-  document.body.appendChild(iframe);
-
-  const doc = iframe.contentWindow?.document || iframe.contentDocument;
-  if (!doc) {
-    window.print();
-    return;
-  }
-
+function buildPrintableHtml(images: string[], title: string): string {
   const pagesHtml = images
     .map(
       (src, idx) =>
@@ -48,15 +27,16 @@ export function printImages(images: string[], title = 'Documento'): void {
     )
     .join('');
 
-  const html = `<!DOCTYPE html>
+  return `<!DOCTYPE html>
 <html>
 <head>
   <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>${title}</title>
   <style>
     @page {
       size: auto;
-      margin: 8mm;
+      margin: 6mm;
     }
     *, *:before, *:after {
       box-sizing: border-box;
@@ -106,6 +86,52 @@ export function printImages(images: string[], title = 'Documento'): void {
   ${pagesHtml}
 </body>
 </html>`;
+}
+
+/**
+ * Native in-app print helper for Android / iOS / Web without opening external browser tabs.
+ * In Android APK: invokes native Android PrintManager (Print Spooler).
+ * In Web/PWA: uses an in-place hidden iframe to trigger OS print dialog.
+ */
+export async function printImages(images: string[], title = 'Documento'): Promise<void> {
+  if (!images || images.length === 0) return;
+
+  const html = buildPrintableHtml(images, title);
+
+  // 1. If running natively in Android/iOS APK, invoke the NativePrint plugin
+  if (Capacitor.isNativePlatform()) {
+    try {
+      await NativePrint.print({ html, title });
+      return;
+    } catch (e) {
+      console.warn('Native print plugin error, falling back to iframe print:', e);
+    }
+  }
+
+  // 2. In-place hidden iframe printing for Web / Desktop / PWA
+  const existingIframe = document.getElementById('fleet-print-iframe');
+  if (existingIframe) {
+    existingIframe.remove();
+  }
+
+  const iframe = document.createElement('iframe');
+  iframe.id = 'fleet-print-iframe';
+  iframe.style.position = 'fixed';
+  iframe.style.right = '0';
+  iframe.style.bottom = '0';
+  iframe.style.width = '0';
+  iframe.style.height = '0';
+  iframe.style.border = '0';
+  iframe.style.zIndex = '-9999';
+  iframe.style.visibility = 'hidden';
+
+  document.body.appendChild(iframe);
+
+  const doc = iframe.contentWindow?.document || iframe.contentDocument;
+  if (!doc) {
+    window.print();
+    return;
+  }
 
   doc.open();
   doc.write(html);
@@ -161,9 +187,9 @@ export function printImages(images: string[], title = 'Documento'): void {
 /**
  * Print a single image URL or Data URL directly
  */
-export function printImage(imageUrl: string, title = 'Imagem'): void {
+export async function printImage(imageUrl: string, title = 'Imagem'): Promise<void> {
   if (!imageUrl) return;
-  printImages([imageUrl], title);
+  await printImages([imageUrl], title);
 }
 
 /**
@@ -225,7 +251,7 @@ export async function printPdfDataUrl(pdfDataUrl: string, title = 'Documento PDF
     }
 
     if (images.length > 0) {
-      printImages(images, title);
+      await printImages(images, title);
     } else {
       window.print();
     }

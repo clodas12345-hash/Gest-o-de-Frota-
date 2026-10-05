@@ -593,7 +593,7 @@ export default function App() {
   const knownReceiptIdsRef = useRef<Set<string>>(new Set());
 
   const saveToCloud = (field: string, data: any) => {
-    if (!Capacitor.isNativePlatform()) return; // Web Preview disconnected from cloud DB as requested
+    if (!Capacitor.isNativePlatform()) return; // Disconnected from cloud in preview environment
     if (!isCloudLoadedRef.current || isRemoteUpdateRef.current) return;
     
     try {
@@ -626,7 +626,7 @@ export default function App() {
   useEffect(() => {
     if (!Capacitor.isNativePlatform()) {
       isCloudLoadedRef.current = true;
-      return; // Web Preview uses localStorage only
+      return; // Disconnected from cloud in preview (uses localStorage only)
     }
     const docRef = doc(db, 'fleetData', 'main');
     
