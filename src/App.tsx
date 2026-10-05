@@ -451,6 +451,30 @@ export default function App() {
             }
           }
 
+          // #10 Lembrete de Pagamento de Aluguel - Exatamente 1 DIA ANTES do Vencimento
+          const tomorrowDate = new Date();
+          tomorrowDate.setDate(tomorrowDate.getDate() + 1);
+          const tomorrowDateStr = tomorrowDate.toISOString().split('T')[0];
+
+          // Verifica se há pagamento agendado para amanhã (1 dia antes)
+          const paymentTomorrow = (v.weeklyPayments || []).find((p) => p.date === tomorrowDateStr);
+          const isRented = Boolean(v.driver && v.driver.trim() && v.driver.toLowerCase() !== 'não informado' && v.driver.toLowerCase() !== 'não definido');
+
+          if (paymentTomorrow || (isRented && v.startDate && (() => {
+            const startMs = new Date(v.startDate + 'T12:00:00').getTime();
+            const tomorrowMs = new Date(tomorrowDateStr + 'T12:00:00').getTime();
+            if (tomorrowMs < startMs) return false;
+            const diffDays = Math.round((tomorrowMs - startMs) / (1000 * 60 * 60 * 24));
+            return diffDays % 7 === 0;
+          })())) {
+            const val = paymentTomorrow?.amount || v.valorSemanal || 0;
+            const valStr = val > 0 ? ` de R$ ${val.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}` : '';
+            sendAppNotification(`💰 Lembrete de Pagamento Amanhã: ${v.brand} (${v.plate})`, {
+              body: `Amanhã (${tomorrowDate.toLocaleDateString('pt-BR')}) é a data do pagamento semanal${valStr} do motorista ${v.driver || 'responsável'}.`,
+              eventKey: 'payment_reminder',
+            });
+          }
+
           // Insurance Expiring (within 15 days or expired)
           const insDate = v.insuranceExpirationDate || v.seguroVencimento;
           if (insDate) {

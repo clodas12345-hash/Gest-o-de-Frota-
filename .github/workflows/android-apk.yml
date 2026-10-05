@@ -30,11 +30,6 @@ jobs:
         distribution: 'temurin'
         java-version: '21'
 
-    - name: Setup Gradle Cache
-      uses: gradle/actions/setup-gradle@v3
-      with:
-        gradle-home-cache-cleanup: true
-
     - name: Sync Android platform with Capacitor
       run: |
         if [ ! -d "android" ]; then

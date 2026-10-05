@@ -14,6 +14,7 @@ export type NotificationEventKey =
   | 'vistoria_scheduled_date'
   | 'vistoria_completed'
   | 'vistoria_approved'
+  | 'payment_reminder'
   | 'payment_registered'
   | 'receipt_received'
   | 'receipt_approved'
@@ -124,8 +125,17 @@ export const NOTIFICATION_OPTIONS: NotificationOptionDefinition[] = [
     sampleBody: 'Laudo de vistoria aprovado e arquivado com sucesso junto a todos os documentos e contratos.'
   },
   {
-    key: 'payment_registered',
+    key: 'payment_reminder',
     number: 10,
+    title: 'Lembrete de Pagamento de Aluguel (1 Dia Antes)',
+    description: 'Notificação automática enviada 1 dia antes do vencimento do pagamento semanal do motorista.',
+    category: 'Financeiro e Pagamentos',
+    sampleTitle: '💰 Lembrete: Pagamento de Aluguel Amanhã',
+    sampleBody: 'Amanhã vence o pagamento semanal de R$ 650,00 do motorista do veículo Fiat Mobi (ABC-1234).'
+  },
+  {
+    key: 'payment_registered',
+    number: 11,
     title: 'Pagamento Semanal Registrado',
     description: 'Notificação ao lançar um novo pagamento semanal de aluguel recebido do motorista.',
     category: 'Financeiro e Pagamentos',
@@ -242,6 +252,7 @@ export const DEFAULT_NOTIFICATION_PREFERENCES: Record<NotificationEventKey, bool
   vistoria_scheduled_date: true,
   vistoria_completed: true,
   vistoria_approved: true,
+  payment_reminder: true,
   payment_registered: true,
   receipt_received: true,
   receipt_approved: true,
