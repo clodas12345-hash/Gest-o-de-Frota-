@@ -1359,6 +1359,7 @@ export function LogForms({
                   <label className="font-semibold text-gray-400">Ano Fabricação</label>
                   <input 
                     type="number" 
+                    inputMode="numeric"
                     value={yearFab} 
                     onChange={e => setYearFab(e.target.value ? Number(e.target.value) : '')}
                     placeholder="Ex: 2023"
@@ -1369,6 +1370,7 @@ export function LogForms({
                   <label className="font-semibold text-gray-400">Ano Modelo</label>
                   <input 
                     type="number" 
+                    inputMode="numeric"
                     value={yearModel} 
                     onChange={e => setYearModel(e.target.value ? Number(e.target.value) : '')}
                     placeholder="Ex: 2024"
@@ -1652,6 +1654,7 @@ export function LogForms({
                   <label className="font-semibold text-emerald-400">Odômetro Atual (KM)</label>
                   <input 
                     type="number" 
+                    inputMode="numeric"
                     value={currentKm} 
                     onChange={e => setCurrentKm(Number(e.target.value))}
                     placeholder="Ex: 45000"
@@ -1663,6 +1666,7 @@ export function LogForms({
                   <label className="font-semibold text-amber-400">Próxima Revisão (KM)</label>
                   <input 
                     type="number" 
+                    inputMode="numeric"
                     value={preventiveMaintNextKm !== undefined ? preventiveMaintNextKm : ''} 
                     onChange={e => setPreventiveMaintNextKm(e.target.value !== '' ? Number(e.target.value) : undefined)}
                     placeholder="Ex: 55000"
@@ -1690,6 +1694,7 @@ export function LogForms({
                     <label className="text-[11px] font-semibold text-gray-400">KM Início (Entrada)</label>
                     <input 
                       type="number" 
+                      inputMode="numeric"
                       value={initialKm !== undefined ? initialKm : ''} 
                       onChange={e => setInitialKm(e.target.value !== '' ? Number(e.target.value) : undefined)}
                       onFocus={e => e.target.select()}
@@ -1829,6 +1834,7 @@ export function LogForms({
                             <span className="text-[9px] text-gray-500 font-bold uppercase block text-center">Parc. Pagas</span>
                             <input
                               type="number"
+                              inputMode="numeric"
                               value={exp.parcelasPagas ?? ''}
                               onChange={(e) => {
                                 const newList = [...extraExpenses];
@@ -1843,6 +1849,7 @@ export function LogForms({
                             <span className="text-[9px] text-gray-500 font-bold uppercase block text-center">Total Parc.</span>
                             <input
                               type="number"
+                              inputMode="numeric"
                               value={exp.parcelasTotais ?? ''}
                               onChange={(e) => {
                                 const newList = [...extraExpenses];
@@ -2292,6 +2299,7 @@ export function LogForms({
                   <label className="font-semibold text-gray-400 text-[11px]">Quilometragem (Odometer)</label>
                   <input 
                     type="number" 
+                    inputMode="numeric"
                     value={fuelKm} 
                     onChange={e => setFuelKm(Number(e.target.value))}
                     className="w-full text-xs bg-white/[0.03] border border-white/10 rounded-xl px-3 py-2 text-white focus:outline-hidden focus:border-blue-500/50 focus:bg-[#1a1a1a] font-mono"
@@ -2304,6 +2312,7 @@ export function LogForms({
                   <label className="font-semibold text-gray-400 text-[11px]">Litros Abastecidos</label>
                   <input 
                     type="number" 
+                    inputMode="decimal"
                     step="0.01"
                     value={fuelLiters || ''} 
                     onChange={e => updateFuelTotal(Number(e.target.value), fuelPricePerLiter)}
@@ -2489,6 +2498,7 @@ export function LogForms({
                     <label className="text-[10px] font-semibold text-gray-400 uppercase">Parcelas Pagas</label>
                     <input 
                       type="number" 
+                      inputMode="numeric"
                       value={maintParcelasPagas ?? ''} 
                       onChange={e => setMaintParcelasPagas(e.target.value === '' ? undefined : Number(e.target.value))}
                       placeholder="Ex: 1"
@@ -2499,6 +2509,7 @@ export function LogForms({
                     <label className="text-[10px] font-semibold text-gray-400 uppercase">Total de Parcelas</label>
                     <input 
                       type="number" 
+                      inputMode="numeric"
                       value={maintParcelasTotais ?? ''} 
                       onChange={e => setMaintParcelasTotais(e.target.value === '' ? undefined : Number(e.target.value))}
                       placeholder="Ex: 10"
@@ -2595,6 +2606,7 @@ export function LogForms({
                   <label className="font-semibold text-gray-400">Próxima Manutenção KM (Opcional)</label>
                   <input 
                     type="number" 
+                    inputMode="numeric"
                     value={maintNextKm || ''} 
                     onChange={e => setMaintNextKm(Number(e.target.value))}
                     placeholder="Ex: 25000"

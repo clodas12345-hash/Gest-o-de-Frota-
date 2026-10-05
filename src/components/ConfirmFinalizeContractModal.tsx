@@ -223,6 +223,7 @@ export function ConfirmFinalizeContractModal({
                     <div className="flex items-center gap-1">
                       <input
                         type="number"
+                        inputMode="decimal"
                         min="0"
                         max="100"
                         value={earlyFineRatePct}

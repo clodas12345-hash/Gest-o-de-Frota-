@@ -710,6 +710,7 @@ export function SettingsModal({
                       </label>
                       <input
                         type="number"
+                        inputMode="decimal"
                         step="0.01"
                         value={fineRate}
                         onChange={(e) => handleUpdateRateField('fleet_fine_rate_default', Number(e.target.value))}
@@ -723,6 +724,7 @@ export function SettingsModal({
                       </label>
                       <input
                         type="number"
+                        inputMode="decimal"
                         step="0.01"
                         value={interestRate}
                         onChange={(e) => handleUpdateRateField('fleet_daily_interest_rate_default', Number(e.target.value))}
@@ -736,6 +738,7 @@ export function SettingsModal({
                       </label>
                       <input
                         type="number"
+                        inputMode="decimal"
                         step="0.1"
                         value={earlyFineRate}
                         onChange={(e) => handleUpdateRateField('fleet_early_return_fine_rate_default', Number(e.target.value))}

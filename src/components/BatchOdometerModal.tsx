@@ -151,6 +151,7 @@ export function BatchOdometerModal({
                       </label>
                       <input
                         type="number"
+                        inputMode="numeric"
                         value={kmValues[v.id] ?? ''}
                         onChange={(e) =>
                           setKmValues((prev) => ({
@@ -168,6 +169,7 @@ export function BatchOdometerModal({
                       </label>
                       <input
                         type="number"
+                        inputMode="numeric"
                         value={nextKmValues[v.id] ?? ''}
                         onChange={(e) =>
                           setNextKmValues((prev) => ({

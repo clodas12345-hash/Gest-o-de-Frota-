@@ -637,6 +637,7 @@ _Enviado via sistema de vistoria digital._`;
               </h3>
               <input
                 type="number"
+                inputMode="decimal"
                 step="0.01"
                 value={paymentAmount || ''}
                 onChange={(e) => setPaymentAmount(Number(e.target.value))}
@@ -808,6 +809,7 @@ _Enviado via sistema de vistoria digital._`;
               <div className="relative flex items-center">
                 <input
                   type="number"
+                  inputMode="numeric"
                   min="0"
                   placeholder="Ex: 48500"
                   value={kmOdometer}

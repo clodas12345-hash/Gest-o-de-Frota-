@@ -1134,6 +1134,7 @@ O contrato oficial em PDF já foi gerado e está arquivado nos documentos do ve�
                     <input
                       id="odometerInput"
                       type="number"
+                      inputMode="numeric"
                       min="0"
                       value={odometerKm || ''}
                       onChange={(e) => setOdometerKm(Number(e.target.value))}
@@ -1458,6 +1459,7 @@ O contrato oficial em PDF já foi gerado e está arquivado nos documentos do ve�
                     <div className="relative flex items-center">
                       <input
                         type="number"
+                        inputMode="decimal"
                         step="0.1"
                         min="0"
                         value={contractFineRate}
@@ -1475,6 +1477,7 @@ O contrato oficial em PDF já foi gerado e está arquivado nos documentos do ve�
                     <div className="relative flex items-center">
                       <input
                         type="number"
+                        inputMode="decimal"
                         step="0.01"
                         min="0"
                         value={contractInterestRate}
