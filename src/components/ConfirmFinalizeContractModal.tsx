@@ -34,11 +34,29 @@ export function ConfirmFinalizeContractModal({
   const [descontoCombustivel, setDescontoCombustivel] = useState<number>(0);
   const [descontoMultas, setDescontoMultas] = useState<number>(0);
   const [observacoesAcerto, setObservacoesAcerto] = useState<string>('');
+  const [calculatedDaysOpen, setCalculatedDaysOpen] = useState<number>(0);
 
   useEffect(() => {
     if (isOpen && vehicle) {
       setCaucaoOriginal(vehicle.caucaoValor || 0);
-      setDescontoAluguelPendente(0);
+      
+      let calculatedPending = 0;
+      let daysOpen = 0;
+      if (vehicle.startDate) {
+        const start = new Date(vehicle.startDate + 'T12:00:00');
+        const now = new Date();
+        const diffDays = Math.max(0, Math.floor((now.getTime() - start.getTime()) / (1000 * 60 * 60 * 24))) + 1;
+        const weeklyRate = vehicle.valorSemanal || vehicle.valorRecebido || 0;
+        const dailyRate = weeklyRate > 0 ? weeklyRate / 7 : 0;
+        const expectedTotal = diffDays * dailyRate;
+
+        const totalPaid = (vehicle.weeklyPayments || []).reduce((sum, p) => sum + (p.amount || 0), 0);
+        calculatedPending = Math.max(0, expectedTotal - totalPaid);
+        daysOpen = dailyRate > 0 ? Math.round(calculatedPending / dailyRate) : 0;
+      }
+
+      setDescontoAluguelPendente(calculatedPending);
+      setCalculatedDaysOpen(daysOpen);
       setDescontoAvarias(0);
       setDescontoCombustivel(0);
       setDescontoMultas(0);
@@ -147,8 +165,13 @@ export function ConfirmFinalizeContractModal({
               </div>
 
               <div>
-                <label className="text-[10px] text-gray-400 block mb-1 font-semibold">
-                  (-) Aluguéis / Dias em Aberto
+                <label className="text-[10px] text-gray-400 block mb-1 font-semibold flex items-center justify-between">
+                  <span>(-) Aluguéis / Dias em Aberto</span>
+                  {vehicle.startDate && (
+                    <span className="text-[9px] text-amber-300 font-mono">
+                      (~{calculatedDaysOpen} dias em aberto)
+                    </span>
+                  )}
                 </label>
                 <CurrencyInput
                   value={descontoAluguelPendente}
@@ -156,6 +179,11 @@ export function ConfirmFinalizeContractModal({
                   placeholder="0,00"
                   className="w-full text-xs bg-[#141414] border border-white/15 rounded-lg px-2.5 py-1.5 text-white font-mono"
                 />
+                {vehicle.startDate && (
+                  <p className="text-[9px] text-gray-400 mt-1 italic leading-tight">
+                    Calculado: Início em {new Date(vehicle.startDate + 'T12:00:00').toLocaleDateString('pt-BR')}, abatidos pagamentos.
+                  </p>
+                )}
               </div>
 
               <div>

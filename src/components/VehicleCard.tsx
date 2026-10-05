@@ -33,6 +33,7 @@ import {
   Square,
   Clock,
   Plus,
+  Calculator,
   ShieldCheck,
   MessageSquare,
   XCircle,
@@ -420,6 +421,7 @@ interface VehicleCardProps {
   onAddSinistro?: (sinistro: SinistroLog) => void;
   onDeleteSinistro?: (id: string) => void;
   onOpenLogForm?: (type: 'vehicle' | 'fuel' | 'maintenance' | 'expense' | 'sinistro', vehicleId?: string) => void;
+  onOpenInterestCalculator?: (vehicle: Vehicle) => void;
 }
 
 export const VehicleCard: React.FC<VehicleCardProps> = ({
@@ -447,6 +449,7 @@ export const VehicleCard: React.FC<VehicleCardProps> = ({
   onAddSinistro,
   onDeleteSinistro,
   onOpenLogForm,
+  onOpenInterestCalculator,
 }) => {
   const [isExpanded, setIsExpanded] = useState(false); // Default to collapsed/closed as requested by user
   const [activeTab, setActiveTab] = useState<'financeiro' | 'pagamentos' | 'manutencao' | 'vistorias' | 'documentos' | 'pneus' | 'sinistros' | 'multas'>('financeiro');
@@ -867,10 +870,10 @@ export const VehicleCard: React.FC<VehicleCardProps> = ({
       } else if (text.includes('📸 *RETORNO COM FOTOS:*')) {
         text = text.replace('📸 *RETORNO COM FOTOS:*', `*Itens a serem inspecionados:*\n${itemsListFormatted}\n\n📸 *RETORNO COM FOTOS:*`);
       }
+    }
 
-      if (!text.includes(returnUrlWithPlaca) && !text.includes('placa=')) {
-        text += `\n\n🔗 *Link para preencher vistoria e enviar fotos:*\n${returnUrlWithPlaca}`;
-      }
+    if (!text.includes(returnUrlWithPlaca) && !text.includes('placa=')) {
+      text += `\n\n🔗 *Link de Acesso / Retorno:*\n${returnUrlWithPlaca}`;
     }
     
     return text;
@@ -1488,9 +1491,24 @@ export const VehicleCard: React.FC<VehicleCardProps> = ({
     // Auto-save customized template
     saveTemplateFromText(customVistoriaMsgText, !!sharingVistoria, sharingVistoria);
 
+    let finalMsg = customVistoriaMsgText;
+    const itemsToUse = selectedRequestItems.length > 0 ? selectedRequestItems : availableChecklistItems;
+    const itemsQueryParam = itemsToUse && itemsToUse.length > 0
+      ? `&items=${encodeURIComponent(itemsToUse.join(','))}`
+      : '';
+    const safeBaseLink = (vistoriaReturnLink && !vistoriaReturnLink.includes('localhost') && !vistoriaReturnLink.includes('127.0.0.1'))
+      ? vistoriaReturnLink
+      : getPublicWebBaseUrl();
+    const separator = safeBaseLink.includes('?') ? '&' : '?';
+    const returnUrlWithPlaca = `${safeBaseLink}${separator}placa=${encodeURIComponent(vehicle.plate)}&brand=${encodeURIComponent(vehicle.brand)}&model=${encodeURIComponent(vehicle.model)}&driver=${encodeURIComponent(vehicle.driver || '')}&type=${encodeURIComponent(requestVistoriaType)}&deadline=${encodeURIComponent(vehicle.nextVistoriaDate || '')}&reqId=${vistoriaRequestToken}${itemsQueryParam}`;
+
+    if (!finalMsg.includes('placa=') && !finalMsg.includes('http')) {
+      finalMsg += `\n\n🔗 *Link de Acesso / Retorno para Vistoria:*\n${returnUrlWithPlaca}`;
+    }
+
     const waUrl = cleanPhone 
-      ? `https://api.whatsapp.com/send?phone=${cleanPhone}&text=${encodeURIComponent(customVistoriaMsgText)}`
-      : `https://api.whatsapp.com/send?text=${encodeURIComponent(customVistoriaMsgText)}`;
+      ? `https://api.whatsapp.com/send?phone=${cleanPhone}&text=${encodeURIComponent(finalMsg)}`
+      : `https://api.whatsapp.com/send?text=${encodeURIComponent(finalMsg)}`;
       
 
     // Save customized return link for future use
@@ -3266,6 +3284,17 @@ _Enviado via sistema de gestão de frota._`;
                     <MessageCircle className="w-3.5 h-3.5 text-emerald-400" />
                     <span>Lembrete WhatsApp</span>
                   </button>
+                  {onOpenInterestCalculator && (
+                    <button
+                      type="button"
+                      onClick={() => onOpenInterestCalculator(vehicle)}
+                      className="text-[11px] text-amber-300 hover:text-amber-200 font-bold flex items-center gap-1 px-2 py-0.5 bg-amber-500/10 hover:bg-amber-500/20 border border-amber-500/20 rounded-md transition-all cursor-pointer"
+                      title="Calcular juros e multa por atraso no aluguel"
+                    >
+                      <Calculator className="w-3.5 h-3.5 text-amber-400" />
+                      <span>Calc. Juros</span>
+                    </button>
+                  )}
                   <button
                     onClick={() => {
                       const nextState = !showAddPayment;

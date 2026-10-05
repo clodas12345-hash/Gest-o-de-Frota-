@@ -38,6 +38,7 @@ import { AboutAppModal } from './components/AboutAppModal';
 import { LogoViewerModal } from './components/LogoViewerModal';
 import { GlobalVoiceAssistant } from './components/GlobalVoiceAssistant';
 import { BatchOdometerModal } from './components/BatchOdometerModal';
+import { InterestCalculatorModal } from './components/InterestCalculatorModal';
 import { generateVehiclePDF, generateVistoriaPDF, generateExecutiveMonthlyPDF } from './utils/pdfGenerator';
 import { sendAppNotification, requestNotificationPermission } from './utils/notifications';
 import logoImg from './assets/logo.png';
@@ -304,6 +305,8 @@ export default function App() {
   const [isLogoViewerOpen, setIsLogoViewerOpen] = useState<boolean>(false);
   const [selectedContractVehicle, setSelectedContractVehicle] = useState<Vehicle | null>(null);
   const [vehiclePendingFinalize, setVehiclePendingFinalize] = useState<Vehicle | null>(null);
+  const [isInterestCalcOpen, setIsInterestCalcOpen] = useState<boolean>(false);
+  const [interestCalcVehicle, setInterestCalcVehicle] = useState<Vehicle | null>(null);
 
   const [checklistConfig, setChecklistConfig] = useState<string[]>(() => {
     const defaultList = [
@@ -554,6 +557,7 @@ export default function App() {
   const knownReceiptIdsRef = useRef<Set<string>>(new Set());
 
   const saveToCloud = (field: string, data: any) => {
+    if (!Capacitor.isNativePlatform()) return; // Web Preview disconnected from cloud DB as requested
     if (!isCloudLoadedRef.current || isRemoteUpdateRef.current) return;
     
     try {
@@ -582,8 +586,12 @@ export default function App() {
     }
   };
 
-  // Load initial data from Firestore and setup real-time listener for instant cloud saving & sync across Web and Android
+  // Load initial data from Firestore and setup real-time listener for Android APK only
   useEffect(() => {
+    if (!Capacitor.isNativePlatform()) {
+      isCloudLoadedRef.current = true;
+      return; // Web Preview uses localStorage only
+    }
     const docRef = doc(db, 'fleetData', 'main');
     
     getDoc(docRef).then((snap) => {
@@ -1167,6 +1175,33 @@ export default function App() {
         contentUrl: pdfDataUrl
       };
 
+      // Preserve Locatário in contacts list
+      if (targetVehicle.driver && targetVehicle.driver.trim()) {
+        setContacts((prev) => {
+          const cleanP = (targetVehicle.driverPhone || '').replace(/\D/g, '');
+          const existing = prev.find(
+            (c) =>
+              c.name.toLowerCase().trim() === targetVehicle.driver.toLowerCase().trim() ||
+              (cleanP && c.phone.includes(cleanP))
+          );
+          if (existing) {
+            return prev.map((c) => (c.id === existing.id ? { ...c, activeVehiclePlate: undefined } : c));
+          }
+          return [
+            {
+              id: `cnt-${Date.now()}`,
+              name: targetVehicle.driver,
+              phone: targetVehicle.driverPhone || '',
+              region: 'Locatário',
+              cnhExpiration: targetVehicle.driverCnhExpiration,
+              cnhPhotoUrl: targetVehicle.driverCnhPhotoUrl,
+              addressProofUrl: targetVehicle.driverAddressProofUrl
+            },
+            ...prev
+          ];
+        });
+      }
+
       // 4. Update vehicle: PRESERVE vehicle & maintenance info, RESET active driver/contract info
       const updatedVehicle: Vehicle = {
         ...targetVehicle,
@@ -1180,6 +1215,14 @@ export default function App() {
         caucaoValor: 0,
         caucaoData: '',
         caucaoObservacoes: '',
+        tenantCpfCnpj: '',
+        tenantRg: '',
+        tenantCnh: '',
+        tenantEmail: '',
+        tenantAddress: '',
+        driverCnhExpiration: '',
+        driverCnhPhotoUrl: '',
+        driverAddressProofUrl: '',
         documents: [finalDoc, ...(targetVehicle.documents || [])]
       };
 
@@ -1301,10 +1344,12 @@ export default function App() {
     // Update in vistorias state
     setVistorias(prev => {
       const nextVistorias = prev.map(v => v.id === vistoria.id ? approvedVistoria : v);
-      setDoc(doc(db, 'fleetData', 'main'), sanitizeForCloud({
-        vistorias: nextVistorias,
-        updatedAt: new Date().toISOString()
-      }), { merge: true }).catch(err => console.warn('Direct approved vistoria cloud sync error:', err));
+      if (Capacitor.isNativePlatform()) {
+        setDoc(doc(db, 'fleetData', 'main'), sanitizeForCloud({
+          vistorias: nextVistorias,
+          updatedAt: new Date().toISOString()
+        }), { merge: true }).catch(err => console.warn('Direct approved vistoria cloud sync error:', err));
+      }
       return nextVistorias;
     });
 
@@ -1331,10 +1376,12 @@ export default function App() {
           return v;
         });
 
-        setDoc(doc(db, 'fleetData', 'main'), sanitizeForCloud({
-          vehicles: cleanVehiclesForCloud(nextVehicles),
-          updatedAt: new Date().toISOString()
-        }), { merge: true }).catch(err => console.warn('Direct vehicle vistoria approval cloud sync error:', err));
+        if (Capacitor.isNativePlatform()) {
+          setDoc(doc(db, 'fleetData', 'main'), sanitizeForCloud({
+            vehicles: cleanVehiclesForCloud(nextVehicles),
+            updatedAt: new Date().toISOString()
+          }), { merge: true }).catch(err => console.warn('Direct vehicle vistoria approval cloud sync error:', err));
+        }
 
         return nextVehicles;
       });
@@ -1527,17 +1574,19 @@ export default function App() {
     setFinalizedContracts([]);
     setContacts([]);
     
-    const docRef = doc(db, 'fleetData', 'main');
-    setDoc(docRef, {
-      vehicles: [],
-      contacts: [],
-      fuelLogs: [],
-      maintenanceLogs: [],
-      expenseLogs: [],
-      vistorias: [],
-      finalizedContracts: [],
-      updatedAt: new Date().toISOString()
-    }).catch(err => console.warn('Error resetting cloud data:', err));
+    if (Capacitor.isNativePlatform()) {
+      const docRef = doc(db, 'fleetData', 'main');
+      setDoc(docRef, {
+        vehicles: [],
+        contacts: [],
+        fuelLogs: [],
+        maintenanceLogs: [],
+        expenseLogs: [],
+        vistorias: [],
+        finalizedContracts: [],
+        updatedAt: new Date().toISOString()
+      }).catch(err => console.warn('Error resetting cloud data:', err));
+    }
 
     setIsResetConfirmOpen(false);
 
@@ -1739,17 +1788,19 @@ export default function App() {
           }
 
           // 5. Sincronização imediata com Firestore Cloud
-          const docRef = doc(db, 'fleetData', 'main');
-          setDoc(docRef, {
-            vehicles: restoredVehicles,
-            contacts: restoredContacts,
-            fuelLogs: restoredFuelLogs,
-            maintenanceLogs: restoredMaintLogs,
-            expenseLogs: restoredExpenseLogs,
-            vistorias: restoredVistorias,
-            finalizedContracts: restoredFinalizedContracts,
-            updatedAt: new Date().toISOString()
-          }, { merge: true }).catch(err => console.warn('Error syncing restored backup to cloud:', err));
+          if (Capacitor.isNativePlatform()) {
+            const docRef = doc(db, 'fleetData', 'main');
+            setDoc(docRef, {
+              vehicles: restoredVehicles,
+              contacts: restoredContacts,
+              fuelLogs: restoredFuelLogs,
+              maintenanceLogs: restoredMaintLogs,
+              expenseLogs: restoredExpenseLogs,
+              vistorias: restoredVistorias,
+              finalizedContracts: restoredFinalizedContracts,
+              updatedAt: new Date().toISOString()
+            }, { merge: true }).catch(err => console.warn('Error syncing restored backup to cloud:', err));
+          }
 
           const totalDocs = restoredVehicles.reduce((acc: number, v: any) => acc + (v.documents?.length || 0), 0);
           setDeleteToastMsg(`Backup COMPLETO restaurado com sucesso! ${restoredVehicles.length} veículos, ${totalDocs} documentos anexados, ${restoredVistorias.length} vistorias, ${restoredMaintLogs.length} manutenções, agenda e configurações recuperadas.`);
@@ -1855,10 +1906,12 @@ export default function App() {
                 });
 
             // Immediately push receipt to Firestore so the manager app receives it right away
-            setDoc(doc(db, 'fleetData', 'main'), sanitizeForCloud({
-              vehicles: cleanVehiclesForCloud(nextVehicles),
-              updatedAt: new Date().toISOString()
-            }), { merge: true }).catch(err => console.warn('Direct receipt cloud sync error:', err));
+            if (Capacitor.isNativePlatform()) {
+              setDoc(doc(db, 'fleetData', 'main'), sanitizeForCloud({
+                vehicles: cleanVehiclesForCloud(nextVehicles),
+                updatedAt: new Date().toISOString()
+              }), { merge: true }).catch(err => console.warn('Direct receipt cloud sync error:', err));
+            }
 
             return nextVehicles;
           });
@@ -1882,10 +1935,12 @@ export default function App() {
 
           setVistorias(prev => {
             const nextVistorias = [finalVistoria, ...prev];
-            setDoc(doc(db, 'fleetData', 'main'), sanitizeForCloud({
-              vistorias: nextVistorias,
-              updatedAt: new Date().toISOString()
-            }), { merge: true }).catch(err => console.warn('Direct vistoria cloud sync error:', err));
+            if (Capacitor.isNativePlatform()) {
+              setDoc(doc(db, 'fleetData', 'main'), sanitizeForCloud({
+                vistorias: nextVistorias,
+                updatedAt: new Date().toISOString()
+              }), { merge: true }).catch(err => console.warn('Direct vistoria cloud sync error:', err));
+            }
             return nextVistorias;
           });
           
@@ -1922,10 +1977,12 @@ export default function App() {
                     return v;
                   });
 
-              setDoc(doc(db, 'fleetData', 'main'), sanitizeForCloud({
-                vehicles: cleanVehiclesForCloud(nextVehicles),
-                updatedAt: new Date().toISOString()
-              }), { merge: true }).catch(err => console.warn('Direct vehicle vistoria cloud sync error:', err));
+              if (Capacitor.isNativePlatform()) {
+                setDoc(doc(db, 'fleetData', 'main'), sanitizeForCloud({
+                  vehicles: cleanVehiclesForCloud(nextVehicles),
+                  updatedAt: new Date().toISOString()
+                }), { merge: true }).catch(err => console.warn('Direct vehicle vistoria cloud sync error:', err));
+              }
 
               return nextVehicles;
             });
@@ -2036,6 +2093,10 @@ export default function App() {
               onOpenSettings={() => setIsSettingsOpen(true)}
               onOpenNotificationCenter={() => setIsNotificationCenterOpen(true)}
               onOpenChecklistConfig={() => setIsChecklistConfigOpen(true)}
+              onOpenInterestCalculator={() => {
+                setInterestCalcVehicle(null);
+                setIsInterestCalcOpen(true);
+              }}
               onDownloadBackup={handleDownloadBackup}
               onUploadBackup={handleUploadBackup}
               onResetData={handleResetData}
@@ -2227,6 +2288,10 @@ export default function App() {
                   }}
                   onDeleteSinistro={(id) => setSinistroLogs((prev) => prev.filter((s) => s.id !== id))}
                   onOpenLogForm={handleOpenForm}
+                  onOpenInterestCalculator={(v) => {
+                    setInterestCalcVehicle(v);
+                    setIsInterestCalcOpen(true);
+                  }}
                 />
               ))}
             </div>
@@ -2435,6 +2500,14 @@ export default function App() {
         onBatchUpdateVehicles={(updatedList) => {
           setVehicles(updatedList);
         }}
+      />
+
+      {/* Interest & Fine Calculator Modal */}
+      <InterestCalculatorModal
+        isOpen={isInterestCalcOpen}
+        onClose={() => setIsInterestCalcOpen(false)}
+        vehicles={sortedVehicles}
+        selectedVehicle={interestCalcVehicle}
       />
 
       {/* Confirmation Modal: Vehicle Deletion */}

@@ -34,6 +34,7 @@ interface HeaderActionsMenuProps {
   onOpenSettings?: () => void;
   onOpenNotificationCenter?: () => void;
   onOpenChecklistConfig?: () => void;
+  onOpenInterestCalculator?: () => void;
   onDownloadBackup: () => void;
   onUploadBackup: (e: React.ChangeEvent<HTMLInputElement>) => void;
   onResetData: () => void;
@@ -52,6 +53,7 @@ export function HeaderActionsMenu({
   onOpenSettings,
   onOpenNotificationCenter,
   onOpenChecklistConfig,
+  onOpenInterestCalculator,
   onDownloadBackup,
   onUploadBackup,
   onResetData
@@ -179,6 +181,23 @@ export function HeaderActionsMenu({
                 <div>
                   <p className="text-xs font-bold text-white group-hover:text-emerald-300">Gerar Contrato de Locação</p>
                   <p className="text-[10px] text-gray-400">Dados do locatário e PDF oficial</p>
+                </div>
+              </button>
+            )}
+
+            {/* Option: Calculadora de Juros & Atraso */}
+            {onOpenInterestCalculator && (
+              <button
+                type="button"
+                onClick={() => handleAction(onOpenInterestCalculator)}
+                className="w-full flex items-center gap-3 p-3 rounded-xl bg-amber-500/10 hover:bg-amber-500/20 text-left group transition-all cursor-pointer border border-amber-500/20 hover:border-amber-500/40"
+              >
+                <div className="p-2 bg-amber-500 text-slate-950 rounded-lg group-hover:scale-105 transition-transform shadow-md shadow-amber-500/20">
+                  <Sparkles className="w-4 h-4" />
+                </div>
+                <div>
+                  <p className="text-xs font-bold text-white group-hover:text-amber-300">Calc. Juros & Multa de Atraso</p>
+                  <p className="text-[10px] text-gray-400">Calcular e enviar cobrança no WhatsApp</p>
                 </div>
               </button>
             )}

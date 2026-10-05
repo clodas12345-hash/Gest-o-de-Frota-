@@ -844,6 +844,34 @@ export function LogForms({
       };
 
       onSaveVehicle(vehicleData);
+
+      if (driver && driver.trim() && onSaveContact) {
+        const cleanP = driverPhone.replace(/\D/g, '');
+        const existingContact = contacts.find(c => c.name.toLowerCase().trim() === driver.toLowerCase().trim() || (cleanP && c.phone.includes(cleanP)));
+        if (existingContact) {
+          onSaveContact({
+            ...existingContact,
+            name: driver,
+            phone: driverPhone || existingContact.phone,
+            cnhExpiration: driverCnhExpiration || existingContact.cnhExpiration,
+            cnhPhotoUrl: driverCnhPhotoUrl || existingContact.cnhPhotoUrl,
+            addressProofUrl: driverAddressProofUrl || existingContact.addressProofUrl,
+            activeVehiclePlate: plate.toUpperCase()
+          });
+        } else {
+          onSaveContact({
+            id: `cnt-${Date.now()}`,
+            name: driver,
+            phone: driverPhone || '',
+            region: 'Locatário',
+            cnhExpiration: driverCnhExpiration || '',
+            cnhPhotoUrl: driverCnhPhotoUrl || '',
+            addressProofUrl: driverAddressProofUrl || '',
+            activeVehiclePlate: plate.toUpperCase()
+          });
+        }
+      }
+
       if (!vehicleToEdit) {
         localStorage.removeItem(VEHICLE_DRAFT_KEY);
       }
@@ -1387,6 +1415,45 @@ export function LogForms({
                       <option value="" disabled>-- Selecionar contato da agenda salva --</option>
                       {contacts.map(c => (
                         <option key={c.id} value={c.id}>{c.name} ({c.region})</option>
+                      ))}
+                    </select>
+                  </div>
+                )}
+
+                {contacts && contacts.length > 0 && (
+                  <div className="p-3 bg-blue-950/20 border border-blue-500/20 rounded-xl space-y-2 mb-3">
+                    <label className="text-[11px] font-bold text-blue-400 block uppercase tracking-wider flex items-center justify-between">
+                      <span>🔗 Selecionar / Vincular Locatário Cadastrado</span>
+                      <span className="text-[10px] text-gray-400 font-normal">({contacts.length} cadastrados)</span>
+                    </label>
+                    <select
+                      onChange={(e) => {
+                        const selectedId = e.target.value;
+                        if (!selectedId) return;
+                        const c = contacts.find(item => item.id === selectedId);
+                        if (c) {
+                          setDriver(c.name);
+                          let p = c.phone || '';
+                          if (p.startsWith('55')) p = p.substring(2);
+                          setDriverPhone(p);
+                          if (c.cnhExpiration) setDriverCnhExpiration(c.cnhExpiration);
+                          if (c.cnhPhotoUrl) {
+                            setDriverCnhPhotoUrl(c.cnhPhotoUrl);
+                            setDriverCnhFileName('CNH Cadastrada');
+                          }
+                          if (c.addressProofUrl) {
+                            setDriverAddressProofUrl(c.addressProofUrl);
+                            setDriverAddressFileName('Comprovante Cadastrado');
+                          }
+                        }
+                      }}
+                      className="w-full text-xs bg-black border border-blue-500/30 rounded-lg px-2.5 py-1.5 text-white font-medium focus:border-blue-400 cursor-pointer"
+                    >
+                      <option value="">-- Selecionar da Agenda de Locatários --</option>
+                      {contacts.map((c) => (
+                        <option key={c.id} value={c.id}>
+                          {c.name} ({c.phone})
+                        </option>
                       ))}
                     </select>
                   </div>

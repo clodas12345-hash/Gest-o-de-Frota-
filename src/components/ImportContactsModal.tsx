@@ -1,6 +1,8 @@
 import React, { useState, useRef } from 'react';
 import { X, Upload, FileText, Check, AlertCircle, Smartphone, ClipboardList, CheckSquare, Square, Trash2 } from 'lucide-react';
 import { AgendaContact } from '../types';
+import { Contacts } from '@capacitor-community/contacts';
+import { Capacitor } from '@capacitor/core';
 
 export const toTitleCase = (str: string): string => {
   if (!str) return '';
@@ -289,6 +291,46 @@ export const ImportContactsModal: React.FC<ImportContactsModalProps> = ({
 
   const handleDeviceContacts = async () => {
     setStatusMessage(null);
+
+    if (Capacitor.isNativePlatform()) {
+      try {
+        const perm = await Contacts.requestPermissions();
+        if (perm.contacts === 'granted') {
+          const res = await Contacts.getContacts({
+            projection: { name: true, phones: true }
+          });
+          if (res && res.contacts && res.contacts.length > 0) {
+            const items: ParsedContactItem[] = [];
+            res.contacts.forEach((c: any) => {
+              const name = c.name?.display || c.name?.given || 'Contato';
+              const phoneRaw = c.phones?.[0]?.number || c.phones?.[0] || '';
+              const clean = sanitizePhone(phoneRaw);
+              if (clean && clean.length >= 10) {
+                items.push({
+                  id: `imp-${Date.now()}-${Math.random().toString(36).substr(2, 6)}`,
+                  name: toTitleCase(name),
+                  phone: clean,
+                  region: 'Agenda Celular',
+                  selected: true,
+                });
+              }
+            });
+
+            if (items.length > 0) {
+              setParsedContacts(items);
+              setStatusMessage({
+                type: 'success',
+                text: `${items.length} contato(s) carregados da agenda do aparelho! Revise abaixo e confirme a importação.`,
+              });
+              return;
+            }
+          }
+        }
+      } catch (err) {
+        console.warn('Capacitor contacts import failed:', err);
+      }
+    }
+
     if ('contacts' in navigator && 'select' in (navigator as any).contacts) {
       try {
         const props = ['name', 'tel'];

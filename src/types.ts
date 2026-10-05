@@ -180,6 +180,16 @@ export interface AgendaContact {
   name: string;
   phone: string;
   region: string;
+  cpfCnpj?: string;
+  rg?: string;
+  cnh?: string;
+  cnhExpiration?: string;
+  cnhPhotoUrl?: string;
+  addressProofUrl?: string;
+  email?: string;
+  address?: string;
+  notes?: string;
+  activeVehiclePlate?: string;
 }
 
 export interface Vistoria {
