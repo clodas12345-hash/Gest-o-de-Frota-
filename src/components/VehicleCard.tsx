@@ -1882,7 +1882,7 @@ _Enviado via sistema de gestão de frota._`;
   return (
     <div 
       id={`vehicle-card-container-${vehicle.id}`} 
-      className="bg-[#111111] border border-white/10 rounded-2xl shadow-md hover:border-white/20 transition-all overflow-hidden flex flex-col h-full"
+      className="bg-[#111111] border border-white/10 rounded-2xl shadow-md hover:border-white/20 transition-all flex flex-col h-full relative"
     >
       {/* Header Panel - Brand, Model, Plate and Collapse Status */}
       <div 
@@ -2113,20 +2113,20 @@ _Enviado via sistema de gestão de frota._`;
                   e.stopPropagation();
                   setShowHistoryPopover(!showHistoryPopover);
                 }}
-                className={`p-2 rounded-xl transition-all cursor-pointer ${showHistoryPopover ? 'bg-blue-500/20 text-blue-400' : 'text-gray-400 hover:text-blue-400 hover:bg-blue-500/10'}`}
+                className={`p-2.5 rounded-xl transition-all cursor-pointer ${showHistoryPopover ? 'bg-blue-500/20 text-blue-400' : 'text-gray-400 hover:text-blue-400 hover:bg-blue-500/10'}`}
                 title="Ver últimas vistorias"
                 id={`btn-history-${vehicle.id}`}
               >
-                <History className="w-4 h-4" />
+                <History className="w-5 h-5" />
               </button>
               
               {showHistoryPopover && (
                 <div 
-                  className="absolute right-0 top-full mt-2 w-64 bg-[#1a1a1a] border border-white/10 rounded-xl shadow-2xl z-[60] p-3 overflow-hidden animate-in fade-in zoom-in duration-200"
+                  className="absolute right-0 top-full mt-2 w-80 bg-[#1a1a1a] border border-white/15 rounded-2xl shadow-2xl z-[100] p-4 animate-in fade-in zoom-in duration-200"
                   onClick={(e) => e.stopPropagation()}
                 >
-                  <div className="flex items-center justify-between mb-3 px-1">
-                    <h4 className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">Últimas 3 Vistorias</h4>
+                  <div className="flex items-center justify-between mb-4 px-1">
+                    <h4 className="text-xs font-bold text-gray-300 uppercase tracking-wider">Histórico: 3 Últimas Vistorias</h4>
                     <History className="w-3 h-3 text-gray-600" />
                   </div>
                   
@@ -2138,7 +2138,7 @@ _Enviado via sistema de gestão de frota._`;
                         .map((v) => (
                           <div 
                             key={v.id} 
-                            className="p-2 bg-white/[0.03] border border-white/5 rounded-lg hover:bg-white/[0.06] hover:border-blue-500/30 transition-all cursor-pointer group"
+                            className="p-3 bg-white/[0.04] border border-white/5 rounded-xl hover:bg-white/[0.08] hover:border-blue-500/40 transition-all cursor-pointer group"
                             onClick={() => {
                               setIsExpanded(true);
                               setActiveTab('vistorias');
@@ -2151,22 +2151,22 @@ _Enviado via sistema de gestão de frota._`;
                               }, 300);
                             }}
                           >
-                            <div className="flex justify-between items-center mb-1">
-                              <span className="text-[10px] font-bold text-blue-400">{v.type || 'Vistoria'}</span>
-                              <span className="text-[9px] text-gray-500 font-mono">
+                            <div className="flex justify-between items-center mb-1.5">
+                              <span className="text-xs font-bold text-blue-400">{v.type || 'Vistoria'}</span>
+                              <span className="text-[10px] text-gray-400 font-mono">
                                 {new Date(v.date + 'T12:00:00').toLocaleDateString('pt-BR')}
                               </span>
                             </div>
-                            <div className="flex items-center gap-1.5">
-                              <Gauge className="w-3 h-3 text-gray-500" />
-                              <span className="text-[11px] text-gray-300 font-medium">
+                            <div className="flex items-center gap-2">
+                              <Gauge className="w-3.5 h-3.5 text-gray-500" />
+                              <span className="text-xs text-gray-200 font-semibold">
                                 {v.km ? `${v.km.toLocaleString('pt-BR')} KM` : 'KM não inf.'}
                               </span>
                             </div>
-                            <div className="mt-1.5 flex items-center justify-between">
-                              <span className="text-[9px] text-gray-500 group-hover:text-blue-400/70 transition-colors">Ver detalhes</span>
+                            <div className="mt-2 flex items-center justify-between">
+                              <span className="text-[10px] text-gray-500 group-hover:text-blue-400 transition-colors">Toque para ver detalhes</span>
                               {v.photos && v.photos.length > 0 && (
-                                <span className="text-[9px] px-1.5 py-0.5 bg-zinc-800 text-zinc-400 rounded-md border border-zinc-700/50">
+                                <span className="text-[10px] px-2 py-0.5 bg-blue-500/10 text-blue-300 rounded-md border border-blue-500/20">
                                   {v.photos.length} fotos
                                 </span>
                               )}
@@ -2182,7 +2182,7 @@ _Enviado via sistema de gestão de frota._`;
                   
                   {vehicleVistorias && vehicleVistorias.length > 3 && (
                     <button 
-                      className="w-full mt-3 py-2 text-[10px] text-blue-400 hover:text-blue-300 font-bold border-t border-white/5 pt-3 transition-colors flex items-center justify-center gap-1.5"
+                      className="w-full mt-3 py-2.5 text-xs text-blue-400 hover:text-blue-300 font-bold border-t border-white/10 pt-3 transition-colors flex items-center justify-center gap-2"
                       onClick={() => {
                         setIsExpanded(true);
                         setActiveTab('vistorias');

@@ -35,8 +35,12 @@ import {
   Upload,
   ExternalLink,
   AlertTriangle,
-  Plus
+  Plus,
+  Eye,
+  EyeOff,
+  Download
 } from 'lucide-react';
+import { PdfViewer } from './PdfViewer';
 
 interface RentalContractModalProps {
   isOpen: boolean;
@@ -257,6 +261,8 @@ export const RentalContractModal: React.FC<RentalContractModalProps> = ({
   const [generatedPdfUrl, setGeneratedPdfUrl] = useState<string | null>(null);
   const [generatedPdfFileName, setGeneratedPdfFileName] = useState<string>('');
   const [isSuccess, setIsSuccess] = useState(false);
+  const [isBlankContractSuccess, setIsBlankContractSuccess] = useState(false);
+  const [showInlinePdfPreview, setShowInlinePdfPreview] = useState(false);
   const [isGenerating, setIsGenerating] = useState(false);
   const [isSavedNotification, setIsSavedNotification] = useState(false);
 
@@ -269,6 +275,12 @@ export const RentalContractModal: React.FC<RentalContractModalProps> = ({
     }
     if (!tenantName.trim()) {
       alert('Por favor, informe o nome do locatário.');
+      return;
+    }
+    if (!odometerKm || Number(odometerKm) <= 0) {
+      alert('⚠️ Por favor, informe e atualize a quilometragem atual do carro (Odômetro em KM) antes de salvar.');
+      const el = document.getElementById('odometerInput');
+      if (el) el.focus();
       return;
     }
 
@@ -358,18 +370,36 @@ Por favor, preencha as fotos e o checklist de entrega ao retirar o veículo.`;
   }, [isOpen, initialVehicle]);
 
   const populateFieldsFromVehicle = (veh: Vehicle) => {
-    setTenantName(veh.driver || '');
+    // If vehicle has no driver or is marked as 'Disponível', don't set as tenantName
+    const driverName = veh.driver && veh.driver !== 'Disponível' ? veh.driver : '';
+    setTenantName(driverName);
     setTenantCpfCnpj(veh.tenantCpfCnpj || '');
     setTenantRg(veh.tenantRg || '');
     setTenantCnh(veh.tenantCnh || '');
     setTenantPhone(veh.driverPhone || '');
     setTenantEmail(veh.tenantEmail || '');
     setTenantAddress(veh.tenantAddress || '');
-    setOdometerKm(veh.currentKm || veh.initialKm || 0);
+
+    // 1. Puxar Quilometragem atual do cadastro do carro
+    const registeredKm = veh.currentKm !== undefined && veh.currentKm !== null
+      ? veh.currentKm
+      : (veh.initialKm || 0);
+    setOdometerKm(registeredKm);
+
+    // 2. Puxar Valor Semanal do cadastro do carro
+    const registeredWeekly = veh.valorSemanal !== undefined && Number(veh.valorSemanal) > 0
+      ? Number(veh.valorSemanal)
+      : (Number(veh.valorRecebido) > 0 ? Number(veh.valorRecebido) : 0);
+    setRentalValue(registeredWeekly);
+
+    // 3. Puxar Valor de Caução do cadastro do carro
+    const registeredCaucao = veh.caucaoValor !== undefined && Number(veh.caucaoValor) > 0
+      ? Number(veh.caucaoValor)
+      : 0;
+    setCaucaoValue(registeredCaucao);
+
     setStartDate(veh.startDate || new Date().toISOString().split('T')[0]);
     setEndDate(veh.endDate || '');
-    setRentalValue(veh.valorSemanal || 0);
-    setCaucaoValue(veh.caucaoValor || 0);
     setContractNumber(veh.contractNumber || generateNextContractNumber(veh.plate, vehicles, `${veh.brand} ${veh.model}`));
     setLandlordName(veh.rentalCompany || localStorage.getItem('fleet_landlord_name') || 'CLAUDIO OLIVEIRA DA SILVA');
     setLandlordCpfCnpj(localStorage.getItem('fleet_landlord_cpf') || '065.426.576-30');
@@ -411,6 +441,12 @@ Por favor, preencha as fotos e o checklist de entrega ao retirar o veículo.`;
     }
     if (!tenantName.trim()) {
       alert('Por favor, informe o nome do locatário.');
+      return;
+    }
+    if (!odometerKm || Number(odometerKm) <= 0) {
+      alert('⚠️ Por favor, informe e atualize a quilometragem atual do carro (Odômetro em KM) para emitir o contrato.');
+      const el = document.getElementById('odometerInput');
+      if (el) el.focus();
       return;
     }
 
@@ -494,7 +530,11 @@ Por favor, preencha as fotos e o checklist de entrega ao retirar o veículo.`;
 
       setGeneratedPdfUrl(pdfDataUrl);
       setGeneratedPdfFileName(fileName);
+      setIsBlankContractSuccess(false);
       setIsSuccess(true);
+
+      // Trigger automatic robust download
+      downloadPdfFile(pdfDataUrl, fileName);
 
       sendAppNotification(`📄 Contrato de Locação Gerado: ${vehicleToUse.brand} (${vehicleToUse.plate})`, {
         body: `Contrato do locatário ${contractData.tenantName} foi gerado e anexado aos documentos com sucesso.`,
@@ -508,76 +548,94 @@ Por favor, preencha as fotos e o checklist de entrega ao retirar o veículo.`;
     }
   };
 
-  const handlePrintPdf = () => {
-    if (!generatedPdfUrl) return;
-    const printWindow = window.open(generatedPdfUrl);
-    if (printWindow) {
-      printWindow.onload = () => {
-        printWindow.print();
-      };
-    } else {
-      // Fallback
+  // Helper to convert base64 Data URL to a Blob URL (much more reliable across Chrome, Android and iframes)
+  const getPdfBlobUrl = (pdfDataUrl: string): string | null => {
+    try {
+      if (pdfDataUrl.startsWith('data:')) {
+        const parts = pdfDataUrl.split(';base64,');
+        const contentType = parts[0].split(':')[1] || 'application/pdf';
+        const raw = window.atob(parts[1]);
+        const rawLength = raw.length;
+        const uInt8Array = new Uint8Array(rawLength);
+        for (let i = 0; i < rawLength; ++i) {
+          uInt8Array[i] = raw.charCodeAt(i);
+        }
+        const blob = new Blob([uInt8Array], { type: contentType });
+        return URL.createObjectURL(blob);
+      }
+    } catch (e) {
+      console.warn('Error converting dataUrl to Blob:', e);
+    }
+    return null;
+  };
+
+  const downloadPdfFile = (pdfDataUrl: string, fileName: string) => {
+    if (!pdfDataUrl) return;
+
+    // 1. Try Blob URL download (recommended for Android Chrome & iframes)
+    const blobUrl = getPdfBlobUrl(pdfDataUrl);
+    const targetUrl = blobUrl || pdfDataUrl;
+
+    try {
       const a = document.createElement('a');
-      a.href = generatedPdfUrl;
-      a.download = generatedPdfFileName || 'Contrato_Locacao.pdf';
+      a.href = targetUrl;
+      a.download = fileName;
+      a.target = '_blank';
+      a.rel = 'noopener noreferrer';
+      a.style.display = 'none';
+      document.body.appendChild(a);
+      a.click();
+      setTimeout(() => {
+        if (document.body.contains(a)) {
+          document.body.removeChild(a);
+        }
+        if (blobUrl) URL.revokeObjectURL(blobUrl);
+      }, 3000);
+    } catch (e) {
+      console.warn('Direct link download failed, fallback to window.open:', e);
+      window.open(targetUrl, '_blank');
+    }
+  };
+
+  const openPdfInNewTab = (pdfDataUrl: string) => {
+    if (!pdfDataUrl) return;
+    const blobUrl = getPdfBlobUrl(pdfDataUrl);
+    const target = blobUrl || pdfDataUrl;
+    const win = window.open(target, '_blank');
+    if (!win) {
+      // If popup blocker intervened, fallback to click
+      const a = document.createElement('a');
+      a.href = target;
+      a.target = '_blank';
+      a.rel = 'noopener noreferrer';
       a.click();
     }
+    if (blobUrl) {
+      setTimeout(() => URL.revokeObjectURL(blobUrl), 30000);
+    }
+  };
+
+  const handlePrintPdf = () => {
+    if (!generatedPdfUrl) return;
+    openPdfInNewTab(generatedPdfUrl);
   };
 
   const handleDownloadPdf = () => {
     if (!generatedPdfUrl) return;
-    const a = document.createElement('a');
-    a.href = generatedPdfUrl;
-    a.download = generatedPdfFileName || 'Contrato_Locacao.pdf';
-    a.click();
+    downloadPdfFile(generatedPdfUrl, generatedPdfFileName || 'Contrato_Locacao.pdf');
   };
 
   const handlePrintBlankContract = async () => {
     setIsGenerating(true);
     try {
-      const blankData: RentalContractData = {
-        contractNumber: 'EM BRANCO',
-        tenantName: '________________________________________________',
-        tenantCpfCnpj: '_________________________',
-        tenantRg: '_________________________',
-        tenantCnh: '_________________________',
-        tenantPhone: '_________________________',
-        tenantEmail: '_________________________',
-        tenantAddress: '________________________________________________',
-        landlordName: landlordName.trim() || 'CLAUDIO OLIVEIRA DA SILVA',
-        landlordCpfCnpj: landlordCpfCnpj.trim() || '065.426.576-30',
-        landlordRg: landlordRg.trim() || '39.508.321-7',
-        landlordPhone: landlordPhone.trim() || '(11) 95329-2570',
-        landlordAddress: landlordAddress.trim() || 'Rua Manuel Leiroz, 230, apto 1306 - Cangaíba, São Paulo/SP',
-        pixKey: pixKey.trim() || '11953292570',
-        startDate: '',
-        rentalValue: rentalValue,
-        paymentPeriod: paymentPeriod,
-        caucaoValue: caucaoValue,
-        workshopName: workshopName,
-        kmLimit: kmLimit,
-        insuranceCompany: insuranceCompany,
-        insurancePhones: insurancePhones,
-        customClauses: customClauses,
-        fineRate: contractFineRate,
-        interestRate: contractInterestRate
-      };
-
-      // Mock vehicle if none is selected
-      const mockVehicle: Vehicle = (initialVehicle || vehicles[0]) ? {
-        ...(initialVehicle || vehicles[0]!),
-        brand: initialVehicle?.brand || vehicles[0]?.brand || '__________',
-        model: initialVehicle?.model || vehicles[0]?.model || '__________',
-        plate: initialVehicle?.plate || vehicles[0]?.plate || '_______',
-        year: initialVehicle?.year || vehicles[0]?.year || '____',
-        color: initialVehicle?.color || vehicles[0]?.color || '____',
-      } : {
-        id: 'mock',
-        brand: '__________',
-        model: '__________',
-        plate: '_______',
-        year: '____',
-        color: '____',
+      const currentVeh = vehicles.find(v => v.id === selectedVehicleId) || initialVehicle;
+      const vehicleToUse: Vehicle = currentVeh || (vehicles.length > 0 ? vehicles[0] : {
+        id: 'mock-blank',
+        brand: 'Veículo Padrão',
+        model: 'Frota',
+        plate: 'BRANCO',
+        year: '2024',
+        color: 'Padrão',
         initialKm: 0,
         currentKm: 0,
         status: 'available',
@@ -586,17 +644,70 @@ Por favor, preencha as fotos e o checklist de entrega ao retirar o veículo.`;
         expenseLogs: [],
         vistorias: [],
         fuelLogs: []
-      } as any;
+      } as any);
 
-      const result = await generateRentalContractPDF(mockVehicle, blankData);
-      
-      const link = document.createElement('a');
-      link.href = result.pdfDataUrl;
-      link.download = `Contrato_Modelo_Branco.pdf`;
-      link.click();
-      
-      sendAppNotification('📄 Modelo Gerado', {
-        body: 'O modelo de contrato em branco foi gerado e o download iniciado.',
+      const blankData: RentalContractData = {
+        contractNumber: 'MODELO EM BRANCO',
+        tenantName: '________________________________________________',
+        tenantCpfCnpj: '_________________________',
+        tenantRg: '_________________________',
+        tenantCnh: '_________________________',
+        tenantPhone: '_________________________',
+        tenantEmail: '_________________________',
+        tenantAddress: '________________________________________________',
+        landlordName: '',
+        landlordCpfCnpj: '',
+        landlordRg: '',
+        landlordPhone: '',
+        landlordAddress: '',
+        pixKey: '',
+        startDate: '',
+        rentalValue: Number(rentalValue) > 0 ? Number(rentalValue) : 960,
+        paymentPeriod: paymentPeriod || 'Semanal',
+        caucaoValue: Number(caucaoValue) > 0 ? Number(caucaoValue) : 1920,
+        workshopName: workshopName || 'Pneus Andriatti (Penha, SP)',
+        kmLimit: kmLimit || '5.000 km por mês',
+        insuranceCompany: insuranceCompany || 'LOOVI SEGUROS',
+        insurancePhones: insurancePhones || '0800 948 4888 (Assistência); 0800 607 2007 (Furto/Roubo); 4000 1762 (Central)',
+        customClauses: customClauses,
+        fineRate: Number(contractFineRate),
+        interestRate: Number(contractInterestRate),
+        hideLandlordPersonalData: true
+      };
+
+      const result = await generateRentalContractPDF(vehicleToUse, blankData);
+      const downloadName = `Contrato_Modelo_Branco_${vehicleToUse.plate ? vehicleToUse.plate.replace(/[^a-zA-Z0-9]/g, '') : 'Padrao'}.pdf`;
+
+      // Save document to vehicle if currentVeh exists
+      if (currentVeh) {
+        const newDoc: VehicleDocument = {
+          id: `doc-contract-blank-${Date.now()}`,
+          name: `Modelo de Contrato em Branco (${vehicleToUse.plate}).pdf`,
+          category: 'Contrato',
+          uploadDate: new Date().toISOString().split('T')[0],
+          fileSize: 'PDF Oficial em Branco',
+          fileType: 'pdf',
+          contentUrl: result.pdfDataUrl
+        };
+        const existingDocs = currentVeh.documents || [];
+        onUpdateVehicle({
+          ...currentVeh,
+          documents: [newDoc, ...existingDocs]
+        });
+      }
+
+      // Automatically trigger robust download
+      downloadPdfFile(result.pdfDataUrl, downloadName);
+
+      // Set state to display the dedicated success/preview view immediately
+      setGeneratedPdfUrl(result.pdfDataUrl);
+      setGeneratedPdfFileName(downloadName);
+      setIsBlankContractSuccess(true);
+      setShowInlinePdfPreview(true);
+      setIsSuccess(true);
+
+      sendAppNotification('📄 Contrato em Branco Gerado', {
+        body: 'O modelo de contrato em branco foi gerado e salvo nos documentos do veículo.',
         eventKey: 'contract_generated'
       });
     } catch (error) {
@@ -701,60 +812,82 @@ O contrato oficial em PDF já foi gerado e está arquivado nos documentos do ve�
               />
             </div>
           ) : isSuccess ? (
-            <div className="bg-emerald-500/10 border border-emerald-500/20 rounded-2xl p-6 text-center space-y-5 animate-in fade-in duration-200">
-              <div className="w-16 h-16 bg-emerald-500/20 text-emerald-400 rounded-full flex items-center justify-center mx-auto border border-emerald-500/30 shadow-lg shadow-emerald-500/10">
-                <CheckCircle2 className="w-10 h-10" />
+            <div className="bg-emerald-500/10 border border-emerald-500/20 rounded-2xl p-4 sm:p-6 text-center space-y-4 animate-in fade-in duration-200">
+              <div className="w-14 h-14 bg-emerald-500/20 text-emerald-400 rounded-full flex items-center justify-center mx-auto border border-emerald-500/30 shadow-lg shadow-emerald-500/10">
+                {isBlankContractSuccess ? <FileText className="w-8 h-8" /> : <CheckCircle2 className="w-8 h-8" />}
               </div>
-              <div className="space-y-2">
-                <h3 className="text-lg font-bold text-white">Contrato Gerado e Anexado com Sucesso!</h3>
+              <div className="space-y-1.5">
+                <h3 className="text-base sm:text-lg font-bold text-white">
+                  {isBlankContractSuccess ? 'Modelo de Contrato em Branco Gerado!' : 'Contrato Gerado e Anexado com Sucesso!'}
+                </h3>
                 <p className="text-xs text-gray-300 max-w-lg mx-auto leading-relaxed">
-                  O contrato de locação do motorista <strong className="text-emerald-400">{tenantName}</strong> referente ao veículo <strong className="text-white">{currentVehicle?.brand} {currentVehicle?.model} ({currentVehicle?.plate})</strong> foi salvo e anexado automaticamente na aba de <strong>Documentos do Veículo</strong>.
+                  {isBlankContractSuccess ? (
+                    <>
+                      O contrato em branco para leitura prévia do futuro locatário foi gerado com sucesso{currentVehicle ? <> e anexado automaticamente na aba de <strong>Documentos do Veículo</strong> ({currentVehicle.brand} {currentVehicle.model} - {currentVehicle.plate})</> : ''}.
+                      <span className="block mt-2 text-emerald-300 font-semibold flex items-center justify-center gap-1.5 bg-emerald-500/10 border border-emerald-500/20 rounded-lg py-1.5 px-3">
+                        <ShieldCheck className="w-4 h-4 text-emerald-400 shrink-0" />
+                        <span>Seus dados pessoais (CPF, RG, endereço e chave PIX) foram devidamente ocultados nesta minuta prévia.</span>
+                      </span>
+                    </>
+                  ) : (
+                    <>
+                      O contrato de locação do motorista <strong className="text-emerald-400">{tenantName}</strong> referente ao veículo <strong className="text-white">{currentVehicle?.brand} {currentVehicle?.model} ({currentVehicle?.plate})</strong> foi salvo e anexado automaticamente na aba de <strong>Documentos do Veículo</strong>.
+                    </>
+                  )}
+                </p>
+                <p className="text-[11px] text-amber-300/90 font-medium">
+                  💡 Se o download não iniciou automaticamente no seu navegador, clique em <strong>Baixar Arquivo PDF</strong> ou use <strong>Visualizar na Tela</strong> abaixo.
                 </p>
               </div>
 
               {/* Action buttons in Success view */}
-              <div className="flex flex-wrap items-center justify-center gap-3 pt-3">
-                <button
-                  type="button"
-                  onClick={() => setIsSuccess(false)}
-                  className="px-4 py-3 bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 border border-amber-500/30 font-bold text-xs rounded-xl flex items-center justify-center gap-2 transition-all cursor-pointer shadow-md shadow-amber-500/10"
-                >
-                  <Edit3 className="w-4 h-4 text-amber-400" />
-                  <span>Editar Contrato</span>
-                </button>
-
-                <button
-                  type="button"
-                  onClick={handleSaveOnly}
-                  className="px-4 py-3 bg-blue-600/20 hover:bg-blue-600/30 text-blue-300 border border-blue-500/30 font-bold text-xs rounded-xl flex items-center justify-center gap-2 transition-all cursor-pointer shadow-md shadow-blue-500/10"
-                >
-                  <Save className="w-4 h-4 text-blue-400" />
-                  <span>Salvar Dados</span>
-                </button>
-
-                <button
-                  type="button"
-                  onClick={handlePrintPdf}
-                  className="px-5 py-3 bg-blue-600 hover:bg-blue-500 text-white font-bold text-xs rounded-xl flex items-center justify-center gap-2 transition-all shadow-lg shadow-blue-500/20 cursor-pointer"
-                >
-                  <Printer className="w-4 h-4" />
-                  <span>Imprimir / Abrir PDF</span>
-                </button>
-
+              <div className="flex flex-wrap items-center justify-center gap-2.5 pt-2">
                 <button
                   type="button"
                   onClick={handleDownloadPdf}
-                  className="px-5 py-3 bg-white/10 hover:bg-white/15 text-white font-bold text-xs rounded-xl flex items-center justify-center gap-2 transition-all cursor-pointer border border-white/10"
+                  className="px-4 py-2.5 bg-emerald-600 hover:bg-emerald-500 active:bg-emerald-700 text-white font-bold text-xs rounded-xl flex items-center justify-center gap-2 transition-all shadow-lg shadow-emerald-500/20 cursor-pointer"
+                  title="Baixar o arquivo PDF diretamente"
                 >
-                  <FileDown className="w-4 h-4 text-emerald-400" />
-                  <span>Baixar PDF</span>
+                  <FileDown className="w-4 h-4" />
+                  <span>Baixar Arquivo PDF</span>
                 </button>
 
-                {tenantPhone && (
+                <button
+                  type="button"
+                  onClick={() => openPdfInNewTab(generatedPdfUrl || '')}
+                  className="px-4 py-2.5 bg-blue-600 hover:bg-blue-500 text-white font-bold text-xs rounded-xl flex items-center justify-center gap-2 transition-all shadow-md shadow-blue-500/20 cursor-pointer"
+                  title="Abrir PDF em nova aba ou visualizador nativo"
+                >
+                  <ExternalLink className="w-4 h-4" />
+                  <span>Abrir em Nova Aba</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setShowInlinePdfPreview(!showInlinePdfPreview)}
+                  className="px-4 py-2.5 bg-zinc-800 hover:bg-zinc-700 text-gray-200 border border-white/10 font-bold text-xs rounded-xl flex items-center justify-center gap-2 transition-all cursor-pointer shadow-xs"
+                  title="Exibir ou ocultar leitor de PDF nesta janela"
+                >
+                  {showInlinePdfPreview ? <EyeOff className="w-4 h-4 text-amber-400" /> : <Eye className="w-4 h-4 text-emerald-400" />}
+                  <span>{showInlinePdfPreview ? 'Ocultar Leitor' : 'Visualizar na Tela'}</span>
+                </button>
+
+                {!isBlankContractSuccess && (
+                  <button
+                    type="button"
+                    onClick={handleSaveOnly}
+                    className="px-4 py-2.5 bg-blue-600/20 hover:bg-blue-600/30 text-blue-300 border border-blue-500/30 font-bold text-xs rounded-xl flex items-center justify-center gap-2 transition-all cursor-pointer shadow-md shadow-blue-500/10"
+                  >
+                    <Save className="w-4 h-4 text-blue-400" />
+                    <span>Salvar Dados</span>
+                  </button>
+                )}
+
+                {!isBlankContractSuccess && tenantPhone && (
                   <button
                     type="button"
                     onClick={handleSendWhatsApp}
-                    className="px-5 py-3 bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs rounded-xl flex items-center justify-center gap-2 transition-all shadow-lg shadow-emerald-500/20 cursor-pointer"
+                    className="px-4 py-2.5 bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs rounded-xl flex items-center justify-center gap-2 transition-all shadow-lg shadow-emerald-500/20 cursor-pointer"
                   >
                     <Share2 className="w-4 h-4" />
                     <span>Avisar no WhatsApp</span>
@@ -763,14 +896,33 @@ O contrato oficial em PDF já foi gerado e está arquivado nos documentos do ve�
 
                 <button
                   type="button"
+                  onClick={() => {
+                    setIsSuccess(false);
+                    setIsBlankContractSuccess(false);
+                  }}
+                  className="px-4 py-2.5 bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 border border-amber-500/30 font-bold text-xs rounded-xl flex items-center justify-center gap-2 transition-all cursor-pointer"
+                >
+                  <Edit3 className="w-4 h-4 text-amber-400" />
+                  <span>Voltar ao Formulário</span>
+                </button>
+
+                <button
+                  type="button"
                   onClick={onClose}
-                  className="px-5 py-3 bg-white/10 hover:bg-white/20 text-white font-bold text-xs rounded-xl flex items-center justify-center gap-2 transition-all cursor-pointer border border-white/20 shadow-md"
+                  className="px-4 py-2.5 bg-white/10 hover:bg-white/20 text-white font-bold text-xs rounded-xl flex items-center justify-center gap-2 transition-all cursor-pointer border border-white/20 shadow-md"
                   title="Fechar visualização do contrato"
                 >
                   <X className="w-4 h-4" />
                   <span>Fechar</span>
                 </button>
               </div>
+
+              {/* Inline PDF Viewer Component */}
+              {showInlinePdfPreview && generatedPdfUrl && (
+                <div className="mt-4 border border-white/15 rounded-2xl overflow-hidden bg-black/60 shadow-2xl text-left h-[65vh]">
+                  <PdfViewer pdfDataUrl={generatedPdfUrl} fileName={generatedPdfFileName} />
+                </div>
+              )}
 
               {isSavedNotification && (
                 <div className="p-3 bg-emerald-500/10 border border-emerald-500/30 rounded-xl text-emerald-300 text-xs font-bold flex items-center justify-center gap-2 animate-in fade-in duration-200 max-w-md mx-auto">
@@ -904,22 +1056,74 @@ O contrato oficial em PDF já foi gerado e está arquivado nos documentos do ve�
                   </div>
                 ) : null}
 
+                {/* Banner de Dados Carregados do Cadastro e Solicitação de Atualização */}
+                <div className="bg-amber-500/10 border border-amber-500/30 rounded-xl p-3.5 space-y-2 animate-in fade-in duration-150">
+                  <div className="flex items-start gap-2.5">
+                    <AlertTriangle className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />
+                    <div className="space-y-1.5 w-full">
+                      <div className="flex items-center justify-between flex-wrap gap-1">
+                        <span className="text-[11px] font-bold text-amber-300 uppercase tracking-wider">
+                          Dados do Carro Carregados do Cadastro
+                        </span>
+                        <span className="text-[10px] text-amber-400 font-semibold bg-amber-500/20 px-2 py-0.5 rounded-full border border-amber-500/30">
+                          ⚠️ Conferir e Atualizar
+                        </span>
+                      </div>
+                      <p className="text-[11px] text-gray-300 leading-relaxed">
+                        Puxamos automaticamente do cadastro deste veículo: 
+                        <strong className="text-white"> R$ {Number(rentalValue).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}/sem</strong> (valor semanal), 
+                        <strong className="text-white"> R$ {Number(caucaoValue).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</strong> (caução) e 
+                        <strong className="text-white"> {Number(odometerKm).toLocaleString('pt-BR')} KM</strong> (odômetro registrado).
+                      </p>
+                      <div className="p-2 bg-black/40 rounded-lg border border-amber-500/20 text-[10px] text-amber-200 flex items-center justify-between flex-wrap gap-2">
+                        <span>⚡ <strong>Atenção:</strong> Por favor, verifique e atualize a quilometragem atual do painel do carro para registrar na entrega deste contrato.</span>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const el = document.getElementById('odometerInput');
+                            if (el) el.focus();
+                          }}
+                          className="px-2 py-1 bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 border border-amber-500/40 rounded text-[10px] font-bold cursor-pointer transition-colors"
+                        >
+                          Ir para Odômetro ⬇️
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
                 {/* Campo de Odômetro / Quilometragem */}
-                <div className="space-y-1 pt-1">
-                  <label className="text-[10px] text-amber-400 font-semibold uppercase tracking-wider block">
-                    Odômetro / Quilometragem Atual (km) *
-                  </label>
+                <div className="space-y-1.5 pt-1 bg-black/40 p-3 rounded-xl border border-amber-500/30">
+                  <div className="flex items-center justify-between flex-wrap gap-1">
+                    <label className="text-[10px] text-amber-400 font-bold uppercase tracking-wider flex items-center gap-1.5">
+                      <Gauge className="w-3.5 h-3.5 text-amber-400" />
+                      <span>Odômetro / Quilometragem Atual do Carro (KM) *</span>
+                    </label>
+                    {currentVehicle && (
+                      <span className="text-[10px] text-gray-400 font-mono bg-white/5 px-2 py-0.5 rounded border border-white/10">
+                        Último cadastro: {(currentVehicle.currentKm || currentVehicle.initialKm || 0).toLocaleString('pt-BR')} KM
+                      </span>
+                    )}
+                  </div>
                   <div className="relative">
                     <Gauge className="w-4 h-4 text-amber-400 absolute left-3 top-2.5" />
                     <input
+                      id="odometerInput"
                       type="number"
+                      min="0"
                       value={odometerKm || ''}
                       onChange={(e) => setOdometerKm(Number(e.target.value))}
                       placeholder="Ex: 55922"
-                      className="w-full bg-[#111111] border border-amber-500/30 rounded-xl pl-9 pr-3 py-2 text-white font-mono font-bold text-sm focus:outline-hidden focus:border-amber-400"
+                      className="w-full bg-[#111111] border-2 border-amber-500/50 rounded-xl pl-9 pr-14 py-2.5 text-white font-mono font-bold text-sm focus:outline-hidden focus:border-amber-400 shadow-inner"
                       required
                     />
+                    <span className="absolute right-3.5 top-2.5 text-xs font-mono font-bold text-amber-400 select-none">
+                      KM
+                    </span>
                   </div>
+                  <p className="text-[10px] text-gray-400 leading-tight">
+                    Por favor, confirme ou atualize o número do odômetro marcado no painel hoje. Esse valor atualizará o cadastro do carro e o controle de manutenções preventivas.
+                  </p>
                 </div>
               </div>
 
@@ -1113,6 +1317,9 @@ O contrato oficial em PDF já foi gerado e está arquivado nos documentos do ve�
                         required
                       />
                     </div>
+                    <span className="text-[9px] text-gray-400 block mt-0.5">
+                      Puxado do cadastro: R$ {(currentVehicle?.valorSemanal || currentVehicle?.valorRecebido || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })} (atualize se necessário).
+                    </span>
                   </div>
 
                   <div className="space-y-1">
@@ -1202,6 +1409,9 @@ O contrato oficial em PDF já foi gerado e está arquivado nos documentos do ve�
                       placeholder="0,00"
                       className="w-full bg-[#111111] border border-white/10 rounded-xl px-3 py-2 text-white font-mono focus:outline-hidden focus:border-amber-500/50"
                     />
+                    <span className="text-[9px] text-gray-400 block mt-0.5">
+                      Puxado do cadastro: R$ {(currentVehicle?.caucaoValor || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })} (atualize se necessário).
+                    </span>
                   </div>
 
                   <div className="space-y-1">
@@ -1419,7 +1629,7 @@ O contrato oficial em PDF já foi gerado e está arquivado nos documentos do ve�
                     onClick={handlePrintBlankContract}
                     disabled={isGenerating}
                     className="px-4 py-2.5 bg-white/5 hover:bg-white/10 text-gray-300 border border-white/10 font-bold rounded-xl flex items-center justify-center gap-1.5 transition-all cursor-pointer text-xs"
-                    title="Imprimir contrato em branco para o locatário ler antes de assinar"
+                    title="Imprimir minuta de contrato em branco com dados pessoais ocultos para o locatário ler antes de assinar"
                   >
                     <Printer className="w-4 h-4 text-gray-400" />
                     <span>Contrato em Branco</span>

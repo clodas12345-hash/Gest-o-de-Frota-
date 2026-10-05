@@ -581,6 +581,7 @@ export interface RentalContractData {
   customClauses?: string;
   fineRate?: number;
   interestRate?: number;
+  hideLandlordPersonalData?: boolean;
 }
 
 export async function generateRentalContractPDF(
@@ -615,14 +616,25 @@ export async function generateRentalContractPDF(
   doc.setTextColor(255, 255, 255);
   doc.setFont('helvetica', 'bold');
   doc.setFontSize(11);
-  doc.text('CONTRATO DE LOCAÇÃO DE VEÍCULO PARA APLICATIVO', 105, y + 7.5, { align: 'center' });
+  doc.text(
+    contract.hideLandlordPersonalData
+      ? 'CONTRATO DE LOCAÇÃO DE VEÍCULO (MINUTA PARA LEITURA)'
+      : 'CONTRATO DE LOCAÇÃO DE VEÍCULO PARA APLICATIVO',
+    105,
+    y + 7.5,
+    { align: 'center' }
+  );
 
   y += 16;
 
   doc.setTextColor(100, 116, 139);
   doc.setFontSize(8);
   doc.setFont('helvetica', 'normal');
-  doc.text(`N° do Contrato: ${contract.contractNumber} | Emissão: ${dateFormatted}`, 14, y);
+  doc.text(
+    `N° do Contrato: ${contract.hideLandlordPersonalData ? 'MINUTA / EM BRANCO' : contract.contractNumber} | Emissão: ${dateFormatted}`,
+    14,
+    y
+  );
   y += 6;
 
   const addSectionTitle = (title: string) => {
@@ -661,14 +673,25 @@ export async function generateRentalContractPDF(
 
   // 1. PARTES
   addSectionTitle('1. PARTES');
-  addParagraph(
-    `LOCADOR: ${contract.landlordName || 'CLAUDIO OLIVEIRA DA SILVA'}, portador do CPF ${contract.landlordCpfCnpj || '065.426.576-30'}, RG ${contract.landlordRg || '39.508.321-7'}, residente e domiciliado à ${contract.landlordAddress || 'Rua Manuel Leiroz, 230, apto 1306 - Cangaíba, São Paulo/SP, CEP: 03735-180'}.`,
-    true
-  );
-  addParagraph(
-    `LOCATÁRIO: ${contract.tenantName}, portador da CNH nº ${contract.tenantCnh || 'Não informada'}, CPF nº ${contract.tenantCpfCnpj || 'Não informado'}, RG ${contract.tenantRg || 'Não informado'}, residente e domiciliado à ${contract.tenantAddress || 'Não informado'}.${contract.tenantPhone ? ` Telefone: ${contract.tenantPhone}.` : ''}`,
-    true
-  );
+  if (contract.hideLandlordPersonalData) {
+    addParagraph(
+      `LOCADOR: (Dados cadastrais e pessoais do Locador omitidos nesta minuta prévia para leitura — constarão devidamente preenchidos na via definitiva para assinatura).`,
+      true
+    );
+    addParagraph(
+      `LOCATÁRIO: ________________________________________________, portador da CNH nº ________________________, CPF nº ________________________, RG ________________________, residente e domiciliado à ________________________________________________. Telefone: ________________________.`,
+      true
+    );
+  } else {
+    addParagraph(
+      `LOCADOR: ${contract.landlordName || 'CLAUDIO OLIVEIRA DA SILVA'}, portador do CPF ${contract.landlordCpfCnpj || '065.426.576-30'}, RG ${contract.landlordRg || '39.508.321-7'}, residente e domiciliado à ${contract.landlordAddress || 'Rua Manuel Leiroz, 230, apto 1306 - Cangaíba, São Paulo/SP, CEP: 03735-180'}.`,
+      true
+    );
+    addParagraph(
+      `LOCATÁRIO: ${contract.tenantName}, portador da CNH nº ${contract.tenantCnh || 'Não informada'}, CPF nº ${contract.tenantCpfCnpj || 'Não informado'}, RG ${contract.tenantRg || 'Não informado'}, residente e domiciliado à ${contract.tenantAddress || 'Não informado'}.${contract.tenantPhone ? ` Telefone: ${contract.tenantPhone}.` : ''}`,
+      true
+    );
+  }
 
   // 2. OBJETO E VEÍCULO
   addSectionTitle('2. OBJETO E VEÍCULO');
@@ -692,7 +715,6 @@ export async function generateRentalContractPDF(
   addSectionTitle('4. VALORES, PAGAMENTO E CAUÇÃO');
   const rentVal = (contract.rentalValue || 960).toLocaleString('pt-BR', { minimumFractionDigits: 2 });
   const caucaoVal = (contract.caucaoValue || 1920).toLocaleString('pt-BR', { minimumFractionDigits: 2 });
-  const pix = contract.pixKey || contract.landlordPhone || '11953292570';
 
   addParagraph(`Aluguel Semanal: R$ ${rentVal}, pagos de forma vencida.`);
   addParagraph(`Vencimento: O pagamento deverá ser efetuado até às 23:59 de cada sexta-feira.`);
@@ -706,7 +728,10 @@ export async function generateRentalContractPDF(
     `Devolução da Caução: Em até 30 dias após a devolução do veículo, mediante inexistência de danos ou multas.`
   );
   addParagraph(`Multas: Responsabilidade do LOCATÁRIO, mesmo após a devolução da caução.`);
-  addParagraph(`Meio de Pagamento: PIX para a chave (telefone): ${pix}.`);
+  const pix = contract.hideLandlordPersonalData
+    ? '(Chave informada no ato da assinatura definitiva)'
+    : (contract.pixKey || contract.landlordPhone || '11953292570');
+  addParagraph(`Meio de Pagamento: PIX para a chave: ${pix}.`);
 
   // 5. INFRAÇÕES DE TRÂNSITO E MULTAS
   addSectionTitle('5. INFRAÇÕES DE TRÂNSITO E MULTAS');
@@ -781,14 +806,30 @@ export async function generateRentalContractPDF(
 
   doc.setFontSize(8.5);
   doc.setFont('helvetica', 'bold');
-  doc.text(contract.landlordName || 'CLAUDIO OLIVEIRA DA SILVA', 18, y);
+  doc.text(
+    contract.hideLandlordPersonalData ? 'LOCADOR' : (contract.landlordName || 'CLAUDIO OLIVEIRA DA SILVA'),
+    18,
+    y
+  );
   doc.setFont('helvetica', 'normal');
-  doc.text('(Locador)', 18, y + 4);
+  doc.text(
+    contract.hideLandlordPersonalData ? '(Assinatura na via definitiva)' : '(Locador)',
+    18,
+    y + 4
+  );
 
   doc.setFont('helvetica', 'bold');
-  doc.text(contract.tenantName || 'FABIO PEREIRA ALVES', 118, y);
+  doc.text(
+    contract.hideLandlordPersonalData ? 'LOCATÁRIO' : (contract.tenantName || 'FABIO PEREIRA ALVES'),
+    118,
+    y
+  );
   doc.setFont('helvetica', 'normal');
-  doc.text('(Locatário)', 118, y + 4);
+  doc.text(
+    contract.hideLandlordPersonalData ? '(Assinatura na via definitiva)' : '(Locatário)',
+    118,
+    y + 4
+  );
 
   const pdfDataUrl = doc.output('datauristring');
   return { doc, fileName, pdfDataUrl };
