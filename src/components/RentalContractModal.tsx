@@ -4,6 +4,9 @@ import { generateRentalContractPDF, RentalContractData } from '../utils/pdfGener
 import { generateNextContractNumber } from '../utils/contractHelper';
 import { sendAppNotification } from '../utils/notifications';
 import { DriverVistoriaForm } from './DriverVistoriaForm';
+import { Capacitor } from '@capacitor/core';
+import { Filesystem, Directory } from '@capacitor/filesystem';
+import { Share } from '@capacitor/share';
 import CurrencyInput from './CurrencyInput';
 import { 
   X, 
@@ -570,11 +573,31 @@ Por favor, preencha as fotos e o checklist de entrega ao retirar o veículo.`;
     return null;
   };
 
-  const downloadPdfFile = (pdfDataUrl: string, fileName: string) => {
+  const downloadPdfFile = async (pdfDataUrl: string, fileName: string) => {
     if (!pdfDataUrl) return;
 
     // Ensure inline viewer is shown on screen immediately
     setShowInlinePdfPreview(true);
+
+    if (Capacitor.isNativePlatform()) {
+      try {
+        const base64Data = pdfDataUrl.includes('base64,') ? pdfDataUrl.split('base64,')[1] : pdfDataUrl;
+        const writeResult = await Filesystem.writeFile({
+          path: fileName,
+          data: base64Data,
+          directory: Directory.Cache
+        });
+
+        await Share.share({
+          title: fileName,
+          url: writeResult.uri,
+          dialogTitle: 'Baixar / Compartilhar Contrato PDF'
+        });
+        return;
+      } catch (e) {
+        console.error('Capacitor native download/share error:', e);
+      }
+    }
 
     try {
       const blobUrl = getPdfBlobUrl(pdfDataUrl);
