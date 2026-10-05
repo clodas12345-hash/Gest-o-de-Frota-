@@ -121,9 +121,12 @@ export const VehicleProfitabilityModal: React.FC<VehicleProfitabilityModalProps>
       format: 'a4'
     });
 
+    const totalRemainingInstallments = (vehicle.financiamentoParcelasTotais || 0) - (vehicle.financiamentoParcelasPagas || 0);
+    const financingBalance = (vehicle.financiamento || 0) * totalRemainingInstallments;
+
     // Header
     doc.setFillColor(15, 23, 42);
-    doc.rect(0, 0, 210, 32, 'F');
+    doc.rect(0, 0, 210, 40, 'F');
 
     doc.setTextColor(255, 255, 255);
     doc.setFont('helvetica', 'bold');
@@ -136,10 +139,11 @@ export const VehicleProfitabilityModal: React.FC<VehicleProfitabilityModalProps>
     doc.text(
       `Veículo: ${vehicle.brand} ${vehicle.model} (${vehicle.plate}) | Motorista: ${vehicle.driver || 'Não informado'} | Período: ${viewMode === 'month' ? `${months[currentMonth]}/${currentYear}` : 'Histórico Total'}`,
       14,
-      24
+      22
     );
+    doc.text(`Valor FIPE: R$ ${(vehicle.fipeValue || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })} | Saldo Financiamento: R$ ${financingBalance.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`, 14, 28);
 
-    let y = 42;
+    let y = 48;
 
     // Summary Cards Box
     doc.setFillColor(248, 250, 252);
@@ -261,6 +265,10 @@ export const VehicleProfitabilityModal: React.FC<VehicleProfitabilityModalProps>
               <p className="text-xs text-gray-400">
                 {vehicle.brand} {vehicle.model} • Cálculo de Lucro Líquido Real, Margem e Custos Operacionais
               </p>
+              <div className="flex gap-4 text-[10px] text-gray-300 bg-black/30 px-3 py-1 mt-2 rounded-lg border border-white/5 font-mono">
+                <span>FIPE: R$ {(vehicle.fipeValue || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</span>
+                <span>Saldo Financiamento: R$ {(((vehicle.financiamento || 0) * ((vehicle.financiamentoParcelasTotais || 0) - (vehicle.financiamentoParcelasPagas || 0))) || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</span>
+              </div>
             </div>
           </div>
 

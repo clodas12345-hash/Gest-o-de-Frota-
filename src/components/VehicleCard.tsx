@@ -425,6 +425,16 @@ interface VehicleCardProps {
   onOpenInterestCalculator?: (vehicle: Vehicle) => void;
 }
 
+
+// Function to get ISO week number (1-53)
+const getWeekNumber = (date: Date) => {
+  const d = new Date(Date.UTC(date.getFullYear(), date.getMonth(), date.getDate()));
+  const dayNum = d.getUTCDay() || 7;
+  d.setUTCDate(d.getUTCDate() + 4 - dayNum);
+  const yearStart = new Date(Date.UTC(d.getUTCFullYear(), 0, 1));
+  return Math.ceil((((d.getTime() - yearStart.getTime()) / 86400000) + 1) / 7);
+};
+
 export const VehicleCard: React.FC<VehicleCardProps> = ({
   vehicle,
   vehicleExpenses,
@@ -453,6 +463,14 @@ export const VehicleCard: React.FC<VehicleCardProps> = ({
   onOpenInterestCalculator,
 }) => {
   const [isExpanded, setIsExpanded] = useState(false); // Default to collapsed/closed as requested by user
+
+  const today = new Date();
+  const currentWeek = getWeekNumber(today);
+  const thisYear = today.getFullYear();
+  const alreadyPaid = (vehicle.weeklyPayments || []).some(pay => {
+    const d = new Date(pay.date);
+    return d.getFullYear() === thisYear && getWeekNumber(d) === currentWeek;
+  });
   const [activeTab, setActiveTab] = useState<'financeiro' | 'pagamentos' | 'manutencao' | 'vistorias' | 'documentos' | 'pneus' | 'sinistros' | 'multas'>('financeiro');
   const [isCaucaoExpanded, setIsCaucaoExpanded] = useState(true);
   const [isContractExpanded, setIsContractExpanded] = useState(true);
@@ -2020,8 +2038,10 @@ _Enviado via sistema de gestão de frota._`;
               {(vehicle.valorSemanal || vehicle.valorRecebido > 0) && (
                 <button
                   type="button"
+                  disabled={alreadyPaid}
                   onClick={(e) => {
                     e.stopPropagation();
+                    if (alreadyPaid) return;
                     const quickAmt = vehicle.valorSemanal || vehicle.valorRecebido || 0;
                     if (quickAmt <= 0) return;
                     const todayIso = new Date().toISOString().split('T')[0];
@@ -2039,11 +2059,11 @@ _Enviado via sistema de gestão de frota._`;
                       eventKey: 'payment_registered'
                     });
                   }}
-                  className="ml-1 text-[10px] text-amber-300 hover:text-slate-950 bg-amber-500/15 hover:bg-amber-400 border border-amber-500/30 px-2 py-0.5 rounded font-bold transition-all flex items-center gap-1 cursor-pointer shadow-xs"
-                  title="Lançar pagamento semanal de hoje com 1 clique"
+                  className={`ml-1 text-[10px] text-amber-300 hover:text-slate-950 bg-amber-500/15 hover:bg-amber-400 border border-amber-500/30 px-2 py-0.5 rounded font-bold transition-all flex items-center gap-1 cursor-pointer shadow-xs ${alreadyPaid ? 'opacity-50 cursor-not-allowed' : ''}`}
+                  title={alreadyPaid ? "Pagamento semanal já confirmado" : "Lançar pagamento semanal de hoje com 1 clique"}
                 >
                   <Check className="w-3 h-3" />
-                  <span>Confirmar Semanal (R$ {(vehicle.valorSemanal || vehicle.valorRecebido || 0).toLocaleString('pt-BR')})</span>
+                  <span>{alreadyPaid ? 'Confirmado' : `Confirmar Semanal (R$ ${(vehicle.valorSemanal || vehicle.valorRecebido || 0).toLocaleString('pt-BR')})`}</span>
                 </button>
               )}
             </p>
@@ -5077,7 +5097,18 @@ _Enviado via sistema de gestão de frota._`;
                               <Building2 className="w-3.5 h-3.5" />
                             </span>
                             <div>
-                              <p className="text-[10px] font-bold text-blue-300 uppercase tracking-wider">Valor Tabela FIPE (Oficial Governamental)</p>
+                              <div className="flex items-center gap-1.5">
+                                <p className="text-[10px] font-bold text-blue-300 uppercase tracking-wider">Valor Tabela FIPE (Oficial)</p>
+                                <a
+                                  href="https://veiculos.fipe.org.br/"
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  className="text-[9px] text-blue-400 hover:text-blue-300 underline font-bold"
+                                  title="Abrir Site Oficial da FIPE em nova aba"
+                                >
+                                  (Site Oficial)
+                                </a>
+                              </div>
                               <p className="text-[10px] text-gray-400">Ref: {vehicle.fipeRefMonth || 'Busca Mensal'}</p>
                             </div>
                           </div>

@@ -4,7 +4,7 @@ import { X, Save, AlertCircle, Users, BookOpen, Sparkles, Mic, MicOff, Calculato
 import { Contacts } from '@capacitor-community/contacts';
 import { Capacitor } from '@capacitor/core';
 import { generateNextContractNumber } from '../utils/contractHelper';
-import { fetchFipeByCode, fetchFipeByDetails } from '../utils/fipeService';
+import { fetchFipeByCode, fetchFipeByDetails, parseFipeValueStr } from '../utils/fipeService';
 import CurrencyInput from './CurrencyInput';
 
 const getTodayStr = (): string => {
@@ -142,6 +142,18 @@ export function LogForms({
   const [fipeValue, setFipeValue] = useState<number | undefined>(undefined);
   const [fipeRefMonth, setFipeRefMonth] = useState('');
   const [isFipeLoading, setIsFipeLoading] = useState(false);
+  const [fipeError, setFipeError] = useState('');
+  const [fipeSearchMode, setFipeSearchMode] = useState<'selection' | 'code'>('selection');
+  const [fipeVehicleType, setFipeVehicleType] = useState<'carros' | 'motos' | 'caminhoes'>('carros');
+  const [fipeBrands, setFipeBrands] = useState<{ codigo: string; nome: string }[]>([]);
+  const [fipeModels, setFipeModels] = useState<{ codigo: string; nome: string }[]>([]);
+  const [fipeYears, setFipeYears] = useState<{ codigo: string; nome: string }[]>([]);
+  const [selectedFipeBrandId, setSelectedFipeBrandId] = useState('');
+  const [selectedFipeModelId, setSelectedFipeModelId] = useState('');
+  const [selectedFipeYearId, setSelectedFipeYearId] = useState('');
+  const [isFipeBrandsLoading, setIsFipeBrandsLoading] = useState(false);
+  const [isFipeModelsLoading, setIsFipeModelsLoading] = useState(false);
+  const [isFipeYearsLoading, setIsFipeYearsLoading] = useState(false);
 
   // 2. Fuel Form State
   const [fuelDate, setFuelDate] = useState(getTodayStr);
@@ -167,6 +179,7 @@ export function LogForms({
   const [maintReceiptUrl, setMaintReceiptUrl] = useState('');
   const [maintInvoiceFileName, setMaintInvoiceFileName] = useState('');
   const maintInvoiceInputRef = useRef<HTMLInputElement>(null);
+  const fipeTimeoutRef = useRef<any>(null);
   
   // 5. Sinistro Form State
   const [sinistroDate, setSinistroDate] = useState(getTodayStr);
@@ -227,6 +240,12 @@ export function LogForms({
        }
     };
   }, []);
+
+  // Clear FIPE error and global error when vehicle details change
+  useEffect(() => {
+    setFipeError('');
+    setError('');
+  }, [brand, model, yearFab, yearModel]);
 
   const toggleRecording = () => {
     if (isRecording) {
@@ -506,6 +525,7 @@ export function LogForms({
   useEffect(() => {
     if (!isOpen) return;
     setError('');
+    setFipeError('');
     
     if (prefilledData && isOpen) {
       const extracted = prefilledData;
@@ -783,6 +803,169 @@ export function LogForms({
     financiamento, seguro, ipva, manutencaoPreventiva, currentKm, preventiveMaintNextKm, fuelLevel,
     driver, driverPhone, caucaoValor, caucaoData, caucaoObservacoes, nextVistoriaDate, insuranceExpirationDate, extraExpenses
   ]);
+
+  // Handle FIPE Code change with debounce auto-fetching
+  const handleFipeCodeChange = (val: string) => {
+    setFipeCode(val);
+    setFipeError('');
+    setError('');
+
+    const digitsOnly = val.replace(/\D/g, '');
+    if (digitsOnly.length === 7) {
+      if (fipeTimeoutRef.current) clearTimeout(fipeTimeoutRef.current);
+      
+      fipeTimeoutRef.current = setTimeout(async () => {
+        setIsFipeLoading(true);
+        setFipeError('');
+        try {
+          let formattedCode = val.trim();
+          if (!formattedCode.includes('-')) {
+            formattedCode = `${digitsOnly.substring(0, 6)}-${digitsOnly.substring(6)}`;
+          }
+
+          const res = await fetchFipeByCode(
+            formattedCode,
+            Number(yearModel || yearFab || new Date().getFullYear())
+          );
+          if (res) {
+            setFipeValue(res.fipeValue);
+            setFipeCode(res.fipeCode);
+            setFipeRefMonth(res.refMonth);
+          } else {
+            setFipeError('Código FIPE não encontrado na base de dados oficial. Por favor, verifique o código ou digite o valor de mercado manualmente.');
+          }
+        } catch (e: any) {
+          console.error('Erro consulta FIPE automática:', e);
+          if (e?.message === 'unavailable' || e?.message === 'offline') {
+            setFipeError('O servidor oficial da Tabela FIPE está temporariamente fora do ar ou instável. Por favor, tente novamente mais tarde ou digite o valor manualmente.');
+          } else {
+            setFipeError('Erro ao conectar à API da Tabela FIPE.');
+          }
+        } finally {
+          setIsFipeLoading(false);
+        }
+      }, 600);
+    }
+  };
+
+
+  // Fetch FIPE brands list based on vehicle type
+  useEffect(() => {
+    if (!isOpen || formType !== 'vehicle') return;
+    
+    const loadBrands = async () => {
+      setFipeBrands([]);
+      setFipeModels([]);
+      setFipeYears([]);
+      setSelectedFipeBrandId('');
+      setSelectedFipeModelId('');
+      setSelectedFipeYearId('');
+      
+      setIsFipeBrandsLoading(true);
+      try {
+        const res = await fetch(`https://parallelum.com.br/fipe/api/v1/${fipeVehicleType}/marcas`);
+        if (res.ok) {
+          const data = await res.json();
+          setFipeBrands(data || []);
+        }
+      } catch (err) {
+        console.error('Error loading FIPE brands:', err);
+      } finally {
+        setIsFipeBrandsLoading(false);
+      }
+    };
+    
+    loadBrands();
+  }, [isOpen, fipeVehicleType, formType]);
+
+  // Fetch FIPE models list when brand changes
+  useEffect(() => {
+    if (!selectedFipeBrandId || !isOpen || formType !== 'vehicle') return;
+    
+    const loadModels = async () => {
+      setFipeModels([]);
+      setFipeYears([]);
+      setSelectedFipeModelId('');
+      setSelectedFipeYearId('');
+      
+      setIsFipeModelsLoading(true);
+      try {
+        const res = await fetch(`https://parallelum.com.br/fipe/api/v1/${fipeVehicleType}/marcas/${selectedFipeBrandId}/modelos`);
+        if (res.ok) {
+          const data = await res.json();
+          setFipeModels(data.modelos || []);
+        }
+      } catch (err) {
+        console.error('Error loading FIPE models:', err);
+      } finally {
+        setIsFipeModelsLoading(false);
+      }
+    };
+    
+    loadModels();
+  }, [selectedFipeBrandId, fipeVehicleType, isOpen, formType]);
+
+  // Fetch FIPE years list when model changes
+  useEffect(() => {
+    if (!selectedFipeModelId || !selectedFipeBrandId || !isOpen || formType !== 'vehicle') return;
+    
+    const loadYears = async () => {
+      setFipeYears([]);
+      setSelectedFipeYearId('');
+      
+      setIsFipeYearsLoading(true);
+      try {
+        const res = await fetch(`https://parallelum.com.br/fipe/api/v1/${fipeVehicleType}/marcas/${selectedFipeBrandId}/modelos/${selectedFipeModelId}/anos`);
+        if (res.ok) {
+          const data = await res.json();
+          setFipeYears(data || []);
+        }
+      } catch (err) {
+        console.error('Error loading FIPE years:', err);
+      } finally {
+        setIsFipeYearsLoading(false);
+      }
+    };
+    
+    loadYears();
+  }, [selectedFipeModelId, selectedFipeBrandId, fipeVehicleType, isOpen, formType]);
+
+  // Fetch final FIPE details when year is selected
+  const handleFipeYearSelect = async (yearId: string) => {
+    setSelectedFipeYearId(yearId);
+    if (!yearId || !selectedFipeBrandId || !selectedFipeModelId) return;
+    
+    setIsFipeLoading(true);
+    setFipeError('');
+    try {
+      const res = await fetch(`https://parallelum.com.br/fipe/api/v1/${fipeVehicleType}/marcas/${selectedFipeBrandId}/modelos/${selectedFipeModelId}/anos/${yearId}`);
+      if (res.ok) {
+        const detail = await res.json();
+        const valueNum = parseFipeValueStr(detail.Valor);
+        
+        setFipeValue(valueNum);
+        setFipeCode(detail.CodigoFipe || '');
+        setFipeRefMonth(detail.MesReferencia || '');
+        
+        // Auto-fill form fields!
+        if (detail.Marca) setBrand(detail.Marca);
+        if (detail.Modelo) setModel(detail.Modelo);
+        if (detail.AnoModelo) {
+          const yearNum = Number(detail.AnoModelo);
+          setYearModel(isNaN(yearNum) ? "" : yearNum);
+          setYearFab(isNaN(yearNum) ? "" : yearNum - 1);
+        }
+      } else {
+        setFipeError('Erro ao consultar os detalhes finais do preço FIPE.');
+      }
+    } catch (err) {
+      console.error('Error fetching FIPE final price:', err);
+      setFipeError('Erro de conexão ao buscar preço final FIPE.');
+    } finally {
+      setIsFipeLoading(false);
+    }
+  };
+
 
   // Handle vehicle select change & auto-populate corresponding km
   const handleVehicleChange = (vId: string) => {
@@ -1089,12 +1272,7 @@ export function LogForms({
             </div>
           </div>
 
-          {error && (
-            <div className="p-3 bg-rose-500/10 text-rose-400 rounded-xl flex items-start gap-2.5 text-xs font-semibold border border-rose-500/20">
-              <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
-              <span>{error}</span>
-            </div>
-          )}
+
 
           {/* Vehicle Select for log entries */}
           {formType !== 'vehicle' && vehicles.length > 0 && (
@@ -1210,76 +1388,262 @@ export function LogForms({
               </div>
 
               {/* Consulta Tabela FIPE no Cadastro */}
-              <div className="bg-blue-950/30 border border-blue-500/20 rounded-xl p-3 space-y-2">
-                <div className="flex items-center justify-between">
-                  <span className="text-[10px] font-bold text-blue-400 uppercase tracking-wider flex items-center gap-1.5">
-                    <Building2 className="w-3.5 h-3.5 text-blue-400" /> Tabela FIPE (Consulta do Governo)
-                  </span>
+              <div className="bg-blue-950/35 border border-blue-500/25 rounded-2xl p-4 space-y-4 shadow-xl">
+                <div className="flex items-center justify-between border-b border-white/5 pb-2">
+                  <div className="flex items-center gap-1.5">
+                    <Building2 className="w-4 h-4 text-blue-400" />
+                    <span className="text-xs font-bold text-white uppercase tracking-wider">
+                      Tabela FIPE Oficial do Governo
+                    </span>
+                    <a
+                      href="https://veiculos.fipe.org.br/"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-[10px] text-blue-300 hover:text-blue-200 underline font-bold flex items-center gap-0.5 ml-1.5"
+                      title="Abrir Site Oficial da FIPE em nova aba"
+                    >
+                      (Site Oficial)
+                    </a>
+                  </div>
+                </div>
+
+                {/* Tab Switcher */}
+                <div className="grid grid-cols-2 gap-1.5 p-1 bg-black/40 border border-white/10 rounded-xl">
                   <button
                     type="button"
-                    onClick={async () => {
-                      if (!brand || !model) {
-                        setError('Informe ao menos a Marca e o Modelo para consultar a FIPE.');
-                        return;
-                      }
-                      setIsFipeLoading(true);
-                      setError('');
-                      try {
-                        let res: any = null;
-                        if (fipeCode) {
-                          res = await fetchFipeByCode(fipeCode, Number(yearModel || yearFab || new Date().getFullYear()));
-                        }
-                        if (!res) {
-                          res = await fetchFipeByDetails(brand, model, Number(yearModel || yearFab || new Date().getFullYear()));
-                        }
-                        if (res) {
-                          setFipeValue(res.fipeValue);
-                          setFipeCode(res.fipeCode);
-                          setFipeRefMonth(res.refMonth);
-                        } else {
-                          setError('Não foi possível localizar o modelo na Tabela FIPE. Verifique Marca/Modelo ou digite o Código FIPE.');
-                        }
-                      } catch (e) {
-                        console.error('Erro consulta FIPE:', e);
-                        setError('Erro ao conectar à API da Tabela FIPE.');
-                      } finally {
-                        setIsFipeLoading(false);
-                      }
+                    onClick={() => {
+                      setFipeSearchMode('selection');
+                      setFipeError('');
                     }}
-                    disabled={isFipeLoading}
-                    className="px-2.5 py-1 bg-blue-600 hover:bg-blue-500 text-white rounded-lg text-[10px] font-bold transition-all flex items-center gap-1 cursor-pointer disabled:opacity-50"
-                    title="Consultar Tabela FIPE oficial do Governo"
+                    className={`py-1.5 text-[10px] font-bold uppercase tracking-wider rounded-lg transition-all cursor-pointer ${
+                      fipeSearchMode === 'selection'
+                        ? 'bg-blue-600 text-white shadow-xs'
+                        : 'text-gray-400 hover:text-white'
+                    }`}
                   >
-                    <Sparkles className={`w-3 h-3 ${isFipeLoading ? 'animate-spin' : ''}`} />
-                    <span>{isFipeLoading ? 'Buscando...' : '🔍 Consultar FIPE'}</span>
+                    📂 Busca por Seleção
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setFipeSearchMode('code');
+                      setFipeError('');
+                    }}
+                    className={`py-1.5 text-[10px] font-bold uppercase tracking-wider rounded-lg transition-all cursor-pointer ${
+                      fipeSearchMode === 'code'
+                        ? 'bg-blue-600 text-white shadow-xs'
+                        : 'text-gray-400 hover:text-white'
+                    }`}
+                  >
+                    🔑 Busca por Código
                   </button>
                 </div>
 
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                {/* Tab 1: Busca por Seleção (Official Structure) */}
+                {fipeSearchMode === 'selection' && (
+                  <div className="space-y-3">
+                    <div className="grid grid-cols-3 gap-2">
+                      <button
+                        type="button"
+                        onClick={() => setFipeVehicleType('carros')}
+                        className={`py-1.5 text-[10px] font-bold uppercase rounded-lg border transition-all cursor-pointer ${
+                          fipeVehicleType === 'carros'
+                            ? 'bg-blue-600/20 text-blue-300 border-blue-500/50'
+                            : 'bg-black/20 text-gray-400 border-white/10 hover:text-white'
+                        }`}
+                      >
+                        🚗 Carro
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setFipeVehicleType('motos')}
+                        className={`py-1.5 text-[10px] font-bold uppercase rounded-lg border transition-all cursor-pointer ${
+                          fipeVehicleType === 'motos'
+                            ? 'bg-blue-600/20 text-blue-300 border-blue-500/50'
+                            : 'bg-black/20 text-gray-400 border-white/10 hover:text-white'
+                        }`}
+                      >
+                        🏍️ Moto
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setFipeVehicleType('caminhoes')}
+                        className={`py-1.5 text-[10px] font-bold uppercase rounded-lg border transition-all cursor-pointer ${
+                          fipeVehicleType === 'caminhoes'
+                            ? 'bg-blue-600/20 text-blue-300 border-blue-500/50'
+                            : 'bg-black/20 text-gray-400 border-white/10 hover:text-white'
+                        }`}
+                      >
+                        🚚 Caminhão
+                      </button>
+                    </div>
+
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
+                      {/* Brand Select */}
+                      <div className="space-y-1">
+                        <label className="text-[10px] font-bold text-gray-400 uppercase">1. Marca</label>
+                        <select
+                          value={selectedFipeBrandId}
+                          onChange={(e) => setSelectedFipeBrandId(e.target.value)}
+                          className="w-full text-xs bg-black/40 border border-white/10 rounded-lg px-2 py-1.5 text-white font-semibold focus:outline-hidden focus:border-blue-500"
+                        >
+                          <option value="">{isFipeBrandsLoading ? 'Carregando...' : 'Selecione...'}</option>
+                          {fipeBrands.map((b) => (
+                            <option key={b.codigo} value={b.codigo}>{b.nome}</option>
+                          ))}
+                        </select>
+                      </div>
+
+                      {/* Model Select */}
+                      <div className="space-y-1">
+                        <label className="text-[10px] font-bold text-gray-400 uppercase">2. Modelo</label>
+                        <select
+                          value={selectedFipeModelId}
+                          onChange={(e) => setSelectedFipeModelId(e.target.value)}
+                          disabled={!selectedFipeBrandId || isFipeModelsLoading}
+                          className="w-full text-xs bg-black/40 border border-white/10 rounded-lg px-2 py-1.5 text-white font-semibold focus:outline-hidden focus:border-blue-500 disabled:opacity-40"
+                        >
+                          <option value="">
+                            {isFipeModelsLoading ? 'Carregando...' : (!selectedFipeBrandId ? 'Aguardando...' : 'Selecione...')}
+                          </option>
+                          {fipeModels.map((m) => (
+                            <option key={m.codigo} value={m.codigo}>{m.nome}</option>
+                          ))}
+                        </select>
+                      </div>
+
+                      {/* Year Select */}
+                      <div className="space-y-1">
+                        <label className="text-[10px] font-bold text-gray-400 uppercase">3. Ano Modelo</label>
+                        <select
+                          value={selectedFipeYearId}
+                          onChange={(e) => handleFipeYearSelect(e.target.value)}
+                          disabled={!selectedFipeModelId || isFipeYearsLoading}
+                          className="w-full text-xs bg-black/40 border border-white/10 rounded-lg px-2 py-1.5 text-white font-semibold focus:outline-hidden focus:border-blue-500 disabled:opacity-40"
+                        >
+                          <option value="">
+                            {isFipeYearsLoading ? 'Carregando...' : (!selectedFipeModelId ? 'Aguardando...' : 'Selecione...')}
+                          </option>
+                          {fipeYears.map((y) => (
+                            <option key={y.codigo} value={y.codigo}>{y.nome}</option>
+                          ))}
+                        </select>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* Tab 2: Busca por Código (Traditional Search) */}
+                {fipeSearchMode === 'code' && (
+                  <div className="space-y-3">
+                    <div className="flex items-end gap-2">
+                      <div className="flex-1 space-y-1">
+                        <label className="text-[10px] font-bold text-gray-400 uppercase">Código FIPE (7 dígitos)</label>
+                        <input
+                          type="text"
+                          value={fipeCode}
+                          onChange={e => handleFipeCodeChange(e.target.value)}
+                          placeholder="Ex: 001460-5"
+                          className="w-full text-xs bg-black/40 border border-white/10 rounded-lg px-2.5 py-1.5 text-white placeholder-gray-500 focus:outline-hidden font-mono font-bold"
+                        />
+                      </div>
+                      <button
+                        type="button"
+                        onClick={async () => {
+                          if (!brand || !model) {
+                            setFipeError('Informe ao menos a Marca e o Modelo para consultar a FIPE.');
+                            return;
+                          }
+                          setIsFipeLoading(true);
+                          setFipeError('');
+                          try {
+                            let res: any = null;
+                            if (fipeCode && fipeCode.trim()) {
+                              res = await fetchFipeByCode(fipeCode.trim(), Number(yearModel || yearFab || new Date().getFullYear()));
+                              if (!res) {
+                                setFipeError('Código FIPE não encontrado na base de dados oficial. Por favor, verifique o código ou digite o valor de mercado manualmente.');
+                                setIsFipeLoading(false);
+                                return;
+                              }
+                            } else {
+                              res = await fetchFipeByDetails(brand, model, Number(yearModel || yearFab || new Date().getFullYear()));
+                            }
+                            if (res) {
+                              setFipeValue(res.fipeValue);
+                              setFipeCode(res.fipeCode);
+                              setFipeRefMonth(res.refMonth);
+                            } else {
+                              setFipeError('Não foi possível localizar o modelo na Tabela FIPE. Verifique Marca/Modelo ou digite o Código FIPE.');
+                            }
+                          } catch (e: any) {
+                            console.error('Erro consulta FIPE:', e);
+                            if (e?.message === 'unavailable' || e?.message === 'offline') {
+                              setFipeError('O servidor oficial da Tabela FIPE está temporariamente fora do ar ou instável. Por favor, tente novamente mais tarde ou digite o valor manualmente.');
+                            } else {
+                              setFipeError('Erro ao conectar à API da Tabela FIPE.');
+                            }
+                          } finally {
+                            setIsFipeLoading(false);
+                          }
+                        }}
+                        disabled={isFipeLoading}
+                        className="px-3 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded-lg text-xs font-bold transition-all flex items-center gap-1 cursor-pointer disabled:opacity-50 shrink-0"
+                        title="Consultar Tabela FIPE oficial do Governo"
+                      >
+                        <Sparkles className={`w-3.5 h-3.5 ${isFipeLoading ? 'animate-spin' : ''}`} />
+                        <span>{isFipeLoading ? 'Buscando...' : 'Consultar'}</span>
+                      </button>
+                    </div>
+                  </div>
+                )}
+
+                {/* Localized FIPE Error Banner */}
+                {fipeError && (
+                  <div className="p-3 bg-rose-500/10 text-rose-400 rounded-xl flex items-start gap-2.5 text-xs font-semibold border border-rose-500/20 relative">
+                    <button 
+                      onClick={() => setFipeError('')} 
+                      className="absolute top-2 right-2 text-rose-400/50 hover:text-rose-400"
+                    >
+                      <X className="w-3 h-3" />
+                    </button>
+                    <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
+                    <span>{fipeError}</span>
+                  </div>
+                )}
+
+                {/* Common FIPE Result fields */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 border-t border-white/5 pt-3">
+                  {/* FIPE Code result */}
                   <div className="space-y-1">
-                    <label className="text-[10px] font-semibold text-gray-400">Código FIPE (Opcional)</label>
+                    <label className="text-[10px] font-bold text-gray-400 uppercase">Código FIPE Gravado</label>
                     <input
                       type="text"
-                      value={fipeCode}
-                      onChange={e => setFipeCode(e.target.value)}
-                      placeholder="Ex: 001460-5"
-                      className="w-full text-xs bg-black/40 border border-white/10 rounded-lg px-2.5 py-1.5 text-white placeholder-gray-500 focus:outline-hidden font-mono"
+                      readOnly
+                      value={fipeCode || 'Não gerado'}
+                      className="w-full text-xs bg-black/20 border border-white/5 rounded-lg px-2.5 py-1.5 text-gray-300 font-mono font-bold focus:outline-hidden"
                     />
                   </div>
+
+                  {/* FIPE Value editable result */}
                   <div className="space-y-1">
-                    <label className="text-[10px] font-semibold text-gray-400">Valor FIPE Consultado (R$)</label>
+                    <label className="text-[10px] font-bold text-gray-400 uppercase">Valor de Mercado FIPE (R$)</label>
                     <CurrencyInput
                       value={fipeValue || 0}
-                      onChange={(val) => setFipeValue(val)}
+                      onChange={(val) => {
+                        setFipeValue(val);
+                        setFipeError('');
+                      }}
                       placeholder="0,00"
                       className="w-full text-xs bg-black/40 border border-white/10 rounded-lg px-2.5 py-1.5 text-emerald-400 font-mono font-bold focus:outline-hidden"
                     />
                   </div>
                 </div>
+
                 {fipeRefMonth && (
-                  <p className="text-[10px] text-blue-300 font-mono">
-                    Mês de Referência: {fipeRefMonth}
-                  </p>
+                  <div className="flex items-center gap-1.5 text-[10px] text-blue-300 font-mono font-semibold">
+                    <Calendar className="w-3 h-3 text-blue-400" />
+                    <span>Mês de Referência: {fipeRefMonth}</span>
+                  </div>
                 )}
               </div>
 

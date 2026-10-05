@@ -117,6 +117,29 @@ export function DashboardCalendar({
           });
         }
       });
+
+      // Fines (Multas) - Cláusula 10ª Deadline (15 days after notificationDate)
+      (vehicle.fines || []).forEach((fine) => {
+        if (fine.notificationDate && fine.status !== 'Paga pelo Locatário' && fine.status !== 'Paga pela Locadora') {
+          try {
+            const notif = new Date(fine.notificationDate + 'T12:00:00');
+            notif.setDate(notif.getDate() + 15);
+            const limitDateStr = notif.toISOString().split('T')[0];
+            
+            if (limitDateStr === dateStr) {
+              events.push({
+                type: 'vistoria_scheduled', // styled as red/rose alert
+                title: `🚨 Cobrar Multa (Cláusula 10ª - Limite)`,
+                vehiclePlate: vehicle.plate,
+                vehicleModel: `${vehicle.brand} ${vehicle.model}: ${fine.descricao}`,
+                id: `fine-limit-${fine.id}`
+              });
+            }
+          } catch (e) {
+            console.error('Error calculating fine calendar limit:', e);
+          }
+        }
+      });
     });
 
     // Completed Vistorias

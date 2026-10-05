@@ -19,7 +19,8 @@ import {
   Calendar,
   PieChart,
   History,
-  BarChart3
+  BarChart3,
+  FileText
 } from 'lucide-react';
 import { Vehicle, FuelLog, MaintenanceLog, ExpenseLog, Vistoria } from '../types';
 import { DashboardCalendar } from './DashboardCalendar';
@@ -101,6 +102,44 @@ export function SettingsModal({
   const [selectedCategory, setSelectedCategory] = useState<string>('Todas');
   const [mainTab, setMainTab] = useState<'settings' | 'calendar' | 'charts' | 'history'>(initialTab);
 
+  // Default contract / landlord settings
+  const [landlordName, setLandlordName] = useState(() => localStorage.getItem('fleet_landlord_name') || 'CLAUDIO OLIVEIRA DA SILVA');
+  const [landlordCpfCnpj, setLandlordCpfCnpj] = useState(() => localStorage.getItem('fleet_landlord_cpf') || '065.426.576-30');
+  const [landlordRg, setLandlordRg] = useState(() => localStorage.getItem('fleet_landlord_rg') || '39.508.321-7');
+  const [landlordPhone, setLandlordPhone] = useState(() => localStorage.getItem('fleet_landlord_phone') || '(11) 95329-2570');
+  const [landlordAddress, setLandlordAddress] = useState(() => localStorage.getItem('fleet_landlord_address') || 'Rua Manuel Leiroz, 230, apto 1306 - Cangaíba, São Paulo/SP, CEP: 03735-180');
+  const [pixKey, setPixKey] = useState(() => localStorage.getItem('fleet_landlord_pix') || '11953292570');
+  const [fineRate, setFineRate] = useState<number>(() => {
+    const saved = localStorage.getItem('fleet_fine_rate_default');
+    return saved ? Number(saved) : 2.0;
+  });
+  const [interestRate, setInterestRate] = useState<number>(() => {
+    const saved = localStorage.getItem('fleet_daily_interest_rate_default');
+    return saved ? Number(saved) : 0.33;
+  });
+  const [earlyFineRate, setEarlyFineRate] = useState<number>(() => {
+    const saved = localStorage.getItem('fleet_early_return_fine_rate_default');
+    return saved ? Number(saved) : 20.0;
+  });
+
+  const handleUpdateLandlordField = (key: string, value: string) => {
+    localStorage.setItem(key, value);
+    if (key === 'fleet_landlord_name') setLandlordName(value);
+    if (key === 'fleet_landlord_cpf') setLandlordCpfCnpj(value);
+    if (key === 'fleet_landlord_rg') setLandlordRg(value);
+    if (key === 'fleet_landlord_phone') setLandlordPhone(value);
+    if (key === 'fleet_landlord_address') setLandlordAddress(value);
+    if (key === 'fleet_landlord_pix') setPixKey(value);
+  };
+
+  const handleUpdateRateField = (key: string, value: number) => {
+    localStorage.setItem(key, String(value));
+    if (key === 'fleet_fine_rate_default') setFineRate(value);
+    if (key === 'fleet_daily_interest_rate_default') setInterestRate(value);
+    if (key === 'fleet_early_return_fine_rate_default') setEarlyFineRate(value);
+    window.dispatchEvent(new CustomEvent('settings-updated'));
+  };
+
   useEffect(() => {
     if (isOpen) {
       setMainTab(initialTab);
@@ -108,6 +147,19 @@ export function SettingsModal({
       checkNotificationPermission().then((granted) => {
         setPermissionState(granted ? 'granted' : 'default');
       });
+      setLandlordName(localStorage.getItem('fleet_landlord_name') || 'CLAUDIO OLIVEIRA DA SILVA');
+      setLandlordCpfCnpj(localStorage.getItem('fleet_landlord_cpf') || '065.426.576-30');
+      setLandlordRg(localStorage.getItem('fleet_landlord_rg') || '39.508.321-7');
+      setLandlordPhone(localStorage.getItem('fleet_landlord_phone') || '(11) 95329-2570');
+      setLandlordAddress(localStorage.getItem('fleet_landlord_address') || 'Rua Manuel Leiroz, 230, apto 1306 - Cangaíba, São Paulo/SP, CEP: 03735-180');
+      setPixKey(localStorage.getItem('fleet_landlord_pix') || '11953292570');
+      
+      const savedFine = localStorage.getItem('fleet_fine_rate_default');
+      setFineRate(savedFine ? Number(savedFine) : 2.0);
+      const savedInterest = localStorage.getItem('fleet_daily_interest_rate_default');
+      setInterestRate(savedInterest ? Number(savedInterest) : 0.33);
+      const savedEarlyFine = localStorage.getItem('fleet_early_return_fine_rate_default');
+      setEarlyFineRate(savedEarlyFine ? Number(savedEarlyFine) : 20.0);
     }
   }, [isOpen, initialTab]);
 
@@ -559,11 +611,148 @@ export function SettingsModal({
 
               <div className="border-t border-white/10" />
 
-              {/* Section 4: Permissões do Dispositivo */}
+              {/* Section 4: Configurações do Contrato, Dados do Locador & Juros/Multas Padrão */}
+              <div className="space-y-3">
+                <h3 className="text-xs font-bold text-gray-300 uppercase tracking-wider flex items-center gap-1.5">
+                  <FileText className="w-3.5 h-3.5 text-blue-400" />
+                  <span>4. Dados do Locador e Taxas de Juros/Multa Padrão</span>
+                </h3>
+
+                <div className="p-4 rounded-xl bg-white/5 border border-white/10 space-y-4">
+                  <p className="text-[11px] text-gray-400 leading-relaxed">
+                    Personalize os dados de identificação do Locador que aparecem nos contratos gerados e defina as taxas padrão para juros de mora e multas tanto no contrato quanto na calculadora.
+                  </p>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <div className="space-y-1 sm:col-span-2">
+                      <label className="text-[10px] text-gray-400 font-semibold uppercase tracking-wider block">
+                        Nome Completo do Locador
+                      </label>
+                      <input
+                        type="text"
+                        value={landlordName}
+                        onChange={(e) => handleUpdateLandlordField('fleet_landlord_name', e.target.value)}
+                        placeholder="Ex: CLAUDIO OLIVEIRA DA SILVA"
+                        className="w-full bg-[#111111] border border-white/10 rounded-xl px-3 py-2 text-white focus:outline-hidden focus:border-blue-500/50 text-xs"
+                      />
+                    </div>
+
+                    <div className="space-y-1">
+                      <label className="text-[10px] text-gray-400 font-semibold uppercase tracking-wider block">
+                        CPF do Locador
+                      </label>
+                      <input
+                        type="text"
+                        value={landlordCpfCnpj}
+                        onChange={(e) => handleUpdateLandlordField('fleet_landlord_cpf', e.target.value)}
+                        placeholder="Ex: 065.426.576-30"
+                        className="w-full bg-[#111111] border border-white/10 rounded-xl px-3 py-2 text-white font-mono focus:outline-hidden focus:border-blue-500/50 text-xs"
+                      />
+                    </div>
+
+                    <div className="space-y-1">
+                      <label className="text-[10px] text-gray-400 font-semibold uppercase tracking-wider block">
+                        RG do Locador
+                      </label>
+                      <input
+                        type="text"
+                        value={landlordRg}
+                        onChange={(e) => handleUpdateLandlordField('fleet_landlord_rg', e.target.value)}
+                        placeholder="Ex: 39.508.321-7"
+                        className="w-full bg-[#111111] border border-white/10 rounded-xl px-3 py-2 text-white font-mono focus:outline-hidden focus:border-blue-500/50 text-xs"
+                      />
+                    </div>
+
+                    <div className="space-y-1">
+                      <label className="text-[10px] text-gray-400 font-semibold uppercase tracking-wider block">
+                        Telefone / WhatsApp do Locador
+                      </label>
+                      <input
+                        type="text"
+                        value={landlordPhone}
+                        onChange={(e) => handleUpdateLandlordField('fleet_landlord_phone', e.target.value)}
+                        placeholder="Ex: (11) 95329-2570"
+                        className="w-full bg-[#111111] border border-white/10 rounded-xl px-3 py-2 text-white font-mono focus:outline-hidden focus:border-blue-500/50 text-xs"
+                      />
+                    </div>
+
+                    <div className="space-y-1">
+                      <label className="text-[10px] text-gray-400 font-semibold uppercase tracking-wider block">
+                        Chave PIX para Recebimento
+                      </label>
+                      <input
+                        type="text"
+                        value={pixKey}
+                        onChange={(e) => handleUpdateLandlordField('fleet_landlord_pix', e.target.value)}
+                        placeholder="Ex: 11953292570"
+                        className="w-full bg-[#111111] border border-white/10 rounded-xl px-3 py-2 text-white font-mono focus:outline-hidden focus:border-blue-500/50 text-xs"
+                      />
+                    </div>
+
+                    <div className="space-y-1 sm:col-span-2">
+                      <label className="text-[10px] text-gray-400 font-semibold uppercase tracking-wider block">
+                        Endereço do Locador
+                      </label>
+                      <input
+                        type="text"
+                        value={landlordAddress}
+                        onChange={(e) => handleUpdateLandlordField('fleet_landlord_address', e.target.value)}
+                        placeholder="Ex: Rua Manuel Leiroz, 230, apto 1306 - Cangaíba, São Paulo/SP"
+                        className="w-full bg-[#111111] border border-white/10 rounded-xl px-3 py-2 text-white focus:outline-hidden focus:border-blue-500/50 text-xs"
+                      />
+                    </div>
+
+                    <div className="border-t border-white/5 sm:col-span-2 my-2" />
+
+                    <div className="space-y-1">
+                      <label className="text-[10px] text-gray-400 font-semibold uppercase tracking-wider block">
+                        Multa de Atraso Padrão (%)
+                      </label>
+                      <input
+                        type="number"
+                        step="0.01"
+                        value={fineRate}
+                        onChange={(e) => handleUpdateRateField('fleet_fine_rate_default', Number(e.target.value))}
+                        className="w-full bg-[#111111] border border-white/10 rounded-xl px-3 py-2 text-white font-mono focus:outline-hidden focus:border-blue-500/50 text-xs"
+                      />
+                    </div>
+
+                    <div className="space-y-1">
+                      <label className="text-[10px] text-gray-400 font-semibold uppercase tracking-wider block">
+                        Juros Diário Padrão (% / dia)
+                      </label>
+                      <input
+                        type="number"
+                        step="0.01"
+                        value={interestRate}
+                        onChange={(e) => handleUpdateRateField('fleet_daily_interest_rate_default', Number(e.target.value))}
+                        className="w-full bg-[#111111] border border-white/10 rounded-xl px-3 py-2 text-white font-mono focus:outline-hidden focus:border-blue-500/50 text-xs"
+                      />
+                    </div>
+
+                    <div className="space-y-1 sm:col-span-2">
+                      <label className="text-[10px] text-gray-400 font-semibold uppercase tracking-wider block">
+                        Multa Rescisória s/ Dias Faltantes (%)
+                      </label>
+                      <input
+                        type="number"
+                        step="0.1"
+                        value={earlyFineRate}
+                        onChange={(e) => handleUpdateRateField('fleet_early_return_fine_rate_default', Number(e.target.value))}
+                        className="w-full bg-[#111111] border border-white/10 rounded-xl px-3 py-2 text-white font-mono focus:outline-hidden focus:border-blue-500/50 text-xs"
+                      />
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <div className="border-t border-white/10" />
+
+              {/* Section 5: Permissões do Dispositivo */}
               <div className="space-y-3">
                 <h3 className="text-xs font-bold text-gray-300 uppercase tracking-wider flex items-center gap-1.5">
                   <ShieldCheck className="w-3.5 h-3.5 text-emerald-400" />
-                  <span>4. Autorização de Permissões do Dispositivo</span>
+                  <span>5. Autorização de Permissões do Dispositivo</span>
                 </h3>
 
                 <div className="p-4 rounded-xl bg-white/5 border border-white/10 space-y-3">
@@ -626,11 +815,11 @@ export function SettingsModal({
 
               <div className="border-t border-white/10" />
 
-              {/* Section 5: Suporte e Fale Conosco (WhatsApp) */}
+              {/* Section 6: Suporte e Fale Conosco (WhatsApp) */}
               <div className="space-y-3">
                 <h3 className="text-xs font-bold text-gray-300 uppercase tracking-wider flex items-center gap-1.5">
                   <MessageCircle className="w-3.5 h-3.5 text-emerald-400" />
-                  <span>5. Suporte e Fale Conosco</span>
+                  <span>6. Suporte e Fale Conosco</span>
                 </h3>
 
                 <div className="p-4 rounded-xl bg-white/5 border border-white/10 space-y-3">

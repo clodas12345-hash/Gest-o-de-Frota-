@@ -29,7 +29,12 @@ export async function fetchFipeByCode(fipeCode: string, modelYear?: number): Pro
 
   try {
     const res = await fetch(`https://brasilapi.com.br/api/fipe/preco/v1/${cleanCode}`);
-    if (!res.ok) return null;
+    if (res.status === 404) {
+      return null;
+    }
+    if (!res.ok) {
+      throw new Error('unavailable');
+    }
     const data = await res.json();
     if (!Array.isArray(data) || data.length === 0) return null;
 
@@ -49,9 +54,12 @@ export async function fetchFipeByCode(fipeCode: string, modelYear?: number): Pro
       brand: match.marca || '',
       modelYear: match.anoModelo || modelYear || new Date().getFullYear(),
     };
-  } catch (err) {
+  } catch (err: any) {
     console.error('Error fetching FIPE by code:', err);
-    return null;
+    if (err?.message === 'unavailable') {
+      throw err;
+    }
+    throw new Error('offline');
   }
 }
 
@@ -133,14 +141,16 @@ export async function syncVehicleFipe(vehicle: Vehicle): Promise<{ updatedVehicl
   const modelYear = vehicle.yearModel || vehicle.year || now.getFullYear();
   let fipeData: FipeResult | null = null;
 
-  // Try by code first if code exists
-  if (vehicle.fipeCode) {
-    fipeData = await fetchFipeByCode(vehicle.fipeCode, modelYear);
-  }
-
-  // Fallback to searching by brand + model + year
-  if (!fipeData) {
-    fipeData = await fetchFipeByDetails(vehicle.brand, vehicle.model, modelYear);
+  // Try by code first if code exists, otherwise search by details
+  try {
+    if (vehicle.fipeCode) {
+      fipeData = await fetchFipeByCode(vehicle.fipeCode, modelYear);
+    } else {
+      fipeData = await fetchFipeByDetails(vehicle.brand, vehicle.model, modelYear);
+    }
+  } catch (e) {
+    console.error('Error in syncVehicleFipe lookup:', e);
+    return { updatedVehicle: vehicle, updated: false };
   }
 
   if (!fipeData || !fipeData.fipeValue) {

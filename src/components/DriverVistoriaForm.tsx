@@ -84,6 +84,7 @@ export function DriverVistoriaForm({
     if (kmParam && !isNaN(Number(kmParam))) return Number(kmParam);
     return vehicle?.currentKm || vehicle?.preventiveMaintCurrentKm || '';
   });
+  const [fuelLevel, setFuelLevel] = useState<number | null>(null); // 0-100
   const [isSubmitted, setIsSubmitted] = useState(false);
   const [isGeneratingPdf, setIsGeneratingPdf] = useState(false);
   const [generatedPdf, setGeneratedPdf] = useState<{pdfDataUrl: string, fileName: string} | null>(null);
@@ -349,7 +350,8 @@ export function DriverVistoriaForm({
       checklist: booleanChecklist,
       photos: combinedPhotos,
       notes: notes.trim() || undefined,
-      km: parsedKm
+      km: parsedKm,
+      fuelLevel: fuelLevel || undefined
     };
 
     if (vehicle) {
@@ -802,6 +804,23 @@ _Enviado via sistema de vistoria digital._`;
                 <span className="absolute right-3.5 text-xs font-mono font-bold text-emerald-400 select-none">
                   KM
                 </span>
+              </div>
+            </div>
+
+            {/* Campo para Nível de Combustível */}
+            <div className="bg-[#111111] border border-white/10 rounded-2xl p-5 space-y-4 shadow-xl">
+              <h3 className="text-xs font-bold text-white uppercase tracking-wider">Nível de Combustível</h3>
+              <div className="grid grid-cols-5 gap-2">
+                {[0, 25, 50, 75, 100].map(level => (
+                  <button
+                    key={level}
+                    type="button"
+                    onClick={() => setFuelLevel(level)}
+                    className={`py-2 rounded-xl text-xs font-bold border ${fuelLevel === level ? 'bg-emerald-600 text-white border-emerald-500' : 'bg-black/40 text-gray-400 border-white/10'}`}
+                  >
+                    {level}%
+                  </button>
+                ))}
               </div>
             </div>
             

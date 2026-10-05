@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { X, Calculator, Percent, Calendar, DollarSign, Send, MessageCircle, Save, Check, RefreshCw } from 'lucide-react';
+import { X, Calculator, Percent, Calendar, DollarSign, Send, MessageCircle, Save, Check, RefreshCw, FileText } from 'lucide-react';
 import { Vehicle } from '../types';
 import CurrencyInput from './CurrencyInput';
 import { getPublicWebBaseUrl } from './VehicleCard';
@@ -94,6 +94,21 @@ export const InterestCalculatorModal: React.FC<InterestCalculatorModalProps> = (
       }
     }
   }, [isOpen, selectedVehicle]);
+
+  // Listen for settings-updated event
+  useEffect(() => {
+    const handleSettingsUpdated = () => {
+      const savedFine = localStorage.getItem('fleet_fine_rate_default');
+      if (savedFine) setFineRate(Number(savedFine));
+      const savedInterest = localStorage.getItem('fleet_daily_interest_rate_default');
+      if (savedInterest) setDailyInterestRate(Number(savedInterest));
+      const savedEarlyFine = localStorage.getItem('fleet_early_return_fine_rate_default');
+      if (savedEarlyFine) setEarlyFineRate(Number(savedEarlyFine));
+    };
+
+    window.addEventListener('settings-updated', handleSettingsUpdated);
+    return () => window.removeEventListener('settings-updated', handleSettingsUpdated);
+  }, []);
 
   // Recalculate days overdue when dueDate or paymentDate changes (if not custom)
   useEffect(() => {
@@ -541,6 +556,27 @@ export const InterestCalculatorModal: React.FC<InterestCalculatorModalProps> = (
                   <p className="text-[11px] text-gray-300 leading-relaxed">
                     Soma sempre os 30 dias mínimos de contrato. Se a pessoa devolver o carro antes dos 30 dias, calcula também o percentual de multa sobre os dias faltantes.
                   </p>
+                </div>
+
+                {/* Parâmetros e Ajustes Contratuais */}
+                <div className="bg-amber-500/5 border border-amber-500/15 p-3.5 rounded-xl space-y-2">
+                  <p className="text-[11px] font-bold text-amber-400 uppercase tracking-wider flex items-center gap-1.5">
+                    <FileText className="w-3.5 h-3.5 text-amber-400" /> 📜 Parâmetros e Ajustes do Contrato (Rescisão)
+                  </p>
+                  <ul className="space-y-1.5 text-[11px] text-gray-300 list-disc pl-4 leading-relaxed">
+                    <li>
+                      <strong className="text-amber-200">Multa Razoável de 20%</strong>: Escolhida por ser o patamar considerado "razoável" em decisões judiciais de veículos. O percentual não é fixo e pode ser reduzido pelo juiz se excessivo (Art. 413 do Código Civil).
+                    </li>
+                    <li>
+                      <strong className="text-amber-200">Aviso Prévio (48h)</strong>: A rescisão com aviso de 48h só é válida após o período mínimo de 30 dias de contrato.
+                    </li>
+                    <li>
+                      <strong className="text-amber-200">Coexistência de Cláusulas</strong>: Bloqueio do veículo (Cláusula 6ª) e cobrança/rescisão após 2 dias (Cláusula 14ª) coexistem harmonicamente para resguardo de posse.
+                    </li>
+                  </ul>
+                  <div className="text-[9px] text-gray-500 italic border-t border-white/5 pt-1.5">
+                    ⚠️ Nota: Esta calculadora serve como auxílio administrativo de cálculo. Recomenda-se realizar uma revisão jurídica do contrato antes de aplicar em juízo.
+                  </div>
                 </div>
 
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">

@@ -222,13 +222,13 @@ export const RentalContractModal: React.FC<RentalContractModalProps> = ({
     setShowContactPicker(false);
   };
 
-  // Locador / Landlord Details (Pre-filled with Claudio's data)
-  const [landlordName, setLandlordName] = useState('CLAUDIO OLIVEIRA DA SILVA');
-  const [landlordCpfCnpj, setLandlordCpfCnpj] = useState('065.426.576-30');
-  const [landlordRg, setLandlordRg] = useState('39.508.321-7');
-  const [landlordPhone, setLandlordPhone] = useState('(11) 95329-2570');
-  const [landlordAddress, setLandlordAddress] = useState('Rua Manuel Leiroz, 230, apto 1306 - Cangaíba, São Paulo/SP, CEP: 03735-180');
-  const [pixKey, setPixKey] = useState('11953292570');
+  // Locador / Landlord Details (Pre-filled with custom settings or fallback default)
+  const [landlordName, setLandlordName] = useState(() => localStorage.getItem('fleet_landlord_name') || 'CLAUDIO OLIVEIRA DA SILVA');
+  const [landlordCpfCnpj, setLandlordCpfCnpj] = useState(() => localStorage.getItem('fleet_landlord_cpf') || '065.426.576-30');
+  const [landlordRg, setLandlordRg] = useState(() => localStorage.getItem('fleet_landlord_rg') || '39.508.321-7');
+  const [landlordPhone, setLandlordPhone] = useState(() => localStorage.getItem('fleet_landlord_phone') || '(11) 95329-2570');
+  const [landlordAddress, setLandlordAddress] = useState(() => localStorage.getItem('fleet_landlord_address') || 'Rua Manuel Leiroz, 230, apto 1306 - Cangaíba, São Paulo/SP, CEP: 03735-180');
+  const [pixKey, setPixKey] = useState(() => localStorage.getItem('fleet_landlord_pix') || '11953292570');
 
   // Contract Terms
   const [contractNumber, setContractNumber] = useState('');
@@ -244,6 +244,14 @@ export const RentalContractModal: React.FC<RentalContractModalProps> = ({
   const [insuranceCompany, setInsuranceCompany] = useState('LOOVI SEGUROS');
   const [insurancePhones, setInsurancePhones] = useState('0800 948 4888 (Assistência); 0800 607 2007 (Furto/Roubo); 4000 1762 (Central)');
   const [customClauses, setCustomClauses] = useState('');
+  const [contractFineRate, setContractFineRate] = useState<number>(() => {
+    const saved = localStorage.getItem('fleet_fine_rate_default');
+    return saved ? Number(saved) : 2.0;
+  });
+  const [contractInterestRate, setContractInterestRate] = useState<number>(() => {
+    const saved = localStorage.getItem('fleet_daily_interest_rate_default');
+    return saved ? Number(saved) : 0.33;
+  });
 
   // Generated state
   const [generatedPdfUrl, setGeneratedPdfUrl] = useState<string | null>(null);
@@ -281,6 +289,8 @@ export const RentalContractModal: React.FC<RentalContractModalProps> = ({
       caucaoValor: Number(caucaoValue) > 0 ? Number(caucaoValue) : currentVeh.caucaoValor,
       contractNumber: contractNumber.trim() !== '' ? contractNumber.trim() : currentVeh.contractNumber,
       rentalCompany: landlordName.trim() !== '' ? landlordName.trim() : currentVeh.rentalCompany,
+      fineRate: Number(contractFineRate),
+      dailyInterestRate: Number(contractInterestRate),
     };
 
     onUpdateVehicle(updatedVehicle);
@@ -361,7 +371,24 @@ Por favor, preencha as fotos e o checklist de entrega ao retirar o veículo.`;
     setRentalValue(veh.valorSemanal || 0);
     setCaucaoValue(veh.caucaoValor || 0);
     setContractNumber(veh.contractNumber || generateNextContractNumber(veh.plate, vehicles, `${veh.brand} ${veh.model}`));
-    setLandlordName(veh.rentalCompany || 'CLAUDIO OLIVEIRA DA SILVA');
+    setLandlordName(veh.rentalCompany || localStorage.getItem('fleet_landlord_name') || 'CLAUDIO OLIVEIRA DA SILVA');
+    setLandlordCpfCnpj(localStorage.getItem('fleet_landlord_cpf') || '065.426.576-30');
+    setLandlordRg(localStorage.getItem('fleet_landlord_rg') || '39.508.321-7');
+    setLandlordPhone(localStorage.getItem('fleet_landlord_phone') || '(11) 95329-2570');
+    setLandlordAddress(localStorage.getItem('fleet_landlord_address') || 'Rua Manuel Leiroz, 230, apto 1306 - Cangaíba, São Paulo/SP, CEP: 03735-180');
+    setPixKey(localStorage.getItem('fleet_landlord_pix') || '11953292570');
+    if (veh.fineRate !== undefined) {
+      setContractFineRate(veh.fineRate);
+    } else {
+      const saved = localStorage.getItem('fleet_fine_rate_default');
+      setContractFineRate(saved ? Number(saved) : 2.0);
+    }
+    if (veh.dailyInterestRate !== undefined) {
+      setContractInterestRate(veh.dailyInterestRate);
+    } else {
+      const saved = localStorage.getItem('fleet_daily_interest_rate_default');
+      setContractInterestRate(saved ? Number(saved) : 0.33);
+    }
   };
 
   const handleVehicleChange = (vehId: string) => {
@@ -399,12 +426,12 @@ Por favor, preencha as fotos e o checklist de entrega ao retirar o veículo.`;
         tenantPhone: tenantPhone.trim(),
         tenantEmail: tenantEmail.trim(),
         tenantAddress: tenantAddress.trim(),
-        landlordName: landlordName.trim() || 'CLAUDIO OLIVEIRA DA SILVA',
-        landlordCpfCnpj: landlordCpfCnpj.trim() || '065.426.576-30',
-        landlordRg: landlordRg.trim() || '39.508.321-7',
-        landlordPhone: landlordPhone.trim() || '(11) 95329-2570',
-        landlordAddress: landlordAddress.trim() || 'Rua Manuel Leiroz, 230, apto 1306 - Cangaíba, São Paulo/SP, CEP: 03735-180',
-        pixKey: pixKey.trim() || '11953292570',
+        landlordName: landlordName.trim() || localStorage.getItem('fleet_landlord_name') || 'CLAUDIO OLIVEIRA DA SILVA',
+        landlordCpfCnpj: landlordCpfCnpj.trim() || localStorage.getItem('fleet_landlord_cpf') || '065.426.576-30',
+        landlordRg: landlordRg.trim() || localStorage.getItem('fleet_landlord_rg') || '39.508.321-7',
+        landlordPhone: landlordPhone.trim() || localStorage.getItem('fleet_landlord_phone') || '(11) 95329-2570',
+        landlordAddress: landlordAddress.trim() || localStorage.getItem('fleet_landlord_address') || 'Rua Manuel Leiroz, 230, apto 1306 - Cangaíba, São Paulo/SP, CEP: 03735-180',
+        pixKey: pixKey.trim() || localStorage.getItem('fleet_landlord_pix') || '11953292570',
         startDate: startDate || new Date().toISOString().split('T')[0],
         endDate: endDate || 'Prazo Indeterminado',
         rentalValue: Number(rentalValue) || 960,
@@ -415,7 +442,9 @@ Por favor, preencha as fotos e o checklist de entrega ao retirar o veículo.`;
         workshopName,
         insuranceCompany,
         insurancePhones,
-        customClauses: customClauses.trim()
+        customClauses: customClauses.trim(),
+        fineRate: Number(contractFineRate),
+        interestRate: Number(contractInterestRate)
       };
 
       // Prepare vehicle with updated odometer and driver info
@@ -436,6 +465,8 @@ Por favor, preencha as fotos e o checklist de entrega ao retirar o veículo.`;
         caucaoValor: contractData.caucaoValue > 0 ? contractData.caucaoValue : currentVehicle.caucaoValor,
         contractNumber: contractData.contractNumber,
         rentalCompany: contractData.landlordName || currentVehicle.rentalCompany,
+        fineRate: Number(contractFineRate),
+        dailyInterestRate: Number(contractInterestRate),
       };
 
       // Generate PDF with vehicleToUse
@@ -1109,6 +1140,40 @@ O contrato oficial em PDF já foi gerado e está arquivado nos documentos do ve�
                       placeholder="Ex: Livre, 1.000 km / semana"
                       className="w-full bg-[#111111] border border-white/10 rounded-xl px-3 py-2 text-white focus:outline-hidden focus:border-amber-500/50"
                     />
+                  </div>
+
+                  <div className="space-y-1">
+                    <label className="text-[10px] text-gray-400 font-semibold uppercase tracking-wider block">
+                      Multa por Atraso (%)
+                    </label>
+                    <div className="relative flex items-center">
+                      <input
+                        type="number"
+                        step="0.1"
+                        min="0"
+                        value={contractFineRate}
+                        onChange={(e) => setContractFineRate(Number(e.target.value))}
+                        className="w-full bg-[#111111] border border-white/10 rounded-xl px-3 py-2 text-white font-mono focus:outline-hidden focus:border-amber-500/50 pr-7"
+                      />
+                      <span className="absolute right-3 text-gray-400 text-xs font-bold">%</span>
+                    </div>
+                  </div>
+
+                  <div className="space-y-1">
+                    <label className="text-[10px] text-gray-400 font-semibold uppercase tracking-wider block">
+                      Juros de Mora Diários (% ao dia)
+                    </label>
+                    <div className="relative flex items-center">
+                      <input
+                        type="number"
+                        step="0.01"
+                        min="0"
+                        value={contractInterestRate}
+                        onChange={(e) => setContractInterestRate(Number(e.target.value))}
+                        className="w-full bg-[#111111] border border-white/10 rounded-xl px-3 py-2 text-white font-mono focus:outline-hidden focus:border-amber-500/50 pr-7"
+                      />
+                      <span className="absolute right-3 text-gray-400 text-xs font-bold">%</span>
+                    </div>
                   </div>
                 </div>
               </div>

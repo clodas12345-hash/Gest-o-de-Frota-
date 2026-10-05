@@ -579,6 +579,8 @@ export interface RentalContractData {
   insuranceCompany?: string;
   insurancePhones?: string;
   customClauses?: string;
+  fineRate?: number;
+  interestRate?: number;
 }
 
 export async function generateRentalContractPDF(

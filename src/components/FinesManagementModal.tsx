@@ -46,6 +46,8 @@ export const FinesManagementModal: React.FC<FinesManagementModalProps> = ({
   const [driverPhone, setDriverPhone] = useState(vehicle.driverPhone || '');
   const [notificationUrl, setNotificationUrl] = useState<string | null>(null);
   const [dueDate, setDueDate] = useState('');
+  const [notificationDate, setNotificationDate] = useState(new Date().toISOString().split('T')[0]);
+  const [reminderEnabled, setReminderEnabled] = useState(true);
 
   if (!isOpen) return null;
 
@@ -90,7 +92,9 @@ export const FinesManagementModal: React.FC<FinesManagementModalProps> = ({
       driverName: driverName.trim() || vehicle.driver || 'Não atribuído',
       driverPhone: driverPhone.trim() || vehicle.driverPhone || '',
       notificationUrl: notificationUrl || undefined,
-      dueDate: dueDate || undefined
+      dueDate: dueDate || undefined,
+      notificationDate: notificationDate || undefined,
+      reminderEnabled: reminderEnabled
     };
 
     const updated = [newFine, ...fines];
@@ -106,6 +110,9 @@ export const FinesManagementModal: React.FC<FinesManagementModalProps> = ({
     setValor('');
     setLocal('');
     setNotificationUrl(null);
+    setDueDate('');
+    setNotificationDate(new Date().toISOString().split('T')[0]);
+    setReminderEnabled(true);
     setShowAddForm(false);
   };
 
@@ -161,6 +168,28 @@ Dúvidas, estamos à disposição! 👍`;
     if (fine.status === 'Pendente') {
       handleUpdateFineStatus(fine.id, 'Repassada ao Motorista');
     }
+  };
+
+  const getReminderStatus = (fine: Fine) => {
+    if (!fine.notificationDate) return null;
+    const notif = new Date(fine.notificationDate + 'T12:00:00');
+    const deadline = new Date(notif);
+    deadline.setDate(deadline.getDate() + 15);
+    
+    const today = new Date();
+    today.setHours(12, 0, 0, 0);
+    
+    const diffTime = deadline.getTime() - today.getTime();
+    const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+    
+    const isPaga = fine.status === 'Paga pelo Locatário' || fine.status === 'Paga pela Locadora';
+    
+    return {
+      diffDays,
+      deadlineStr: deadline.toLocaleDateString('pt-BR'),
+      isPaga,
+      isOverdue: diffDays < 0,
+    };
   };
 
   return (
@@ -239,6 +268,14 @@ Dúvidas, estamos à disposição! 👍`;
                 >
                   Cancelar
                 </button>
+              </div>
+
+              {/* Cláusula 10ª Legal Notice */}
+              <div className="bg-rose-950/20 border border-rose-500/20 rounded-xl p-3 text-[11px] text-gray-300 leading-relaxed space-y-1">
+                <span className="font-bold text-rose-400 block">📜 Cláusula 10ª do Contrato de Locação (Trânsito):</span>
+                <p>
+                  O locatário tem o prazo de até <strong>15 dias corridos</strong> a contar da notificação para efetuar o pagamento. A responsabilidade pelas infrações de trânsito continua sendo estritamente do locatário, mesmo após a devolução da caução.
+                </p>
               </div>
 
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
@@ -353,6 +390,49 @@ Dúvidas, estamos à disposição! 👍`;
                     onChange={(e) => setDriverName(e.target.value)}
                     className="w-full text-xs bg-black border border-white/10 rounded-xl p-2.5 text-white font-medium focus:outline-hidden focus:border-rose-500"
                   />
+                </div>
+              </div>
+
+              {/* Cláusula 10ª & Lembrete Row */}
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 bg-rose-500/5 border border-rose-500/10 p-3 rounded-xl">
+                <div>
+                  <label className="text-[10px] font-bold text-rose-300 uppercase block mb-1">
+                    Data de Recebimento da Notificação *
+                  </label>
+                  <input
+                    type="date"
+                    value={notificationDate}
+                    onChange={(e) => setNotificationDate(e.target.value)}
+                    className="w-full text-xs bg-black border border-rose-500/20 rounded-xl p-2.5 text-white font-medium focus:outline-hidden focus:border-rose-500"
+                    required
+                  />
+                </div>
+                <div>
+                  <label className="text-[10px] font-bold text-rose-300 uppercase block mb-1">
+                    Prazo Cláusula 10ª (15 dias corridos)
+                  </label>
+                  <div className="w-full text-xs bg-black/40 border border-white/5 rounded-xl p-2.5 text-rose-300 font-mono font-bold flex items-center h-[38px]">
+                    {(() => {
+                      if (!notificationDate) return 'Selecione a data';
+                      const date = new Date(notificationDate + 'T12:00:00');
+                      date.setDate(date.getDate() + 15);
+                      const d = String(date.getDate()).padStart(2, '0');
+                      const m = String(date.getMonth() + 1).padStart(2, '0');
+                      const y = date.getFullYear();
+                      return `${d}/${m}/${y}`;
+                    })()}
+                  </div>
+                </div>
+                <div className="flex items-center pt-5 pl-1">
+                  <label className="flex items-center gap-2 cursor-pointer text-xs font-semibold text-gray-300">
+                    <input
+                      type="checkbox"
+                      checked={reminderEnabled}
+                      onChange={(e) => setReminderEnabled(e.target.checked)}
+                      className="w-4 h-4 rounded border-gray-300 text-rose-600 focus:ring-rose-500 bg-black cursor-pointer"
+                    />
+                    <span>Ativar Lembrete de Cobrança (Painel)</span>
+                  </label>
                 </div>
               </div>
 
@@ -474,6 +554,35 @@ Dúvidas, estamos à disposição! 👍`;
                       </span>
                     </div>
                   </div>
+
+                  {/* Cláusula 10ª Status / Lembrete */}
+                  {(() => {
+                    const status = getReminderStatus(fine);
+                    if (!status) return null;
+                    const { diffDays, deadlineStr, isPaga, isOverdue } = status;
+                    if (isPaga) {
+                      return (
+                        <div className="bg-emerald-500/10 border border-emerald-500/20 px-3 py-2 rounded-xl text-[10px] text-emerald-400 font-semibold flex items-center gap-1.5">
+                          <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
+                          <span>Cláusula 10ª resolvida! Boleto quitado.</span>
+                        </div>
+                      );
+                    }
+                    if (isOverdue) {
+                      return (
+                        <div className="bg-rose-500/10 border border-rose-500/20 px-3 py-2 rounded-xl text-[10px] text-rose-400 font-bold flex items-center gap-1.5">
+                          <AlertTriangle className="w-3.5 h-3.5 text-rose-400 shrink-0 animate-bounce" />
+                          <span>🚨 Cláusula 10ª: Prazo de cobrança de 15 dias EXCEDIDO! (Venceu em: {deadlineStr})</span>
+                        </div>
+                      );
+                    }
+                    return (
+                      <div className="bg-amber-500/10 border border-amber-500/20 px-3 py-2 rounded-xl text-[10px] text-amber-300 font-semibold flex items-center gap-1.5">
+                        <Clock className="w-3.5 h-3.5 text-amber-400 shrink-0 animate-pulse" />
+                        <span>⏱️ Cláusula 10ª: Restam <strong className="text-amber-300 underline font-extrabold">{diffDays} dias</strong> para cobrar o locatário (Prazo Limite: {deadlineStr})</span>
+                      </div>
+                    );
+                  })()}
 
                   {/* Actions & Attachment */}
                   <div className="flex flex-wrap items-center justify-between gap-2 pt-2 border-t border-white/5">

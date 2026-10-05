@@ -77,6 +77,8 @@ export interface Vehicle {
   fipeRefMonth?: string;
   fipeLastUpdate?: string; // Format: YYYY-MM
   fipeHistory?: { month: string; value: number }[];
+  fineRate?: number;
+  dailyInterestRate?: number;
 }
 
 export interface TireState {
@@ -110,6 +112,8 @@ export interface Fine {
   dueDate?: string;
   addedToWeeklyInvoice?: boolean;
   notes?: string;
+  notificationDate?: string; // Data de recebimento da notificação
+  reminderEnabled?: boolean; // Lembrete ativo para cobrar multa
 }
 
 export interface SinistroLog {
@@ -217,6 +221,7 @@ export interface Vistoria {
   status?: 'pending' | 'approved';
   approvedAt?: string;
   pdfDataUrl?: string;
+  fuelLevel?: number; // 0 to 100
 }
 
 export interface FinalizedContract {
