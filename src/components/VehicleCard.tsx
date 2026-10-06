@@ -988,7 +988,7 @@ export const VehicleCard: React.FC<VehicleCardProps> = ({
       ? vistoriaReturnLink
       : getPublicWebBaseUrl();
     const separator = safeBaseLink.includes('?') ? '&' : '?';
-    const returnUrlWithPlaca = `${safeBaseLink}${separator}placa=${encodeURIComponent(vehicle.plate)}&brand=${encodeURIComponent(vehicle.brand)}&model=${encodeURIComponent(vehicle.model)}&driver=${encodeURIComponent(vehicle.driver || '')}&type=${encodeURIComponent(requestVistoriaType)}&deadline=${encodeURIComponent(vehicle.nextVistoriaDate || '')}&reqId=${vistoriaRequestToken}${itemsQueryParam}`;
+    const returnUrlWithPlaca = `${safeBaseLink}${separator}mode=vistoria_retorno&placa=${encodeURIComponent(vehicle.plate)}&brand=${encodeURIComponent(vehicle.brand)}&model=${encodeURIComponent(vehicle.model)}&driver=${encodeURIComponent(vehicle.driver || '')}&type=${encodeURIComponent(requestVistoriaType)}&deadline=${encodeURIComponent(vehicle.nextVistoriaDate || '')}&reqId=${vistoriaRequestToken}${itemsQueryParam}`;
 
     // Replace return URL first
     template = template.replace(new RegExp(escapeRegExp(returnUrlWithPlaca), 'g'), '{link_retorno}');
@@ -1573,7 +1573,7 @@ export const VehicleCard: React.FC<VehicleCardProps> = ({
     setCustomVistoriaMsgText(formatted);
   };
 
-  const handleInitiateRequestVistoria = (forcedType?: 'Entrega de Veículo' | 'Periódica') => {
+  const handleInitiateRequestVistoria = (forcedType?: 'entrega' | 'periódica') => {
     setShowPaymentWhatsApp(false);
     setShowAddPayment(false);
     setShowMaintenanceWhatsApp(false);
