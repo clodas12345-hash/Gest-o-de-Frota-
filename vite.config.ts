@@ -12,17 +12,7 @@ export default defineConfig(() => {
       },
     },
     build: {
-      rollupOptions: {
-        external: [
-          '@capacitor/core',
-          '@capacitor/filesystem',
-          '@capacitor/share',
-          '@capacitor/local-notifications',
-          '@capacitor-community/contacts',
-          '@capacitor/android',
-          '@capacitor/cli'
-        ]
-      }
+      outDir: 'dist',
     },
     server: {
       // HMR is disabled in AI Studio via DISABLE_HMR env var.
