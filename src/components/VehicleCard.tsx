@@ -412,10 +412,10 @@ const DEFAULT_PAYMENT_TEMPLATES = {
 const PUBLIC_WEB_ORIGIN = 'https://ais-dev-nxg4lixniko7ymx3t5cstw-473118395752.us-west2.run.app';
 
 export const getPublicWebBaseUrl = (): string => {
-  // Se houver uma origem hardcoded (dev), usá-la prioritariamente se o usuário estiver no ambiente 'pre' que ele diz estar errado
-  if (PUBLIC_WEB_ORIGIN && (typeof window !== 'undefined' && window.location.origin.includes('ais-pre'))) {
-    return PUBLIC_WEB_ORIGIN.replace(/\/+$/, '');
-  }
+  const forceDev = (url: string) => {
+    if (url.includes('ais-pre')) return PUBLIC_WEB_ORIGIN.replace(/\/+$/, '');
+    return url.replace(/\/+$/, '');
+  };
 
   if (
     typeof window !== 'undefined' &&
@@ -424,7 +424,7 @@ export const getPublicWebBaseUrl = (): string => {
     !window.location.origin.includes('localhost') &&
     !window.location.origin.includes('127.0.0.1')
   ) {
-    return window.location.origin.replace(/\/+$/, '');
+    return forceDev(window.location.origin);
   }
 
   const saved = localStorage.getItem('fleet_vistoria_return_link');
@@ -436,7 +436,7 @@ export const getPublicWebBaseUrl = (): string => {
     !saved.includes('jotform.com') &&
     !saved.includes('sua-vistoria')
   ) {
-    return saved.replace(/\/+$/, '');
+    return forceDev(saved);
   }
 
   return PUBLIC_WEB_ORIGIN.replace(/\/+$/, '');
@@ -919,9 +919,13 @@ export const VehicleCard: React.FC<VehicleCardProps> = ({
       ? `&items=${encodeURIComponent(itemsToUse.join(','))}`
       : '';
 
-    const safeBaseLink = (vistoriaReturnLink && !vistoriaReturnLink.includes('localhost') && !vistoriaReturnLink.includes('127.0.0.1'))
-      ? vistoriaReturnLink
-      : getPublicWebBaseUrl();
+    const safeBaseLink = (() => {
+      const base = (vistoriaReturnLink && !vistoriaReturnLink.includes('localhost') && !vistoriaReturnLink.includes('127.0.0.1'))
+        ? vistoriaReturnLink
+        : getPublicWebBaseUrl();
+      if (base.includes('ais-pre')) return PUBLIC_WEB_ORIGIN.replace(/\/+$/, '');
+      return base.replace(/\/+$/, '');
+    })();
     const separator = safeBaseLink.includes('?') ? '&' : '?';
     const returnUrlWithPlaca = `${safeBaseLink}${separator}mode=vistoria_retorno&placa=${encodeURIComponent(vehicle.plate)}&brand=${encodeURIComponent(vehicle.brand)}&model=${encodeURIComponent(vehicle.model)}&driver=${encodeURIComponent(vehicle.driver || '')}&type=${encodeURIComponent(typeToUse)}&deadline=${encodeURIComponent(vehicle.nextVistoriaDate || '')}&reqId=${tokenToUse}${itemsQueryParam}`;
 
@@ -989,9 +993,13 @@ export const VehicleCard: React.FC<VehicleCardProps> = ({
       ? `&items=${encodeURIComponent(selectedRequestItems.join(','))}`
       : '';
 
-    const safeBaseLink = (vistoriaReturnLink && !vistoriaReturnLink.includes('localhost') && !vistoriaReturnLink.includes('127.0.0.1'))
-      ? vistoriaReturnLink
-      : getPublicWebBaseUrl();
+    const safeBaseLink = (() => {
+      const base = (vistoriaReturnLink && !vistoriaReturnLink.includes('localhost') && !vistoriaReturnLink.includes('127.0.0.1'))
+        ? vistoriaReturnLink
+        : getPublicWebBaseUrl();
+      if (base.includes('ais-pre')) return PUBLIC_WEB_ORIGIN.replace(/\/+$/, '');
+      return base.replace(/\/+$/, '');
+    })();
     const separator = safeBaseLink.includes('?') ? '&' : '?';
     const returnUrlWithPlaca = `${safeBaseLink}${separator}mode=vistoria_retorno&placa=${encodeURIComponent(vehicle.plate)}&brand=${encodeURIComponent(vehicle.brand)}&model=${encodeURIComponent(vehicle.model)}&driver=${encodeURIComponent(vehicle.driver || '')}&type=${encodeURIComponent(requestVistoriaType)}&deadline=${encodeURIComponent(vehicle.nextVistoriaDate || '')}&reqId=${vistoriaRequestToken}${itemsQueryParam}`;
 
