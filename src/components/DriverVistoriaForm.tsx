@@ -779,15 +779,23 @@ _Enviado via sistema de vistoria digital._`;
                 </div>
                 <div>
                   <span className="text-[10px] text-gray-400 uppercase tracking-wider block font-semibold">
-                    Tipo de Vistoria Solicitada
+                    Vistoria
                   </span>
                   <h3 className="text-sm font-bold text-emerald-400 mt-0.5">
-                    {vistoriaType}
+                    {vistoriaType?.toLowerCase().includes('devolu') 
+                      ? 'Devolução' 
+                      : vistoriaType?.toLowerCase().includes('entrega') 
+                      ? 'Entrega' 
+                      : 'Periódica'}
                   </h3>
                 </div>
               </div>
               <span className="text-[10px] bg-emerald-500/10 text-emerald-300 font-bold px-2.5 py-1 rounded-full border border-emerald-500/20 uppercase tracking-wider shrink-0">
-                Seleção do Gestor
+                {vistoriaType?.toLowerCase().includes('devolu') 
+                  ? 'Devolução' 
+                  : vistoriaType?.toLowerCase().includes('entrega') 
+                  ? 'Entrega' 
+                  : 'Periódica'}
               </span>
             </div>
 

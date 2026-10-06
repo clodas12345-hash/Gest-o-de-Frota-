@@ -468,8 +468,12 @@ export async function generateVistoriaPDF(
   doc.rect(0, 0, 210, 28, 'F');
   doc.setTextColor(255, 255, 255);
   doc.setFont('helvetica', 'bold');
-  doc.setFontSize(15);
-  doc.text('LAUDO DE VISTORIA DO VEÍCULO', 14, 12);
+  const cleanType = vistoria.type?.toLowerCase().includes('devolu')
+    ? 'DEVOLUÇÃO'
+    : vistoria.type?.toLowerCase().includes('entrega')
+    ? 'ENTREGA'
+    : 'PERIÓDICA';
+  doc.text(`LAUDO DE VISTORIA • ${cleanType}`, 14, 12);
   doc.setFontSize(9);
   const kmToDisplay = vistoria.km
     ? `${vistoria.km.toLocaleString('pt-BR')} KM`

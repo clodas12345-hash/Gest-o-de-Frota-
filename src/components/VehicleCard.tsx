@@ -4483,8 +4483,8 @@ _Enviado via sistema de gestão de frota._`;
                         }}
                         className="w-full text-xs bg-black border border-white/10 rounded-md px-2.5 py-1.5 text-white focus:outline-hidden focus:border-purple-500/50 cursor-pointer font-medium"
                       >
-                        <option value="Devolução de Veículo">Devolução de Carro (Realizada por Mim)</option>
-                        <option value="Entrega de Veículo">Entrega de Carro</option>
+                        <option value="Devolução de Veículo">Devolução</option>
+                        <option value="Entrega de Veículo">Entrega</option>
                         <option value="Periódica">Periódica</option>
                       </select>
                     </div>
@@ -4734,7 +4734,11 @@ _Enviado via sistema de gestão de frota._`;
                                 </span>
                                 {v.type && (
                                   <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-sm bg-purple-500/10 text-purple-300 border border-purple-500/20">
-                                    {v.type}
+                                    {v.type.toLowerCase().includes('devolu') 
+                                      ? 'Devolução' 
+                                      : v.type.toLowerCase().includes('entrega') 
+                                      ? 'Entrega' 
+                                      : 'Periódica'}
                                   </span>
                                 )}
                                 {v.km !== undefined && v.km > 0 && (
@@ -5030,8 +5034,8 @@ _Enviado via sistema de gestão de frota._`;
                             className="w-full text-xs bg-black border border-emerald-500/40 rounded-md px-2.5 py-1.5 text-white focus:outline-hidden focus:border-emerald-400 font-semibold cursor-pointer"
                             id={`select-request-vistoria-type-${vehicle.id}`}
                           >
-                            <option value="Periódica">Periódica (Link Único p/ Motorista Realizar)</option>
-                            <option value="Entrega de Veículo">Entrega do Carro (Link Único p/ Motorista Realizar)</option>
+                            <option value="Periódica">Periódica</option>
+                            <option value="Entrega de Veículo">Entrega</option>
                           </select>
                           <p className="text-[9px] text-emerald-400/90 italic">
                             Nas vistorias de <strong>Entrega</strong> e <strong>Periódica</strong>, o link único de utilização única é enviado ao motorista. A vistoria de <strong>Devolução</strong> é feita diretamente por você no botão <strong>"+ Fazer Devolução"</strong>.

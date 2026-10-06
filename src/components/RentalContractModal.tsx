@@ -40,7 +40,9 @@ import {
   Plus,
   Eye,
   EyeOff,
-  Download
+  Download,
+  FileCheck2,
+  Send
 } from 'lucide-react';
 import { PdfViewer } from './PdfViewer';
 import { printPdfDataUrl, downloadFileDirect, openFileExternal } from '../utils/printHelper';
@@ -363,6 +365,191 @@ Por favor, preencha as fotos e o checklist de entrega ao retirar o veículo.`;
     setCopiedLinkNotification(true);
     setTimeout(() => setCopiedLinkNotification(false), 3000);
   };
+
+  const [copiedReminderNotification, setCopiedReminderNotification] = useState<string | null>(null);
+
+  const handleSendGovBrReminder = () => {
+    const currentVeh = vehicles.find(v => v.id === selectedVehicleId) || initialVehicle;
+    if (!currentVeh) return;
+    let cleanPhone = (tenantPhone || currentVeh.driverPhone || '').replace(/\D/g, '');
+    if (cleanPhone.length > 0 && !cleanPhone.startsWith('55')) {
+      cleanPhone = '55' + cleanPhone;
+    }
+    const name = tenantName || currentVeh.driver || 'Locatário';
+    const msg = `✍️ *LEMBRETE DE ASSINATURA DE CONTRATO (Gov.br)*
+
+Olá, *${name}*!
+
+Lembramos que o nosso contrato de locação do veículo *${currentVeh.brand} ${currentVeh.model}* (Placa: *${currentVeh.plate}*) já está disponível.
+
+📌 *Por favor, não se esquecer de realizar a assinatura eletrônica do contrato na sua conta do Gov.br:*
+🔗 https://assinatura.gov.br
+
+Qualquer dúvida estamos à disposição!`;
+
+    const waUrl = cleanPhone 
+      ? `https://wa.me/${cleanPhone}?text=${encodeURIComponent(msg)}`
+      : `https://wa.me/?text=${encodeURIComponent(msg)}`;
+    window.open(waUrl, '_blank');
+  };
+
+  const handleCopyGovBrReminder = () => {
+    const currentVeh = vehicles.find(v => v.id === selectedVehicleId) || initialVehicle;
+    if (!currentVeh) return;
+    const name = tenantName || currentVeh.driver || 'Locatário';
+    const msg = `✍️ *LEMBRETE DE ASSINATURA DE CONTRATO (Gov.br)*
+
+Olá, *${name}*!
+
+Lembramos que o nosso contrato de locação do veículo *${currentVeh.brand} ${currentVeh.model}* (Placa: *${currentVeh.plate}*) já está disponível.
+
+📌 *Por favor, não se esquecer de realizar a assinatura eletrônica do contrato na sua conta do Gov.br:*
+🔗 https://assinatura.gov.br
+
+Qualquer dúvida estamos à disposição!`;
+
+    navigator.clipboard.writeText(msg);
+    setCopiedReminderNotification('Mensagem do Gov.br copiada!');
+    setTimeout(() => setCopiedReminderNotification(null), 3000);
+  };
+
+  const handleSendCdtReminder = () => {
+    const currentVeh = vehicles.find(v => v.id === selectedVehicleId) || initialVehicle;
+    if (!currentVeh) return;
+    let cleanPhone = (tenantPhone || currentVeh.driverPhone || '').replace(/\D/g, '');
+    if (cleanPhone.length > 0 && !cleanPhone.startsWith('55')) {
+      cleanPhone = '55' + cleanPhone;
+    }
+    const name = tenantName || currentVeh.driver || 'Locatário';
+    const msg = `🚗 *LEMBRETE: ACEITE DE CONDUTOR PRINCIPAL (Carteira Digital CDT)*
+
+Olá, *${name}*!
+
+A indicação para **Condutor Principal** do veículo *${currentVeh.brand} ${currentVeh.model}* (Placa: *${currentVeh.plate}*) já foi solicitada.
+
+📌 *Por favor, acesse o seu aplicativo da Carteira Digital de Trânsito (CDT) no celular e aceite a indicação de Condutor Principal.*
+
+Isso é fundamental para a vinculação correta do veículo. Qualquer dúvida estamos à disposição!`;
+
+    const waUrl = cleanPhone 
+      ? `https://wa.me/${cleanPhone}?text=${encodeURIComponent(msg)}`
+      : `https://wa.me/?text=${encodeURIComponent(msg)}`;
+    window.open(waUrl, '_blank');
+  };
+
+  const handleCopyCdtReminder = () => {
+    const currentVeh = vehicles.find(v => v.id === selectedVehicleId) || initialVehicle;
+    if (!currentVeh) return;
+    const name = tenantName || currentVeh.driver || 'Locatário';
+    const msg = `🚗 *LEMBRETE: ACEITE DE CONDUTOR PRINCIPAL (Carteira Digital CDT)*
+
+Olá, *${name}*!
+
+A indicação para **Condutor Principal** do veículo *${currentVeh.brand} ${currentVeh.model}* (Placa: *${currentVeh.plate}*) já foi solicitada.
+
+📌 *Por favor, acesse o seu aplicativo da Carteira Digital de Trânsito (CDT) no celular e aceite a indicação de Condutor Principal.*
+
+Isso é fundamental para a vinculação correta do veículo. Qualquer dúvida estamos à disposição!`;
+
+    navigator.clipboard.writeText(msg);
+    setCopiedReminderNotification('Mensagem da Carteira Digital CDT copiada!');
+    setTimeout(() => setCopiedReminderNotification(null), 3000);
+  };
+
+  const renderRemindersBlock = () => (
+    <div className="bg-[#181818] border border-blue-500/30 rounded-2xl p-4 sm:p-5 text-left space-y-3.5 shadow-xl shadow-blue-950/20 mt-4">
+      <div className="flex items-start gap-3 border-b border-white/10 pb-3">
+        <div className="p-2.5 bg-blue-500/20 text-blue-300 rounded-xl border border-blue-500/30 shrink-0">
+          <Send className="w-5 h-5" />
+        </div>
+        <div>
+          <h4 className="text-xs sm:text-sm font-bold text-white uppercase tracking-wider flex items-center gap-2">
+            Lembretes do Contrato ao Locatário (Gov.br & Carteira Digital CDT)
+          </h4>
+          <p className="text-[11px] text-gray-400 mt-0.5">
+            Envie os lembretes por WhatsApp para a assinatura eletrônica no Gov.br e para o aceite do Condutor Principal na Carteira Digital de Trânsito.
+          </p>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+        {/* Card 1: Gov.br */}
+        <div className="p-3.5 bg-black/40 border border-blue-500/20 rounded-xl space-y-2.5 flex flex-col justify-between">
+          <div className="space-y-1">
+            <div className="flex items-center gap-2 text-blue-300 font-bold text-xs">
+              <FileCheck2 className="w-4 h-4 text-blue-400 shrink-0" />
+              <span>Assinatura Digital no Gov.br</span>
+            </div>
+            <p className="text-[10px] text-gray-400 leading-relaxed">
+              Enviar mensagem no WhatsApp lembrando o motorista de assinar o contrato na conta do <strong>Gov.br</strong> (assinatura.gov.br).
+            </p>
+          </div>
+
+          <div className="flex gap-2 pt-1">
+            <button
+              type="button"
+              onClick={handleSendGovBrReminder}
+              className="flex-1 px-3 py-2.5 bg-blue-600 hover:bg-blue-500 text-white font-bold text-xs rounded-xl flex items-center justify-center gap-1.5 transition-all cursor-pointer shadow-md shadow-blue-500/10 hover:scale-[1.01]"
+              title="Enviar lembrete de assinatura no Gov.br pelo WhatsApp"
+            >
+              <Share2 className="w-3.5 h-3.5" />
+              <span>Lembrar Assinatura Gov.br</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={handleCopyGovBrReminder}
+              className="px-3 py-2.5 bg-white/10 hover:bg-white/15 text-gray-200 font-bold text-xs rounded-xl transition-colors cursor-pointer border border-white/10 flex items-center gap-1"
+              title="Copiar texto da mensagem"
+            >
+              <Copy className="w-3.5 h-3.5" />
+            </button>
+          </div>
+        </div>
+
+        {/* Card 2: Carteira Digital CDT */}
+        <div className="p-3.5 bg-black/40 border border-emerald-500/20 rounded-xl space-y-2.5 flex flex-col justify-between">
+          <div className="space-y-1">
+            <div className="flex items-center gap-2 text-emerald-300 font-bold text-xs">
+              <Smartphone className="w-4 h-4 text-emerald-400 shrink-0" />
+              <span>Condutor Principal (Carteira Digital CDT)</span>
+            </div>
+            <p className="text-[10px] text-gray-400 leading-relaxed">
+              Enviar mensagem lembrando o motorista de aceitar a indicação de <strong>Condutor Principal</strong> no app CDT.
+            </p>
+          </div>
+
+          <div className="flex gap-2 pt-1">
+            <button
+              type="button"
+              onClick={handleSendCdtReminder}
+              className="flex-1 px-3 py-2.5 bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs rounded-xl flex items-center justify-center gap-1.5 transition-all cursor-pointer shadow-md shadow-emerald-500/10 hover:scale-[1.01]"
+              title="Enviar lembrete de aceite do condutor principal pelo WhatsApp"
+            >
+              <Share2 className="w-3.5 h-3.5" />
+              <span>Lembrar Condutor CDT</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={handleCopyCdtReminder}
+              className="px-3 py-2.5 bg-white/10 hover:bg-white/15 text-gray-200 font-bold text-xs rounded-xl transition-colors cursor-pointer border border-white/10 flex items-center gap-1"
+              title="Copiar texto da mensagem"
+            >
+              <Copy className="w-3.5 h-3.5" />
+            </button>
+          </div>
+        </div>
+      </div>
+
+      {copiedReminderNotification && (
+        <div className="p-2.5 bg-blue-500/10 border border-blue-500/30 rounded-xl text-blue-300 text-xs font-bold flex items-center justify-center gap-2 animate-in fade-in duration-150">
+          <Check className="w-4 h-4 text-blue-400 shrink-0" />
+          <span>{copiedReminderNotification}</span>
+        </div>
+      )}
+    </div>
+  );
 
   // Synchronize state when vehicle changes or modal opens
   useEffect(() => {
@@ -920,6 +1107,9 @@ O contrato oficial em PDF já foi gerado e está arquivado nos documentos do ve�
                   <span>Dados do contrato salvos com sucesso no veículo!</span>
                 </div>
               )}
+
+              {/* Seção de Lembretes do Contrato (Gov.br & CDT) */}
+              {renderRemindersBlock()}
 
               {/* Seção de Vistoria de Entrega do Veículo */}
               <div className="bg-[#181818] border border-purple-500/30 rounded-2xl p-5 text-left space-y-4 shadow-xl shadow-purple-950/20 mt-4">
@@ -1548,6 +1738,9 @@ O contrato oficial em PDF já foi gerado e está arquivado nos documentos do ve�
                   className="w-full bg-[#111111] border border-white/10 rounded-xl p-3 text-white focus:outline-hidden focus:border-blue-500/50 text-xs"
                 />
               </div>
+
+              {/* 6. Lembretes do Contrato (Gov.br e Carteira Digital CDT) */}
+              {renderRemindersBlock()}
 
               {/* Saved Notification Banner */}
               {isSavedNotification && (
