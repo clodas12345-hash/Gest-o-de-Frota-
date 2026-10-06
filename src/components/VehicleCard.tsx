@@ -1,4 +1,8 @@
 import React, { useState, useRef, useEffect } from 'react';
+import { Capacitor, registerPlugin } from '@capacitor/core';
+const Filesystem = registerPlugin<any>('Filesystem');
+const Share = registerPlugin<any>('Share');
+const Directory = { Cache: 'CACHE', Documents: 'DOCUMENTS', Data: 'DATA' };
 import { Vehicle, ExpenseLog, WeeklyPayment, Vistoria, VehicleDocument, MaintenanceLog, FuelLog, SinistroLog } from '../types';
 import { generateVistoriaPDF, generatePaymentReceiptPDF } from '../utils/pdfGenerator';
 import { sendAppNotification, requestNotificationPermission } from '../utils/notifications';
@@ -1379,12 +1383,55 @@ export const VehicleCard: React.FC<VehicleCardProps> = ({
     });
   };
 
-  const handleDownloadDoc = (doc: any) => {
+  const handleDownloadDoc = async (doc: any) => {
+    // Suporte nativo para download/compartilhamento no celular (Capacitor)
+    if (Capacitor.isNativePlatform() && doc.contentUrl) {
+      try {
+        let base64Data = '';
+        if (doc.contentUrl.startsWith('data:')) {
+          base64Data = doc.contentUrl.split(',')[1];
+        } else {
+          // Caso seja um blob URL ou link externo, precisamos buscar os dados
+          const res = await fetch(doc.contentUrl);
+          const blob = await res.blob();
+          const reader = new FileReader();
+          base64Data = await new Promise((resolve) => {
+            reader.onloadend = () => {
+              const base64 = (reader.result as string).split(',')[1];
+              resolve(base64);
+            };
+            reader.readAsDataURL(blob);
+          });
+        }
+
+        // Garante que o nome do arquivo tenha extensão
+        const fileName = doc.name.includes('.') ? doc.name : `${doc.name}.pdf`;
+        
+        // Grava no cache temporário para poder compartilhar
+        const result = await Filesystem.writeFile({
+          path: fileName,
+          data: base64Data,
+          directory: Directory.Cache,
+        });
+
+        // Abre o menu nativo de salvar/compartilhar arquivo
+        await Share.share({
+          title: doc.name,
+          url: result.uri,
+          dialogTitle: 'Salvar ou Compartilhar Documento'
+        });
+        return;
+      } catch (err) {
+        console.error('Erro ao baixar documento nativamente:', err);
+      }
+    }
+
+    // Fallback padrão para Navegador Web
     const link = document.createElement('a');
     if (doc.contentUrl) {
       link.href = doc.contentUrl;
     } else {
-      // Fallback for preloaded mock data
+      // Fallback para dados de demonstração sem URL real
       const mockText = `Documento: ${doc.name}\nCategoria: ${doc.category}\nVeículo: ${vehicle.brand} ${vehicle.model} (${vehicle.plate})\nData: ${doc.uploadDate}\nGerado automaticamente para demonstração.`;
       const blob = new Blob([mockText], { type: 'text/plain' });
       link.href = URL.createObjectURL(blob);
