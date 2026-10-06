@@ -749,12 +749,12 @@ export const VehicleCard: React.FC<VehicleCardProps> = ({
   const [scheduleDateInput, setScheduleDateInput] = useState<string>(() => vehicle.nextVistoriaDate || new Date().toISOString().split('T')[0]);
   const [scheduleFeedback, setScheduleFeedback] = useState<string | null>(null);
   const [expandedVistoriaId, setExpandedVistoriaId] = useState<string | null>(null);
-  const [newVistoriaType, setNewVistoriaType] = useState<'Entrega de Veículo' | 'Periódica' | 'Devolução de Veículo'>('Devolução de Veículo');
+  const [newVistoriaType, setNewVistoriaType] = useState<'entrega' | 'periódica' | 'devolução'>('devolução');
   const [newVistoriaDate, setNewVistoriaDate] = useState(() => new Date().toISOString().split('T')[0]);
   
   const [newVistoriaChecklist, setNewVistoriaChecklist] = useState<Record<string, boolean>>(() => {
     const initial: Record<string, boolean> = {};
-    const items = getChecklistForVistoriaType('Devolução de Veículo', checklistConfig);
+    const items = getChecklistForVistoriaType('devolução', checklistConfig);
     items.forEach(item => {
       initial[item] = true;
     });
@@ -870,7 +870,7 @@ export const VehicleCard: React.FC<VehicleCardProps> = ({
   // WhatsApp share Vistoria states
   const [sharingVistoria, setSharingVistoria] = useState<Vistoria | null>(null);
   const [isRequestingNewVistoria, setIsRequestingNewVistoria] = useState<boolean>(false);
-  const [requestVistoriaType, setRequestVistoriaType] = useState<'Entrega de Veículo' | 'Periódica' | 'Devolução de Veículo'>('Periódica');
+  const [requestVistoriaType, setRequestVistoriaType] = useState<'entrega' | 'periódica' | 'devolução'>('periódica');
   const [vistoriaRequestToken, setVistoriaRequestToken] = useState<string>(() => Date.now().toString(36));
   const [whatsappVistoriaPhone, setWhatsappVistoriaPhone] = useState<string>('');
   const [customVistoriaMsgText, setCustomVistoriaMsgText] = useState<string>('');
@@ -1580,7 +1580,7 @@ export const VehicleCard: React.FC<VehicleCardProps> = ({
     setShowScheduleVistoria(false);
     setShowAddVistoria(false);
     setSharingVistoria(null);
-    const targetType = forcedType || (requestVistoriaType === 'Devolução de Veículo' ? 'Periódica' : requestVistoriaType);
+    const targetType = forcedType || (requestVistoriaType === 'devolução' ? 'periódica' : requestVistoriaType);
     setRequestVistoriaType(targetType);
     const nextState = isRequestingNewVistoria && requestVistoriaType === targetType ? false : true;
     setIsRequestingNewVistoria(nextState);
@@ -4238,10 +4238,10 @@ _Enviado via sistema de gestão de frota._`;
                     type="button"
                     onClick={() => {
                       if (!isVistoriaExpanded) setIsVistoriaExpanded(true);
-                      handleInitiateRequestVistoria('Entrega de Veículo');
+                      handleInitiateRequestVistoria('entrega');
                     }}
                     className={`text-[11px] font-bold flex items-center justify-center gap-1 px-2.5 py-1 rounded-md border transition-all cursor-pointer ${
-                      isRequestingNewVistoria && requestVistoriaType === 'Entrega de Veículo'
+                      isRequestingNewVistoria && requestVistoriaType === 'entrega'
                         ? 'bg-emerald-500 text-slate-950 border-emerald-400 shadow-md shadow-emerald-500/20'
                         : 'bg-emerald-500/10 text-emerald-400 hover:text-emerald-300 border-emerald-500/20 hover:bg-emerald-500/20'
                     }`}
@@ -4257,10 +4257,10 @@ _Enviado via sistema de gestão de frota._`;
                     type="button"
                     onClick={() => {
                       if (!isVistoriaExpanded) setIsVistoriaExpanded(true);
-                      handleInitiateRequestVistoria('Periódica');
+                      handleInitiateRequestVistoria('periódica');
                     }}
                     className={`text-[11px] font-bold flex items-center justify-center gap-1 px-2.5 py-1 rounded-md border transition-all cursor-pointer ${
-                      isRequestingNewVistoria && requestVistoriaType === 'Periódica'
+                      isRequestingNewVistoria && requestVistoriaType === 'periódica'
                         ? 'bg-blue-500 text-white border-blue-400 shadow-md shadow-blue-500/20'
                         : 'bg-blue-500/10 text-blue-400 hover:text-blue-300 border-blue-500/20 hover:bg-blue-500/20'
                     }`}
@@ -4276,9 +4276,9 @@ _Enviado via sistema de gestão de frota._`;
                     type="button"
                     onClick={() => {
                       if (!isVistoriaExpanded) setIsVistoriaExpanded(true);
-                      const nextState = !showAddVistoria || newVistoriaType !== 'Devolução de Veículo';
-                      setNewVistoriaType('Devolução de Veículo');
-                      const devItems = getChecklistForVistoriaType('Devolução de Veículo', checklistConfig);
+                      const nextState = !showAddVistoria || newVistoriaType !== 'devolução';
+                      setNewVistoriaType('devolução');
+                      const devItems = getChecklistForVistoriaType('devolução', checklistConfig);
                       const initCheck: Record<string, boolean> = {};
                       devItems.forEach(it => { initCheck[it] = true; });
                       setNewVistoriaChecklist(initCheck);
@@ -4291,7 +4291,7 @@ _Enviado via sistema de gestão de frota._`;
                       setSharingVistoria(null);
                     }}
                     className={`text-[11px] font-bold flex items-center justify-center gap-1 px-2.5 py-1 rounded-md border transition-all cursor-pointer ${
-                      showAddVistoria && newVistoriaType === 'Devolução de Veículo'
+                      showAddVistoria && newVistoriaType === 'devolução'
                         ? 'bg-purple-600 text-white border-purple-400 shadow-md shadow-purple-600/20'
                         : 'bg-purple-500/10 text-purple-400 hover:text-purple-300 border-purple-500/20 hover:bg-purple-500/20'
                     }`}
@@ -4492,9 +4492,9 @@ _Enviado via sistema de gestão de frota._`;
                         }}
                         className="w-full text-xs bg-black border border-white/10 rounded-md px-2.5 py-1.5 text-white focus:outline-hidden focus:border-purple-500/50 cursor-pointer font-medium"
                       >
-                        <option value="Devolução de Veículo">Devolução</option>
-                        <option value="Entrega de Veículo">Entrega</option>
-                        <option value="Periódica">Periódica</option>
+                        <option value="devolução">devolução</option>
+                        <option value="entrega">entrega</option>
+                        <option value="periódica">periódica</option>
                       </select>
                     </div>
                     <div>
@@ -5030,9 +5030,9 @@ _Enviado via sistema de gestão de frota._`;
                             </span>
                           </div>
                           <select
-                            value={requestVistoriaType === 'Devolução de Veículo' ? 'Periódica' : requestVistoriaType}
+                            value={requestVistoriaType === 'devolução' ? 'periódica' : requestVistoriaType}
                             onChange={(e) => {
-                              const newType = e.target.value as 'Entrega de Veículo' | 'Periódica';
+                              const newType = e.target.value as 'entrega' | 'periódica';
                               const freshToken = `${Date.now().toString(36)}-${Math.random().toString(36).substring(2, 6)}`;
                               setVistoriaRequestToken(freshToken);
                               setRequestVistoriaType(newType);
@@ -5043,11 +5043,11 @@ _Enviado via sistema de gestão de frota._`;
                             className="w-full text-xs bg-black border border-emerald-500/40 rounded-md px-2.5 py-1.5 text-white focus:outline-hidden focus:border-emerald-400 font-semibold cursor-pointer"
                             id={`select-request-vistoria-type-${vehicle.id}`}
                           >
-                            <option value="Periódica">Periódica</option>
-                            <option value="Entrega de Veículo">Entrega</option>
+                            <option value="periódica">periódica</option>
+                            <option value="entrega">entrega</option>
                           </select>
                           <p className="text-[9px] text-emerald-400/90 italic">
-                            Nas vistorias de <strong>Entrega</strong> e <strong>Periódica</strong>, o link único de utilização única é enviado ao motorista. A vistoria de <strong>Devolução</strong> é feita diretamente por você no botão <strong>"+ Fazer Devolução"</strong>.
+                            Nas vistorias de <strong>entrega</strong> e <strong>periódica</strong>, o link único de utilização única é enviado ao motorista. A vistoria de <strong>devolução</strong> é feita diretamente por você no botão <strong>"+ Fazer devolução"</strong>.
                           </p>
                         </div>
 

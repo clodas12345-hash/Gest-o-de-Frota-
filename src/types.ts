@@ -214,7 +214,7 @@ export interface Vistoria {
   vehicleId: string;
   vehiclePlate?: string;
   date: string;
-  type?: 'Entrega de Veículo' | 'Periódica' | 'Devolução de Veículo';
+  type?: 'entrega' | 'periódica' | 'devolução';
   checklist: Record<string, boolean>;
   photos: string[];
   notes?: string;

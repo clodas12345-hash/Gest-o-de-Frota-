@@ -13,7 +13,7 @@ interface DriverVistoriaFormProps {
   onSaveVistoria: (v: Vistoria, pdfDataUrl?: string, pdfFileName?: string) => void;
   onSavePaymentReceipt?: (receipt: { id: string; date: string; amount?: number; photoUrl: string; notes?: string; driverName?: string }) => void;
   onExit: () => void;
-  initialType?: 'Entrega de Veículo' | 'Periódica' | 'Devolução de Veículo';
+  initialType?: 'entrega' | 'periódica' | 'devolução';
   isPaymentMode?: boolean;
 }
 
@@ -29,14 +29,14 @@ export function DriverVistoriaForm({
   isPaymentMode
 }: DriverVistoriaFormProps) {
   
-  const [vistoriaType, setVistoriaType] = useState<'Entrega de Veículo' | 'Periódica' | 'Devolução de Veículo'>(() => {
+  const [vistoriaType, setVistoriaType] = useState<'entrega' | 'periódica' | 'devolução'>(() => {
     if (initialType) return initialType;
     const params = new URLSearchParams(window.location.search);
     const typeFromUrl = params.get('type');
-    if (typeFromUrl === 'Entrega de Veículo' || typeFromUrl === 'Periódica') {
+    if (typeFromUrl === 'entrega' || typeFromUrl === 'periódica' || typeFromUrl === 'devolução') {
       return typeFromUrl;
     }
-    return 'Periódica';
+    return 'periódica';
   });
 
   const [checklist, setChecklist] = useState<Record<string, { isOk: boolean, photoUrl: string | null }>>(() => {

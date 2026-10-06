@@ -977,7 +977,7 @@ O contrato oficial em PDF já foi gerado e está arquivado nos documentos do ve�
                 vehicle={currentVehicle}
                 plateRequested={currentVehicle?.plate || ''}
                 checklistConfig={checklistConfig}
-                initialType="Entrega de Veículo"
+                initialType="entrega"
                 onSaveVistoria={(v, pdfUrl, pdfName) => {
                   if (onSaveVistoria) {
                     onSaveVistoria(v, pdfUrl, pdfName);

@@ -187,7 +187,7 @@ export function HistoryLogs({
       onUpdateVistoria({
         ...log,
         date: editVistoriaDate,
-        type: (editVistoriaType.trim() as 'Entrega de Veículo' | 'Periódica' | 'Devolução de Veículo') || undefined,
+        type: (['entrega', 'periódica', 'devolução'].includes(editVistoriaType.trim().toLowerCase()) ? editVistoriaType.trim().toLowerCase() : undefined) as any,
         notes: editVistoriaNotes.trim(),
       });
     }

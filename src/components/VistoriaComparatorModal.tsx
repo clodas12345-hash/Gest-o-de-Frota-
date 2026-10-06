@@ -37,13 +37,13 @@ export const VistoriaComparatorModal: React.FC<VistoriaComparatorModalProps> = (
 
   const [vistoriaAId, setVistoriaAId] = useState<string>(() => {
     // Default to first (e.g. Entrega if available)
-    const entrega = vehicleVistorias.find(v => v.type === 'Entrega de Veículo');
+    const entrega = vehicleVistorias.find(v => v.type === 'entrega');
     return entrega ? entrega.id : vehicleVistorias[vehicleVistorias.length - 1]?.id || '';
   });
 
   const [vistoriaBId, setVistoriaBId] = useState<string>(() => {
     // Default to latest (e.g. Devolução or most recent)
-    const devolucao = vehicleVistorias.find(v => v.type === 'Devolução de Veículo');
+    const devolucao = vehicleVistorias.find(v => v.type === 'devolução');
     if (devolucao && devolucao.id !== vistoriaAId) return devolucao.id;
     return vehicleVistorias[0]?.id || '';
   });
