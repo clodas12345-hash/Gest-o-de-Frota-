@@ -338,7 +338,7 @@ export const RentalContractModal: React.FC<RentalContractModalProps> = ({
       brand,
       model,
       driver,
-      type: 'Entrega de Veículo',
+      type: 'entrega',
       reqId: token
     });
     return `${origin}/#/?data=${encodeURIComponent(encoded)}`;

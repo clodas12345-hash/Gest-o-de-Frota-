@@ -219,7 +219,7 @@ export interface Vistoria {
   photos: string[];
   notes?: string;
   km?: number;
-  status?: 'pending' | 'approved';
+  status?: 'pending' | 'approved' | 'requested';
   approvedAt?: string;
   pdfDataUrl?: string;
   fuelLevel?: number; // 0 to 100

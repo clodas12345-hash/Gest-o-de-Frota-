@@ -328,7 +328,7 @@ const DEFAULT_CHECKLIST_ITEMS = [
 ];
 
 export const getChecklistForVistoriaType = (type: string, customConfig?: string[]): string[] => {
-  const isPeriodica = type === 'Periódica';
+  const isPeriodica = type === 'periódica';
   let base: string[] = [];
   
   if (customConfig && customConfig.length > 0) {
@@ -412,44 +412,14 @@ const DEFAULT_PAYMENT_TEMPLATES = {
 const PUBLIC_WEB_ORIGIN = 'https://ais-dev-nxg4lixniko7ymx3t5cstw-473118395752.us-west2.run.app';
 
 export const getPublicWebBaseUrl = (): string => {
-  const forceDev = (url: string) => {
-    let clean = url;
-    // Se for um link do AI Studio, limpar caminhos e forçar dev
-    if (url.includes('.run.app')) {
-      const match = url.match(/https:\/\/[^/]+/);
-      clean = match ? match[0] : url;
-      clean = clean.replace('ais-pre', 'ais-dev');
-    }
-    return clean.replace(/\/+$/, '');
-  };
-
-  // Se o usuário está no ambiente 'pre', forçar retorno do 'dev'
-  if (typeof window !== 'undefined' && window.location.origin.includes('ais-pre')) {
-    return PUBLIC_WEB_ORIGIN.replace(/\/+$/, '');
+  const origin = typeof window !== 'undefined' ? window.location.origin : '';
+  
+  // Se for localhost, manter localhost para testes locais
+  if (origin.includes('localhost') || origin.includes('127.0.0.1')) {
+    return origin.replace(/\/+$/, '');
   }
 
-  if (
-    typeof window !== 'undefined' &&
-    window.location.origin &&
-    window.location.origin.startsWith('http') &&
-    !window.location.origin.includes('localhost') &&
-    !window.location.origin.includes('127.0.0.1')
-  ) {
-    return forceDev(window.location.origin);
-  }
-
-  const saved = localStorage.getItem('fleet_vistoria_return_link');
-  if (
-    saved &&
-    saved.startsWith('http') &&
-    !saved.includes('localhost') &&
-    !saved.includes('127.0.0.1') &&
-    !saved.includes('jotform.com') &&
-    !saved.includes('sua-vistoria')
-  ) {
-    return forceDev(saved);
-  }
-
+  // Para qualquer outro caso (run.app, aistudio-preview, etc), FORÇAR o 'DEV'
   return PUBLIC_WEB_ORIGIN.replace(/\/+$/, '');
 };
 
@@ -892,8 +862,16 @@ export const VehicleCard: React.FC<VehicleCardProps> = ({
   const [customVistoriaMsgText, setCustomVistoriaMsgText] = useState<string>('');
   const [vistoriaReturnLink, setVistoriaReturnLink] = useState<string>(() => {
     const validUrl = getPublicWebBaseUrl();
-    localStorage.setItem('fleet_vistoria_return_link', validUrl);
-    return validUrl;
+    const saved = localStorage.getItem('fleet_vistoria_return_link');
+    
+    // Se o salvo for 'ais-pre', forçar o novo 'ais-dev'
+    if (saved && saved.includes('ais-pre')) {
+      localStorage.setItem('fleet_vistoria_return_link', validUrl);
+      return validUrl;
+    }
+    
+    if (!saved) localStorage.setItem('fleet_vistoria_return_link', validUrl);
+    return saved || validUrl;
   });
 
   const availableChecklistItems = getChecklistForVistoriaType(newVistoriaType, checklistConfig);
@@ -918,7 +896,7 @@ export const VehicleCard: React.FC<VehicleCardProps> = ({
     tokenOverride?: string
   ) => {
     let text = templateText;
-    const typeToUse = reqType || requestVistoriaType || 'Periódica';
+    const typeToUse = reqType || requestVistoriaType || 'periódica';
     const tokenToUse = tokenOverride || vistoriaRequestToken;
     
     const veiculoStr = `${vehicle.brand} ${vehicle.model}`;
@@ -934,11 +912,13 @@ export const VehicleCard: React.FC<VehicleCardProps> = ({
       const base = (vistoriaReturnLink && !vistoriaReturnLink.includes('localhost') && !vistoriaReturnLink.includes('127.0.0.1'))
         ? vistoriaReturnLink
         : getPublicWebBaseUrl();
-      if (base.includes('ais-pre')) return PUBLIC_WEB_ORIGIN.replace(/\/+$/, '');
       return base.replace(/\/+$/, '');
     })();
-    const separator = safeBaseLink.includes('?') ? '&' : '?';
-    const returnUrlWithPlaca = `${safeBaseLink}${separator}mode=vistoria_retorno&placa=${encodeURIComponent(vehicle.plate)}&brand=${encodeURIComponent(vehicle.brand)}&model=${encodeURIComponent(vehicle.model)}&driver=${encodeURIComponent(vehicle.driver || '')}&type=${encodeURIComponent(typeToUse)}&deadline=${encodeURIComponent(vehicle.nextVistoriaDate || '')}&reqId=${tokenToUse}${itemsQueryParam}`;
+    const returnUrlWithPlaca = (() => {
+      const baseWithSlash = safeBaseLink.replace(/\/+$/, '') + '/';
+      const itemsParam = itemsToUse && itemsToUse.length > 0 ? `&items=${encodeURIComponent(itemsToUse.join(','))}` : '';
+      return `${baseWithSlash}?mode=vistoria_retorno&placa=${encodeURIComponent(vehicle.plate)}&brand=${encodeURIComponent(vehicle.brand)}&model=${encodeURIComponent(vehicle.model)}&driver=${encodeURIComponent(vehicle.driver || '')}&type=${encodeURIComponent(typeToUse)}&deadline=${encodeURIComponent(vehicle.nextVistoriaDate || '')}&reqId=${tokenToUse}${itemsParam}`;
+    })();
 
     text = text.replace(/{veiculo}/g, veiculoStr);
     text = text.replace(/{placa}/g, plateStr);
@@ -986,8 +966,7 @@ export const VehicleCard: React.FC<VehicleCardProps> = ({
       text += `\n\n🔗 *Link de Acesso / Retorno:*\n${returnUrlWithPlaca}`;
     }
 
-    // Garantia final: substituir qualquer 'ais-pre' remanescente por 'ais-dev'
-    text = text.replace(/ais-pre-nxg4lixniko7ymx3t5cstw-473118395752/g, 'ais-dev-nxg4lixniko7ymx3t5cstw-473118395752');
+    // Garantia final: remover substituição hardcoded pois a base já está correta
     
     return text;
   };
@@ -1011,11 +990,12 @@ export const VehicleCard: React.FC<VehicleCardProps> = ({
       const base = (vistoriaReturnLink && !vistoriaReturnLink.includes('localhost') && !vistoriaReturnLink.includes('127.0.0.1'))
         ? vistoriaReturnLink
         : getPublicWebBaseUrl();
-      if (base.includes('ais-pre')) return PUBLIC_WEB_ORIGIN.replace(/\/+$/, '');
       return base.replace(/\/+$/, '');
     })();
-    const separator = safeBaseLink.includes('?') ? '&' : '?';
-    const returnUrlWithPlaca = `${safeBaseLink}${separator}mode=vistoria_retorno&placa=${encodeURIComponent(vehicle.plate)}&brand=${encodeURIComponent(vehicle.brand)}&model=${encodeURIComponent(vehicle.model)}&driver=${encodeURIComponent(vehicle.driver || '')}&type=${encodeURIComponent(requestVistoriaType)}&deadline=${encodeURIComponent(vehicle.nextVistoriaDate || '')}&reqId=${vistoriaRequestToken}${itemsQueryParam}`;
+    const returnUrlWithPlaca = (() => {
+      const baseWithSlash = safeBaseLink.replace(/\/+$/, '') + '/';
+      return `${baseWithSlash}?mode=vistoria_retorno&placa=${encodeURIComponent(vehicle.plate)}&brand=${encodeURIComponent(vehicle.brand)}&model=${encodeURIComponent(vehicle.model)}&driver=${encodeURIComponent(vehicle.driver || '')}&type=${encodeURIComponent(requestVistoriaType)}&deadline=${encodeURIComponent(vehicle.nextVistoriaDate || '')}&reqId=${vistoriaRequestToken}`;
+    })();
 
     // Replace return URL first
     template = template.replace(new RegExp(escapeRegExp(returnUrlWithPlaca), 'g'), '{link_retorno}');
@@ -1644,18 +1624,9 @@ export const VehicleCard: React.FC<VehicleCardProps> = ({
       ? vistoriaReturnLink
       : getPublicWebBaseUrl();
     
-    const encoded = encodeVistoriaParams({
-      mode: 'vistoria_retorno',
-      placa: vehicle.plate,
-      brand: vehicle.brand,
-      model: vehicle.model,
-      driver: vehicle.driver || '',
-      type: requestVistoriaType,
-      deadline: vehicle.nextVistoriaDate || '',
-      reqId: vistoriaRequestToken,
-      items: itemsToUse.join(',')
-    });
-    const returnUrl = `${safeBaseLink}/#/?data=${encodeURIComponent(encoded)}`;
+    const baseWithSlash = safeBaseLink.replace(/\/+$/, '') + '/';
+    const itemsParam = itemsToUse && itemsToUse.length > 0 ? `&items=${encodeURIComponent(itemsToUse.join(','))}` : '';
+    const returnUrl = `${baseWithSlash}?mode=vistoria_retorno&placa=${encodeURIComponent(vehicle.plate)}&brand=${encodeURIComponent(vehicle.brand)}&model=${encodeURIComponent(vehicle.model)}&driver=${encodeURIComponent(vehicle.driver || '')}&type=${encodeURIComponent(requestVistoriaType)}&deadline=${encodeURIComponent(vehicle.nextVistoriaDate || '')}&reqId=${vistoriaRequestToken}${itemsParam}`;
 
     if (!finalMsg.includes('placa=') && !finalMsg.includes('http')) {
       finalMsg += `\n\n🔗 *Link de Acesso / Retorno para Vistoria:*\n${returnUrl}`;
@@ -1678,6 +1649,22 @@ export const VehicleCard: React.FC<VehicleCardProps> = ({
       document.body.appendChild(link);
       link.click();
       document.body.removeChild(link);
+    }
+    
+    // Salvar vistoria pendente para controle do gestor
+    if (onSaveVistoria && !sharingVistoria) {
+      const pendingVistoria: Vistoria = {
+        id: `requested-${vistoriaRequestToken}`,
+        vehicleId: vehicle.id,
+        vehiclePlate: vehicle.plate,
+        date: new Date().toISOString().split('T')[0],
+        type: requestVistoriaType,
+        checklist: itemsToUse.reduce((acc, it) => ({ ...acc, [it]: false }), {}),
+        photos: [],
+        status: 'requested',
+        reqId: vistoriaRequestToken
+      };
+      onSaveVistoria(pendingVistoria);
     }
     
     setSharingVistoria(null);
@@ -4279,7 +4266,7 @@ _Enviado via sistema de gestão de frota._`;
                     <span>Entrega</span>
                   </button>
 
-                  {/* Botão 2: Periódica (Link p/ Motorista) */}
+                  {/* Botão 2: periódica (Link p/ Motorista) */}
                   <button
                     type="button"
                     onClick={() => {
@@ -4292,10 +4279,10 @@ _Enviado via sistema de gestão de frota._`;
                         : 'bg-blue-500/10 text-blue-400 hover:text-blue-300 border-blue-500/20 hover:bg-blue-500/20'
                     }`}
                     id={`btn-vistoria-periodica-${vehicle.id}`}
-                    title="Enviar link único (uso único) para o motorista realizar a Vistoria Periódica"
+                    title="Enviar link único (uso único) para o motorista realizar a vistoria periódica"
                   >
                     <MessageCircle className="w-3.5 h-3.5" />
-                    <span>Periódica</span>
+                    <span>periódica</span>
                   </button>
 
                   {/* Botão 3: Devolução (Realizada pelo Gestor) */}
@@ -4774,7 +4761,7 @@ _Enviado via sistema de gestão de frota._`;
                                       ? 'Devolução' 
                                       : v.type.toLowerCase().includes('entrega') 
                                       ? 'Entrega' 
-                                      : 'Periódica'}
+                                      : 'periódica'}
                                   </span>
                                 )}
                                 {v.km !== undefined && v.km > 0 && (
@@ -4786,11 +4773,17 @@ _Enviado via sistema de gestão de frota._`;
                                 <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded-sm ${
                                   v.status === 'approved'
                                     ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40'
+                                    : v.status === 'requested'
+                                    ? 'bg-blue-500/20 text-blue-300 border border-blue-500/40 animate-pulse'
                                     : isFullApproved 
                                     ? 'bg-amber-500/15 text-amber-300 border border-amber-500/30' 
                                     : 'bg-amber-500/10 text-amber-400 border border-amber-500/10'
                                 }`}>
-                                  {v.status === 'approved' ? '✅ Aprovada & Arquivada' : `⏳ Aguardando Aprovação (${approvedCount}/${totalItems})`}
+                                  {v.status === 'approved' 
+                                    ? '✅ Aprovada & Arquivada' 
+                                    : v.status === 'requested'
+                                    ? '📤 Link Enviado (Aguardando Motorista)'
+                                    : `⏳ Aguardando Aprovação (${approvedCount}/${totalItems})`}
                                 </span>
                                 {v.photos && v.photos.length > 0 && (
                                   <button

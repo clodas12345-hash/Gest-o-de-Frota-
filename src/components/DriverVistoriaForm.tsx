@@ -15,6 +15,7 @@ interface DriverVistoriaFormProps {
   onExit: () => void;
   initialType?: 'entrega' | 'periódica' | 'devolução';
   isPaymentMode?: boolean;
+  initialParams?: URLSearchParams;
 }
 
 export function DriverVistoriaForm({ 
@@ -26,24 +27,27 @@ export function DriverVistoriaForm({
   onSavePaymentReceipt,
   onExit,
   initialType,
-  isPaymentMode
+  isPaymentMode,
+  initialParams
 }: DriverVistoriaFormProps) {
   
   const [vistoriaType, setVistoriaType] = useState<'entrega' | 'periódica' | 'devolução'>(() => {
     if (initialType) return initialType;
-    const params = new URLSearchParams(window.location.search);
-    const typeFromUrl = params.get('type');
-    if (typeFromUrl === 'entrega' || typeFromUrl === 'periódica' || typeFromUrl === 'devolução') {
-      return typeFromUrl;
-    }
+    const params = initialParams || new URLSearchParams(window.location.search);
+    const typeParam = params.get('type')?.toLowerCase() || '';
+    
+    if (typeParam.includes('entrega')) return 'entrega';
+    if (typeParam.includes('devolu')) return 'devolução';
+    if (typeParam.includes('periódica') || typeParam.includes('periodica')) return 'periódica';
+    
     return 'periódica';
   });
 
   const [checklist, setChecklist] = useState<Record<string, { isOk: boolean, photoUrl: string | null }>>(() => {
-    const params = new URLSearchParams(window.location.search);
+    const params = initialParams || new URLSearchParams(window.location.search);
     const itemsFromUrl = params.get('items');
-    const typeFromUrl = (params.get('type') as 'Entrega de Veículo' | 'Periódica' | 'Devolução de Veículo') || initialType || 'Periódica';
-    const isPeriodica = typeFromUrl === 'Periódica';
+    const typeFromUrl = (params.get('type') as 'entrega' | 'periódica' | 'devolução') || initialType || 'periódica';
+    const isPeriodica = typeFromUrl === 'periódica';
     const initial: Record<string, { isOk: boolean, photoUrl: string | null }> = {};
     
     let baseList: string[] = [];
@@ -114,7 +118,7 @@ export function DriverVistoriaForm({
   const [notes, setNotes] = useState('');
   const [photos, setPhotos] = useState<string[]>([]);
   const [kmOdometer, setKmOdometer] = useState<number | string>(() => {
-    const params = new URLSearchParams(window.location.search);
+    const params = initialParams || new URLSearchParams(window.location.search);
     const kmParam = params.get('km');
     if (kmParam && !isNaN(Number(kmParam))) return Number(kmParam);
     return vehicle?.currentKm || vehicle?.preventiveMaintCurrentKm || '';
@@ -154,7 +158,7 @@ export function DriverVistoriaForm({
 
   // Payment receipt specific states
   const [paymentAmount, setPaymentAmount] = useState<number>(() => {
-    const params = new URLSearchParams(window.location.search);
+    const params = initialParams || new URLSearchParams(window.location.search);
     return Number(params.get('value')) || vehicle?.valorSemanal || vehicle?.valorRecebido || 0;
   });
   const [paymentPhoto, setPaymentPhoto] = useState<string | null>(null);
@@ -571,9 +575,14 @@ _Enviado via sistema de vistoria digital._`;
               <X className="w-6 h-6 text-red-400" />
             </div>
             <div>
-              <h3 className="text-sm font-bold text-white">Veículo Não Encontrado</h3>
+              <h3 className="text-sm font-bold text-white">Placa Não Identificada</h3>
               <p className="text-xs text-gray-400 leading-relaxed">
-                Não localizamos o veículo com a placa <span className="font-mono text-red-400 font-semibold">{plateRequested || 'N/A'}</span>.
+                Não conseguimos identificar o veículo para o link acessado. 
+                {plateRequested && (
+                  <>
+                    <br />Placa informada: <span className="font-mono text-red-400 font-semibold">{plateRequested.toUpperCase()}</span>
+                  </>
+                )}
               </p>
               <p className="text-[11px] text-gray-500 italic mt-2">
                 Este link serve exclusivamente para envio de fotos e vistorias. Entre em contato com o responsável pela frota para solicitar um novo link.
@@ -792,7 +801,7 @@ _Enviado via sistema de vistoria digital._`;
                       ? 'Devolução' 
                       : vistoriaType?.toLowerCase().includes('entrega') 
                       ? 'Entrega' 
-                      : 'Periódica'}
+                      : 'periódica'}
                   </h3>
                 </div>
               </div>
@@ -801,7 +810,7 @@ _Enviado via sistema de vistoria digital._`;
                   ? 'Devolução' 
                   : vistoriaType?.toLowerCase().includes('entrega') 
                   ? 'Entrega' 
-                  : 'Periódica'}
+                  : 'periódica'}
               </span>
             </div>
 

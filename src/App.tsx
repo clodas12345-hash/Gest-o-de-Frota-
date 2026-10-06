@@ -11,6 +11,7 @@ import {
 import { db } from './firebase';
 import { doc, getDoc, setDoc, onSnapshot } from 'firebase/firestore';
 import { Capacitor, registerPlugin } from '@capacitor/core';
+import { App as CapApp } from '@capacitor/app';
 const Filesystem = registerPlugin<any>('Filesystem');
 const Share = registerPlugin<any>('Share');
 const Directory = { Cache: 'CACHE', Documents: 'DOCUMENTS', Data: 'DATA' };
@@ -603,9 +604,80 @@ export default function App() {
     setIsFormOpen(true);
   };
 
+  // Helper para pegar params de forma case-insensitive
+  const getParamCI = (p: URLSearchParams, key: string): string => {
+    for (const [k, v] of p.entries()) {
+      if (k.toLowerCase() === key.toLowerCase()) return v;
+    }
+    return '';
+  };
+
+  const getPlacaFromParams = (p: URLSearchParams): string => {
+    const val = getParamCI(p, 'placa') || 
+                getParamCI(p, 'plate') || 
+                getParamCI(p, 'vistoria') || 
+                getParamCI(p, 'car') || 
+                getParamCI(p, 'veiculo') || 
+                getParamCI(p, 'v') || '';
+    return val.trim();
+  };
+
+  // PARSE PARAMS ONCE (Synchronously)
+  const activeParams = useMemo(() => {
+    if (typeof window === 'undefined') return new URLSearchParams();
+    
+    // Get search string from either .search or .hash
+    let searchStr = window.location.search;
+    if (!searchStr && window.location.hash.includes('?')) {
+      searchStr = '?' + window.location.hash.split('?')[1];
+    }
+    
+    // Last resort: check full URL for any ?
+    if (!searchStr && window.location.href.includes('?')) {
+      searchStr = '?' + window.location.href.split('?')[1];
+    }
+
+    const params = new URLSearchParams(searchStr);
+    
+    // If we have encoded data, decode it and return those params instead
+    if (params.has('data')) {
+      try {
+        const decoded = decodeVistoriaParams(params.get('data')!);
+        if (decoded) {
+          const dParams = new URLSearchParams();
+          Object.entries(decoded).forEach(([k, v]) => dParams.set(k, v as string));
+          return dParams;
+        }
+      } catch (e) {
+        console.error('Failed to decode data param', e);
+      }
+    }
+    
+    return params;
+  }, []);
+
   // Public Driver Vistoria mode states
-  const [isVistoriaMode, setIsVistoriaMode] = useState<boolean>(false);
-  const [vistoriaPlateParam, setVistoriaPlateParam] = useState<string>('');
+  const isVistoriaMode = useMemo(() => {
+    const mode = getParamCI(activeParams, 'mode');
+    const placa = getPlacaFromParams(activeParams);
+    const path = typeof window !== 'undefined' ? window.location.pathname : '';
+
+    return (
+      mode === 'vistoria_retorno' ||
+      mode === 'vistoria' ||
+      mode === 'pagamento' ||
+      mode === 'payment_receipt' ||
+      mode === 'portal_motorista' ||
+      activeParams.has('vistoria') ||
+      path.includes('/upload-receipt') ||
+      path.includes('/vistoria') ||
+      Boolean(placa)
+    );
+  }, [activeParams]);
+  
+  const vistoriaPlateParam = useMemo(() => {
+    return getPlacaFromParams(activeParams);
+  }, [activeParams]);
 
   const isCloudLoadedRef = useRef(false);
   const isRemoteUpdateRef = useRef(false);
@@ -616,7 +688,7 @@ export default function App() {
   const knownReceiptIdsRef = useRef<Set<string>>(new Set());
 
   const saveToCloud = (field: string, data: any) => {
-    if (!Capacitor.isNativePlatform()) return; // Disconnected from cloud in preview environment
+    // if (!Capacitor.isNativePlatform()) return; // REMOVED: Enable cloud sync on web
     if (!isCloudLoadedRef.current || isRemoteUpdateRef.current) return;
     
     try {
@@ -647,10 +719,13 @@ export default function App() {
 
   // Load initial data from Firestore and setup real-time listener for Android APK only
   useEffect(() => {
+    /* 
     if (!Capacitor.isNativePlatform()) {
       isCloudLoadedRef.current = true;
-      return; // Disconnected from cloud in preview (uses localStorage only)
+      return; 
     }
+    */
+    // REMOVED: Enable cloud sync on web
     let unsubscribe: () => void = () => {};
     try {
       const docRef = doc(db, 'fleetData', 'main');
@@ -721,7 +796,7 @@ export default function App() {
                 const photosCount = vist.photos?.length || 0;
 
                 sendAppNotification(`📋 Nova Vistoria Recebida: ${vehTitle}`, {
-                  body: `O motorista enviou a vistoria (${vist.type || 'Periódica'}) com ${photosCount} foto(s)${vist.km ? ` e odômetro em ${vist.km.toLocaleString('pt-BR')} KM` : ''}.`,
+                  body: `O motorista enviou a vistoria (${vist.type || 'periódica'}) com ${photosCount} foto(s)${vist.km ? ` e odômetro em ${vist.km.toLocaleString('pt-BR')} KM` : ''}.`,
                   eventKey: 'vistoria_completed',
                 });
               }
@@ -767,45 +842,17 @@ export default function App() {
   }, []);
 
   useEffect(() => {
-    // Redirecionamento Global de 'pre' para 'dev'
-    if (typeof window !== 'undefined' && window.location.origin.includes('ais-pre')) {
-      const newUrl = window.location.href.replace('ais-pre', 'ais-dev');
-      window.location.replace(newUrl);
-      return;
-    }
+    // Sincronização de parâmetros vindo de links curtos
 
-    let search = window.location.search;
-    if (!search && window.location.hash.includes('?')) {
-      search = window.location.hash.split('?')[1];
-    }
-    let params = new URLSearchParams(search);
-    if (params.has('data')) {
-      const decoded = decodeVistoriaParams(params.get('data')!);
-      if (decoded) {
-        Object.entries(decoded).forEach(([key, value]) => params.set(key, value as string));
-        window.history.replaceState({}, '', `?${params.toString()}`);
+    // Se tivermos parâmetros novos vindo de um link curto (data=),
+    // atualizar a URL visualmente para o usuário, mas a lógica já usou activeParams.
+    if (typeof window !== 'undefined' && (window.location.search.includes('data=') || window.location.hash.includes('data='))) {
+      const newSearch = activeParams.toString();
+      if (newSearch && newSearch !== window.location.search.replace(/^\?/, '')) {
+        window.history.replaceState({}, '', `?${newSearch}`);
       }
     }
-    const path = window.location.pathname;
-    const hasPlaca = params.get('placa') || params.get('plate') || params.get('vistoria') || params.get('car') || params.get('veiculo') || params.get('v') || '';
-    if (
-      params.get('mode') === 'vistoria_retorno' ||
-      params.get('mode') === 'vistoria' ||
-      params.get('mode') === 'pagamento' ||
-      params.get('mode') === 'payment_receipt' ||
-      params.get('mode') === 'portal_motorista' ||
-      params.has('vistoria') ||
-      params.has('placa') ||
-      params.has('car') ||
-      params.has('veiculo') ||
-      path.includes('/upload-receipt') ||
-      path.includes('/vistoria') ||
-      Boolean(hasPlaca)
-    ) {
-      setIsVistoriaMode(true);
-      setVistoriaPlateParam(hasPlaca);
-    }
-  }, []);
+  }, [activeParams]);
 
   // Save states to localStorage and Cloud (Firestore) with debounce for zero lag
   useEffect(() => {
@@ -955,6 +1002,108 @@ export default function App() {
     isResetConfirmOpen,
     vehiclePendingFinalize,
   ]);
+
+  // Previne que o botão físico/sistema de voltar do celular feche o aplicativo.
+  // Se estiver em qualquer tela ou modal secundário, retorna para a tela inicial.
+  // Se já estiver na tela inicial, não faz nada (não fecha o app).
+  const isNonInitialScreen = Boolean(
+    isVistoriaMode ||
+    isFormOpen ||
+    isAgendaOpen ||
+    isFinalizedContractsOpen ||
+    isUploadDocOpen ||
+    isHelpOpen ||
+    isSettingsOpen ||
+    isNotificationCenterOpen ||
+    isChecklistConfigOpen ||
+    isRentalContractOpen ||
+    isReportsModalOpen ||
+    vehiclePendingDelete ||
+    isResetConfirmOpen ||
+    vehiclePendingFinalize ||
+    isBatchOdometerOpen ||
+    isInterestCalcOpen ||
+    isAboutModalOpen ||
+    isLogoViewerOpen
+  );
+
+  const isNonInitialScreenRef = useRef(isNonInitialScreen);
+  useEffect(() => {
+    isNonInitialScreenRef.current = isNonInitialScreen;
+  }, [isNonInitialScreen]);
+
+  const handleReturnToHome = () => {
+    // 1. Se estiver em tela pública de vistoria/portal por URL, voltar para a página inicial
+    if (isVistoriaMode) {
+      if (typeof window !== 'undefined') {
+        window.location.href = window.location.pathname;
+      }
+      return;
+    }
+
+    // 2. Fechar todos os modais, formulários e telas secundárias abertas no aplicativo
+    setIsFormOpen(false);
+    setActiveFormType(null);
+    setSelectedVehicleId('');
+    setVehicleToEdit(null);
+    setGlobalPrefilledData(null);
+    setIsAgendaOpen(false);
+    setAgendaPreFill(null);
+    setIsUploadDocOpen(false);
+    setIsHelpOpen(false);
+    setIsFinalizedContractsOpen(false);
+    setIsSettingsOpen(false);
+    setIsNotificationCenterOpen(false);
+    setIsChecklistConfigOpen(false);
+    setIsRentalContractOpen(false);
+    setSelectedContractVehicle(null);
+    setIsReportsModalOpen(false);
+    setVehiclePendingFinalize(null);
+    setIsBatchOdometerOpen(false);
+    setIsInterestCalcOpen(false);
+    setInterestCalcVehicle(null);
+    setVehiclePendingDelete(null);
+    setIsResetConfirmOpen(false);
+    setIsAboutModalOpen(false);
+    setIsLogoViewerOpen(false);
+
+    // Fechar eventuais visualizadores de fotos ou caixas de diálogo internas
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', code: 'Escape', bubbles: true }));
+    }
+  };
+
+  const handleReturnToHomeRef = useRef(handleReturnToHome);
+  useEffect(() => {
+    handleReturnToHomeRef.current = handleReturnToHome;
+  });
+
+  useEffect(() => {
+    let isMounted = true;
+    let listenerHandle: { remove: () => void } | null = null;
+
+    CapApp.addListener('backButton', () => {
+      if (isNonInitialScreenRef.current) {
+        handleReturnToHomeRef.current();
+      }
+      // Se já estiver na tela inicial, não faz nada (o aplicativo nunca é fechado)
+    }).then((handle) => {
+      if (!isMounted) {
+        handle.remove();
+      } else {
+        listenerHandle = handle;
+      }
+    }).catch((err) => {
+      console.warn('Erro ao configurar listener de backButton do Capacitor:', err);
+    });
+
+    return () => {
+      isMounted = false;
+      if (listenerHandle) {
+        listenerHandle.remove();
+      }
+    };
+  }, []);
 
   // Trigger Form Handlers
   const handleOpenForm = (type: 'vehicle' | 'fuel' | 'maintenance' | 'expense' | 'sinistro', vId: string = '') => {
@@ -1449,12 +1598,10 @@ export default function App() {
     // Update in vistorias state
     setVistorias(prev => {
       const nextVistorias = prev.map(v => v.id === vistoria.id ? approvedVistoria : v);
-      if (Capacitor.isNativePlatform()) {
-        setDoc(doc(db, 'fleetData', 'main'), sanitizeForCloud({
-          vistorias: nextVistorias,
-          updatedAt: new Date().toISOString()
-        }), { merge: true }).catch(err => console.warn('Direct approved vistoria cloud sync error:', err));
-      }
+      setDoc(doc(db, 'fleetData', 'main'), sanitizeForCloud({
+        vistorias: nextVistorias,
+        updatedAt: new Date().toISOString()
+      }), { merge: true }).catch(err => console.warn('Direct approved vistoria cloud sync error:', err));
       return nextVistorias;
     });
 
@@ -1481,12 +1628,10 @@ export default function App() {
           return v;
         });
 
-        if (Capacitor.isNativePlatform()) {
-          setDoc(doc(db, 'fleetData', 'main'), sanitizeForCloud({
-            vehicles: cleanVehiclesForCloud(nextVehicles),
-            updatedAt: new Date().toISOString()
-          }), { merge: true }).catch(err => console.warn('Direct vehicle vistoria approval cloud sync error:', err));
-        }
+        setDoc(doc(db, 'fleetData', 'main'), sanitizeForCloud({
+          vehicles: cleanVehiclesForCloud(nextVehicles),
+          updatedAt: new Date().toISOString()
+        }), { merge: true }).catch(err => console.warn('Direct vehicle vistoria approval cloud sync error:', err));
 
         return nextVehicles;
       });
@@ -1679,7 +1824,6 @@ export default function App() {
     setFinalizedContracts([]);
     setContacts([]);
     
-    if (Capacitor.isNativePlatform()) {
       const docRef = doc(db, 'fleetData', 'main');
       setDoc(docRef, {
         vehicles: [],
@@ -1691,7 +1835,6 @@ export default function App() {
         finalizedContracts: [],
         updatedAt: new Date().toISOString()
       }).catch(err => console.warn('Error resetting cloud data:', err));
-    }
 
     setIsResetConfirmOpen(false);
 
@@ -1893,19 +2036,17 @@ export default function App() {
           }
 
           // 5. Sincronização imediata com Firestore Cloud
-          if (Capacitor.isNativePlatform()) {
-            const docRef = doc(db, 'fleetData', 'main');
-            setDoc(docRef, {
-              vehicles: restoredVehicles,
-              contacts: restoredContacts,
-              fuelLogs: restoredFuelLogs,
-              maintenanceLogs: restoredMaintLogs,
-              expenseLogs: restoredExpenseLogs,
-              vistorias: restoredVistorias,
-              finalizedContracts: restoredFinalizedContracts,
-              updatedAt: new Date().toISOString()
-            }, { merge: true }).catch(err => console.warn('Error syncing restored backup to cloud:', err));
-          }
+          const docRef = doc(db, 'fleetData', 'main');
+          setDoc(docRef, {
+            vehicles: restoredVehicles,
+            contacts: restoredContacts,
+            fuelLogs: restoredFuelLogs,
+            maintenanceLogs: restoredMaintLogs,
+            expenseLogs: restoredExpenseLogs,
+            vistorias: restoredVistorias,
+            finalizedContracts: restoredFinalizedContracts,
+            updatedAt: new Date().toISOString()
+          }, { merge: true }).catch(err => console.warn('Error syncing restored backup to cloud:', err));
 
           const totalDocs = restoredVehicles.reduce((acc: number, v: any) => acc + (v.documents?.length || 0), 0);
           setDeleteToastMsg(`Backup COMPLETO restaurado com sucesso! ${restoredVehicles.length} veículos, ${totalDocs} documentos anexados, ${restoredVistorias.length} vistorias, ${restoredMaintLogs.length} manutenções, agenda e configurações recuperadas.`);
@@ -1924,10 +2065,14 @@ export default function App() {
 
   if (isVistoriaMode) {
     let targetVehicle = vehicles.find(
-      v => v.plate.replace(/[^A-Z0-9]/gi, '').toUpperCase() === vistoriaPlateParam.replace(/[^A-Z0-9]/gi, '').toUpperCase()
+      v => {
+        const vPlate = (v.plate || '').replace(/[^A-Z0-9]/gi, '').toUpperCase();
+        const pPlate = (vistoriaPlateParam || '').replace(/[^A-Z0-9]/gi, '').toUpperCase();
+        return vPlate === pPlate && pPlate !== '';
+      }
     );
 
-    const params = new URLSearchParams(window.location.search);
+    const params = activeParams; // USAR OS PARAMS JÁ PROCESSADOS
     const deadlineFromParam = params.get('deadline') || '';
 
     if (targetVehicle && deadlineFromParam && !targetVehicle.nextVistoriaDate) {
@@ -1937,9 +2082,9 @@ export default function App() {
     // If not found (e.g. driver opened the link on their own phone where localStorage is empty),
     // parse details from query params to create a temporary vehicle object.
     if (!targetVehicle && vistoriaPlateParam) {
-      const brand = params.get('brand') || 'Veículo';
-      const model = params.get('model') || '';
-      const driver = params.get('driver') || '';
+      const brand = (params.get('brand') || 'Veículo').trim();
+      const model = (params.get('model') || '').trim();
+      const driver = (params.get('driver') || '').trim();
       targetVehicle = {
         id: `temp-${Date.now()}`,
         brand,
@@ -1973,7 +2118,7 @@ export default function App() {
           }}
           onOpenVistoriaForm={() => {
             const uniqueToken = `${Date.now().toString(36)}-${Math.random().toString(36).substring(2, 6)}`;
-            window.location.search = `?mode=vistoria_retorno&placa=${encodeURIComponent(targetVehicle.plate)}&type=${encodeURIComponent('Periódica')}&reqId=${encodeURIComponent(uniqueToken)}`;
+            window.location.search = `?mode=vistoria_retorno&placa=${encodeURIComponent(targetVehicle.plate)}&type=${encodeURIComponent('periódica')}&reqId=${encodeURIComponent(uniqueToken)}`;
           }}
           onOpenReceiptUpload={() => {
             const uniqueToken = `${Date.now().toString(36)}-${Math.random().toString(36).substring(2, 6)}`;
@@ -1992,6 +2137,7 @@ export default function App() {
         checklistConfig={checklistConfig}
         existingVistorias={vistorias}
         isPaymentMode={isPaymentMode}
+        initialParams={activeParams}
         onSavePaymentReceipt={(receipt) => {
           knownReceiptIdsRef.current.add(receipt.id);
           sendAppNotification(`🧾 Novo Comprovante Recebido: ${targetVehicle.brand} (${targetVehicle.plate})`, {
@@ -2014,12 +2160,10 @@ export default function App() {
                 });
 
             // Immediately push receipt to Firestore so the manager app receives it right away
-            if (Capacitor.isNativePlatform()) {
-              setDoc(doc(db, 'fleetData', 'main'), sanitizeForCloud({
-                vehicles: cleanVehiclesForCloud(nextVehicles),
-                updatedAt: new Date().toISOString()
-              }), { merge: true }).catch(err => console.warn('Direct receipt cloud sync error:', err));
-            }
+            setDoc(doc(db, 'fleetData', 'main'), sanitizeForCloud({
+              vehicles: cleanVehiclesForCloud(nextVehicles),
+              updatedAt: new Date().toISOString()
+            }), { merge: true }).catch(err => console.warn('Direct receipt cloud sync error:', err));
 
             return nextVehicles;
           });
@@ -2037,18 +2181,16 @@ export default function App() {
           };
 
           sendAppNotification(`📋 Vistoria Concluída: ${targetVehicle.brand} (${targetVehicle.plate})`, {
-            body: `Vistoria (${finalVistoria.type || 'Periódica'}) registrada com ${finalVistoria.photos?.length || 0} foto(s).`,
+            body: `Vistoria (${finalVistoria.type || 'periódica'}) registrada com ${finalVistoria.photos?.length || 0} foto(s).`,
             eventKey: 'vistoria_completed',
           });
 
           setVistorias(prev => {
             const nextVistorias = [finalVistoria, ...prev];
-            if (Capacitor.isNativePlatform()) {
-              setDoc(doc(db, 'fleetData', 'main'), sanitizeForCloud({
-                vistorias: nextVistorias,
-                updatedAt: new Date().toISOString()
-              }), { merge: true }).catch(err => console.warn('Direct vistoria cloud sync error:', err));
-            }
+            setDoc(doc(db, 'fleetData', 'main'), sanitizeForCloud({
+              vistorias: nextVistorias,
+              updatedAt: new Date().toISOString()
+            }), { merge: true }).catch(err => console.warn('Direct vistoria cloud sync error:', err));
             return nextVistorias;
           });
           
@@ -2085,12 +2227,10 @@ export default function App() {
                     return v;
                   });
 
-              if (Capacitor.isNativePlatform()) {
                 setDoc(doc(db, 'fleetData', 'main'), sanitizeForCloud({
                   vehicles: cleanVehiclesForCloud(nextVehicles),
                   updatedAt: new Date().toISOString()
                 }), { merge: true }).catch(err => console.warn('Direct vehicle vistoria cloud sync error:', err));
-              }
 
               return nextVehicles;
             });
