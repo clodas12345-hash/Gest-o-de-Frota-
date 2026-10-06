@@ -767,6 +767,13 @@ export default function App() {
   }, []);
 
   useEffect(() => {
+    // Redirecionamento Global de 'pre' para 'dev'
+    if (typeof window !== 'undefined' && window.location.origin.includes('ais-pre')) {
+      const newUrl = window.location.href.replace('ais-pre', 'ais-dev');
+      window.location.replace(newUrl);
+      return;
+    }
+
     let search = window.location.search;
     if (!search && window.location.hash.includes('?')) {
       search = window.location.hash.split('?')[1];
@@ -780,7 +787,7 @@ export default function App() {
       }
     }
     const path = window.location.pathname;
-    const hasPlaca = params.get('placa') || params.get('vistoria') || params.get('car') || params.get('veiculo') || params.get('v') || '';
+    const hasPlaca = params.get('placa') || params.get('plate') || params.get('vistoria') || params.get('car') || params.get('veiculo') || params.get('v') || '';
     if (
       params.get('mode') === 'vistoria_retorno' ||
       params.get('mode') === 'vistoria' ||

@@ -413,9 +413,20 @@ const PUBLIC_WEB_ORIGIN = 'https://ais-dev-nxg4lixniko7ymx3t5cstw-473118395752.u
 
 export const getPublicWebBaseUrl = (): string => {
   const forceDev = (url: string) => {
-    if (url.includes('ais-pre')) return PUBLIC_WEB_ORIGIN.replace(/\/+$/, '');
-    return url.replace(/\/+$/, '');
+    let clean = url;
+    // Se for um link do AI Studio, limpar caminhos e forçar dev
+    if (url.includes('.run.app')) {
+      const match = url.match(/https:\/\/[^/]+/);
+      clean = match ? match[0] : url;
+      clean = clean.replace('ais-pre', 'ais-dev');
+    }
+    return clean.replace(/\/+$/, '');
   };
+
+  // Se o usuário está no ambiente 'pre', forçar retorno do 'dev'
+  if (typeof window !== 'undefined' && window.location.origin.includes('ais-pre')) {
+    return PUBLIC_WEB_ORIGIN.replace(/\/+$/, '');
+  }
 
   if (
     typeof window !== 'undefined' &&
@@ -974,6 +985,9 @@ export const VehicleCard: React.FC<VehicleCardProps> = ({
     if (!text.includes(returnUrlWithPlaca) && !text.includes('placa=')) {
       text += `\n\n🔗 *Link de Acesso / Retorno:*\n${returnUrlWithPlaca}`;
     }
+
+    // Garantia final: substituir qualquer 'ais-pre' remanescente por 'ais-dev'
+    text = text.replace(/ais-pre-nxg4lixniko7ymx3t5cstw-473118395752/g, 'ais-dev-nxg4lixniko7ymx3t5cstw-473118395752');
     
     return text;
   };
