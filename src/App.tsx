@@ -1957,10 +1957,12 @@ export default function App() {
             window.location.href = window.location.pathname;
           }}
           onOpenVistoriaForm={() => {
-            window.location.search = `?mode=vistoria_retorno&placa=${encodeURIComponent(targetVehicle.plate)}`;
+            const uniqueToken = `${Date.now().toString(36)}-${Math.random().toString(36).substring(2, 6)}`;
+            window.location.search = `?mode=vistoria_retorno&placa=${encodeURIComponent(targetVehicle.plate)}&type=${encodeURIComponent('Periódica')}&reqId=${encodeURIComponent(uniqueToken)}`;
           }}
           onOpenReceiptUpload={() => {
-            window.location.search = `?mode=pagamento&placa=${encodeURIComponent(targetVehicle.plate)}`;
+            const uniqueToken = `${Date.now().toString(36)}-${Math.random().toString(36).substring(2, 6)}`;
+            window.location.search = `?mode=pagamento&placa=${encodeURIComponent(targetVehicle.plate)}&reqId=${encodeURIComponent(uniqueToken)}`;
           }}
         />
       );
@@ -1973,6 +1975,7 @@ export default function App() {
         vehicle={targetVehicle}
         plateRequested={vistoriaPlateParam}
         checklistConfig={checklistConfig}
+        existingVistorias={vistorias}
         isPaymentMode={isPaymentMode}
         onSavePaymentReceipt={(receipt) => {
           knownReceiptIdsRef.current.add(receipt.id);
@@ -2452,6 +2455,15 @@ export default function App() {
         vehicles={sortedVehicles}
         vistorias={vistorias}
         onDeleteContract={handleDeleteFinalizedContract}
+        onDeleteVehicleDocument={(vehicleId, docId) => {
+          const targetVeh = vehicles.find(v => v.id === vehicleId);
+          if (targetVeh) {
+            handleUpdateVehicle({
+              ...targetVeh,
+              documents: (targetVeh.documents || []).filter(d => d.id !== docId)
+            });
+          }
+        }}
         onMarkContractAsViewed={handleMarkContractAsViewed}
         onMarkAllAsViewed={handleMarkAllContractsAsViewed}
         onDownloadBackup={handleDownloadBackup}

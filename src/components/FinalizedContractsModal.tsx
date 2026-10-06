@@ -30,6 +30,7 @@ interface FinalizedContractsModalProps {
   vehicles?: Vehicle[];
   vistorias?: Vistoria[];
   onDeleteContract: (id: string) => void;
+  onDeleteVehicleDocument?: (vehicleId: string, docId: string) => void;
   onMarkContractAsViewed?: (id: string) => void;
   onMarkAllAsViewed?: () => void;
   onDownloadBackup?: () => void;
@@ -42,6 +43,7 @@ export function FinalizedContractsModal({
   vehicles = [],
   vistorias = [],
   onDeleteContract,
+  onDeleteVehicleDocument,
   onMarkContractAsViewed,
   onMarkAllAsViewed,
   onDownloadBackup
@@ -50,6 +52,7 @@ export function FinalizedContractsModal({
   const [activeArchiveTab, setActiveArchiveTab] = useState<'all' | 'vistorias' | 'documentos' | 'contratos'>('all');
   const [selectedPdfPreview, setSelectedPdfPreview] = useState<{ name: string; pdfDataUrl: string; subtitle?: string } | null>(null);
   const [contractToDelete, setContractToDelete] = useState<FinalizedContract | null>(null);
+  const [docToDelete, setDocToDelete] = useState<{ id: string; name: string; category: string; vehicleId: string; vehicleBrand: string; vehicleModel: string; vehiclePlate: string } | null>(null);
 
   React.useEffect(() => {
     if (isOpen && onMarkAllAsViewed) {
@@ -79,6 +82,7 @@ export function FinalizedContractsModal({
   const allVehicleDocs = vehicles.flatMap(veh =>
     (veh.documents || []).map(doc => ({
       ...doc,
+      vehicleId: veh.id,
       vehicleBrand: veh.brand,
       vehicleModel: veh.model,
       vehiclePlate: veh.plate,
@@ -423,6 +427,24 @@ export function FinalizedContractsModal({
                             </button>
                           </>
                         )}
+                        {onDeleteVehicleDocument && doc.category !== 'Contrato' && (
+                          <button
+                            type="button"
+                            onClick={() => setDocToDelete({
+                              id: doc.id,
+                              name: doc.name,
+                              category: doc.category,
+                              vehicleId: doc.vehicleId,
+                              vehicleBrand: doc.vehicleBrand,
+                              vehicleModel: doc.vehicleModel,
+                              vehiclePlate: doc.vehiclePlate
+                            })}
+                            className="p-1.5 text-gray-500 hover:text-rose-400 hover:bg-rose-500/10 rounded-lg transition-colors cursor-pointer"
+                            title="Excluir documento"
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </button>
+                        )}
                       </div>
                     </div>
                   ))}
@@ -558,13 +580,16 @@ export function FinalizedContractsModal({
           </div>
         </div>
 
-        {/* Delete Confirmation Modal */}
+        {/* Delete Confirmation Modal for Finalized Contract */}
         <ConfirmDeleteModal
           isOpen={!!contractToDelete}
-          title="Excluir Contrato Finalizado?"
+          title="Excluir Contrato Finalizado? (1/2)"
           description={`Deseja excluir permanentemente o contrato arquivado de ${contractToDelete?.brand} ${contractToDelete?.model} (${contractToDelete?.plate})?`}
           warningNote="Esta ação removerá este relatório do arquivo."
-          confirmButtonText="Sim, Excluir Registro"
+          requireDoubleConfirmation={true}
+          secondTitle="Confirmação Final (2/2)"
+          secondDescription={`Tem certeza absoluta que deseja apagar permanentemente o contrato finalizado de ${contractToDelete?.brand} ${contractToDelete?.model} (${contractToDelete?.plate})?`}
+          secondConfirmButtonText="Sim, Excluir Definitivamente"
           onConfirm={() => {
             if (contractToDelete) {
               onDeleteContract(contractToDelete.id);
@@ -572,6 +597,25 @@ export function FinalizedContractsModal({
             }
           }}
           onCancel={() => setContractToDelete(null)}
+        />
+
+        {/* Delete Confirmation Modal for Vehicle Document */}
+        <ConfirmDeleteModal
+          isOpen={!!docToDelete}
+          title="Excluir Documento? (1/2)"
+          description={`Deseja excluir o documento "${docToDelete?.name}" (${docToDelete?.category}) do veículo ${docToDelete?.vehicleBrand} ${docToDelete?.vehicleModel} (${docToDelete?.vehiclePlate})?`}
+          warningNote="Na próxima etapa será solicitada uma segunda confirmação antes de apagar o arquivo."
+          requireDoubleConfirmation={true}
+          secondTitle="Confirmação Final de Exclusão (2/2)"
+          secondDescription={`Tem certeza absoluta que deseja apagar permanentemente o documento "${docToDelete?.name}"? Esta ação não pode ser desfeita.`}
+          secondConfirmButtonText="Sim, Excluir Definitivamente"
+          onConfirm={() => {
+            if (docToDelete && onDeleteVehicleDocument) {
+              onDeleteVehicleDocument(docToDelete.vehicleId, docToDelete.id);
+              setDocToDelete(null);
+            }
+          }}
+          onCancel={() => setDocToDelete(null)}
         />
 
         {/* PDF Viewer Sub-modal / Preview with Print & Save */}

@@ -64,6 +64,7 @@ import { VehicleProfitabilityModal } from './VehicleProfitabilityModal';
 import { TiresManagementModal } from './TiresManagementModal';
 import { FinesManagementModal } from './FinesManagementModal';
 import CurrencyInput from './CurrencyInput';
+import { ConfirmDeleteModal } from './ConfirmDeleteModal';
 import { printImage, printPdfDataUrl, downloadFileDirect, shareFileWithAttachment, openFileExternal } from '../utils/printHelper';
 
 interface InlineEditProps {
@@ -680,7 +681,7 @@ export const VehicleCard: React.FC<VehicleCardProps> = ({
   const [scheduleDateInput, setScheduleDateInput] = useState<string>(() => vehicle.nextVistoriaDate || new Date().toISOString().split('T')[0]);
   const [scheduleFeedback, setScheduleFeedback] = useState<string | null>(null);
   const [expandedVistoriaId, setExpandedVistoriaId] = useState<string | null>(null);
-  const [newVistoriaType, setNewVistoriaType] = useState<'Entrega de Veículo' | 'Periódica' | 'Devolução de Veículo'>('Periódica');
+  const [newVistoriaType, setNewVistoriaType] = useState<'Entrega de Veículo' | 'Periódica' | 'Devolução de Veículo'>('Devolução de Veículo');
   const [newVistoriaDate, setNewVistoriaDate] = useState(() => new Date().toISOString().split('T')[0]);
   
   const [newVistoriaChecklist, setNewVistoriaChecklist] = useState<Record<string, boolean>>(() => {
@@ -835,10 +836,12 @@ export const VehicleCard: React.FC<VehicleCardProps> = ({
     isShare: boolean,
     v: Vistoria | null,
     reqType?: string,
-    itemsParam?: string[]
+    itemsParam?: string[],
+    tokenOverride?: string
   ) => {
     let text = templateText;
     const typeToUse = reqType || requestVistoriaType || 'Periódica';
+    const tokenToUse = tokenOverride || vistoriaRequestToken;
     
     const veiculoStr = `${vehicle.brand} ${vehicle.model}`;
     const plateStr = vehicle.plate;
@@ -853,7 +856,7 @@ export const VehicleCard: React.FC<VehicleCardProps> = ({
       ? vistoriaReturnLink
       : getPublicWebBaseUrl();
     const separator = safeBaseLink.includes('?') ? '&' : '?';
-    const returnUrlWithPlaca = `${safeBaseLink}${separator}placa=${encodeURIComponent(vehicle.plate)}&brand=${encodeURIComponent(vehicle.brand)}&model=${encodeURIComponent(vehicle.model)}&driver=${encodeURIComponent(vehicle.driver || '')}&type=${encodeURIComponent(typeToUse)}&deadline=${encodeURIComponent(vehicle.nextVistoriaDate || '')}&reqId=${vistoriaRequestToken}${itemsQueryParam}`;
+    const returnUrlWithPlaca = `${safeBaseLink}${separator}placa=${encodeURIComponent(vehicle.plate)}&brand=${encodeURIComponent(vehicle.brand)}&model=${encodeURIComponent(vehicle.model)}&driver=${encodeURIComponent(vehicle.driver || '')}&type=${encodeURIComponent(typeToUse)}&deadline=${encodeURIComponent(vehicle.nextVistoriaDate || '')}&reqId=${tokenToUse}${itemsQueryParam}`;
 
     text = text.replace(/{veiculo}/g, veiculoStr);
     text = text.replace(/{placa}/g, plateStr);
@@ -1370,17 +1373,29 @@ export const VehicleCard: React.FC<VehicleCardProps> = ({
     setShowAddDoc(false);
   };
 
+  const [docPendingDelete, setDocPendingDelete] = useState<VehicleDocument | null>(null);
+
   const handleDeleteDoc = (docId: string) => {
     const docToDelete = (vehicle.documents || []).find((d) => d.id === docId);
-    if (docToDelete && docToDelete.category === 'Contrato') {
+    if (!docToDelete) return;
+    if (docToDelete.category === 'Contrato') {
       alert('Contratos de locação são documentos protegidos e só podem ser removidos ao excluir o veículo do sistema.');
       return;
     }
+    setDocPendingDelete(docToDelete);
+  };
+
+  const handleConfirmDeleteDoc = () => {
+    if (!docPendingDelete) return;
     const currentDocs = vehicle.documents || [];
     onUpdateVehicle({
       ...vehicle,
-      documents: currentDocs.filter((d) => d.id !== docId)
+      documents: currentDocs.filter((d) => d.id !== docPendingDelete.id)
     });
+    if (previewDoc && previewDoc.id === docPendingDelete.id) {
+      setPreviewDoc(null);
+    }
+    setDocPendingDelete(null);
   };
 
   const [docDownloadFeedback, setDocDownloadFeedback] = useState<string | null>(null);
@@ -1506,8 +1521,12 @@ export const VehicleCard: React.FC<VehicleCardProps> = ({
     const nextState = !isRequestingNewVistoria;
     setIsRequestingNewVistoria(nextState);
     if (nextState) {
-      const freshToken = Date.now().toString(36);
+      const freshToken = `${Date.now().toString(36)}-${Math.random().toString(36).substring(2, 6)}`;
       setVistoriaRequestToken(freshToken);
+      const safeReqType = requestVistoriaType === 'Devolução de Veículo' ? 'Periódica' : requestVistoriaType;
+      if (requestVistoriaType === 'Devolução de Veículo') {
+        setRequestVistoriaType('Periódica');
+      }
       let rawPhone = vehicle.driverPhone || '';
       if (rawPhone.startsWith('55')) {
         rawPhone = rawPhone.substring(2);
@@ -1520,7 +1539,7 @@ export const VehicleCard: React.FC<VehicleCardProps> = ({
       }
 
       const savedTemplate = localStorage.getItem('fleet_vistoria_request_template') || DEFAULT_REQUEST_TEMPLATE;
-      const formatted = formatTemplateText(savedTemplate, false, null, requestVistoriaType, itemsToUse).replace(`&reqId=${vistoriaRequestToken}`, `&reqId=${freshToken}`);
+      const formatted = formatTemplateText(savedTemplate, false, null, safeReqType, itemsToUse, freshToken);
       setCustomVistoriaMsgText(formatted);
     }
   };
@@ -4178,17 +4197,20 @@ _Enviado via sistema de gestão de frota._`;
                       if (!isVistoriaExpanded) setIsVistoriaExpanded(true);
                       handleInitiateRequestVistoria();
                     }}
-                    className="text-[11px] text-emerald-400 hover:text-emerald-300 font-bold flex items-center justify-center gap-1 px-2.5 py-1 bg-emerald-500/10 rounded-md border border-emerald-500/10 hover:border-emerald-500/20 transition-all"
+                    className="text-[11px] text-emerald-400 hover:text-emerald-300 font-bold flex items-center justify-center gap-1 px-2.5 py-1 bg-emerald-500/10 rounded-md border border-emerald-500/10 hover:border-emerald-500/20 transition-all cursor-pointer"
                     id={`btn-request-vistoria-${vehicle.id}`}
-                    title="Solicitar vistoria via WhatsApp com link de retorno"
+                    title="Enviar link único (uso único) para o motorista realizar a Vistoria de Entrega ou Periódica"
                   >
                     <MessageCircle className="w-3.5 h-3.5" />
-                    <span>Solicitar</span>
+                    <span>Link Motorista (Entrega/Periódica)</span>
                   </button>
                   <button
                     onClick={() => {
                       if (!isVistoriaExpanded) setIsVistoriaExpanded(true);
                       const nextState = !showAddVistoria;
+                      if (nextState) {
+                        setNewVistoriaType('Devolução de Veículo');
+                      }
                       setShowAddVistoria(nextState);
                       setShowScheduleVistoria(false);
                       setShowPaymentWhatsApp(false);
@@ -4197,10 +4219,11 @@ _Enviado via sistema de gestão de frota._`;
                       setIsRequestingNewVistoria(false);
                       setSharingVistoria(null);
                     }}
-                    className="text-[11px] text-purple-400 hover:text-purple-300 font-bold flex items-center justify-center gap-1 px-2.5 py-1 bg-purple-500/10 rounded-md border border-purple-500/10 hover:border-purple-500/20 transition-all"
+                    className="text-[11px] text-purple-400 hover:text-purple-300 font-bold flex items-center justify-center gap-1 px-2.5 py-1 bg-purple-500/10 rounded-md border border-purple-500/10 hover:border-purple-500/20 transition-all cursor-pointer"
                     id={`btn-new-vistoria-${vehicle.id}`}
+                    title="Realizar vistoria presencialmente pelo gestor (Devolução do veículo)"
                   >
-                    <span>{showAddVistoria ? 'Fechar' : '+ Nova Vistoria'}</span>
+                    <span>{showAddVistoria ? 'Fechar' : '+ Fazer Devolução'}</span>
                   </button>
                   <button
                     type="button"
@@ -4349,15 +4372,15 @@ _Enviado via sistema de gestão de frota._`;
                 <div className="p-3 bg-neutral-900 rounded-lg border border-white/10 space-y-3 animate-in slide-in-from-top-1 duration-150">
                   <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
                     <div>
-                      <label className="text-[9px] text-gray-400 block mb-1 font-semibold uppercase tracking-wider">Tipo de Vistoria *</label>
+                      <label className="text-[9px] text-gray-400 block mb-1 font-semibold uppercase tracking-wider">Tipo de Vistoria (Gestor) *</label>
                       <select
                         value={newVistoriaType}
                         onChange={(e) => setNewVistoriaType(e.target.value as any)}
                         className="w-full text-xs bg-black border border-white/10 rounded-md px-2.5 py-1.5 text-white focus:outline-hidden focus:border-purple-500/50 cursor-pointer font-medium"
                       >
+                        <option value="Devolução de Veículo">Devolução de Carro (Realizada por Mim)</option>
                         <option value="Entrega de Veículo">Entrega de Carro</option>
                         <option value="Periódica">Periódica</option>
-                        <option value="Devolução de Veículo">Devolução de Carro</option>
                       </select>
                     </div>
                     <div>
@@ -4836,28 +4859,34 @@ _Enviado via sistema de gestão de frota._`;
                   <div className="space-y-2.5 text-xs text-white">
                     {isRequestingNewVistoria && (
                       <div className="space-y-3">
-                        <div className="bg-emerald-900/30 border border-emerald-500/30 p-2.5 rounded-lg space-y-1">
-                          <label className="text-[10px] text-emerald-300 block font-bold uppercase tracking-wider">
-                            1. Selecione o Tipo de Vistoria *
-                          </label>
+                        <div className="bg-emerald-900/30 border border-emerald-500/30 p-2.5 rounded-lg space-y-1.5">
+                          <div className="flex items-center justify-between flex-wrap gap-1">
+                            <label className="text-[10px] text-emerald-300 block font-bold uppercase tracking-wider">
+                              1. Selecione o Tipo de Vistoria (Realizada pelo Motorista) *
+                            </label>
+                            <span className="text-[9px] font-mono bg-emerald-500/20 text-emerald-300 px-2 py-0.5 rounded border border-emerald-500/30 font-bold">
+                              🔒 Link Único: #{vistoriaRequestToken}
+                            </span>
+                          </div>
                           <select
-                            value={requestVistoriaType}
+                            value={requestVistoriaType === 'Devolução de Veículo' ? 'Periódica' : requestVistoriaType}
                             onChange={(e) => {
-                              const newType = e.target.value as 'Entrega de Veículo' | 'Periódica' | 'Devolução de Veículo';
+                              const newType = e.target.value as 'Entrega de Veículo' | 'Periódica';
+                              const freshToken = `${Date.now().toString(36)}-${Math.random().toString(36).substring(2, 6)}`;
+                              setVistoriaRequestToken(freshToken);
                               setRequestVistoriaType(newType);
                               const savedTemplate = localStorage.getItem('fleet_vistoria_request_template') || DEFAULT_REQUEST_TEMPLATE;
-                              const formatted = formatTemplateText(savedTemplate, false, null, newType, selectedRequestItems);
+                              const formatted = formatTemplateText(savedTemplate, false, null, newType, selectedRequestItems, freshToken);
                               setCustomVistoriaMsgText(formatted);
                             }}
                             className="w-full text-xs bg-black border border-emerald-500/40 rounded-md px-2.5 py-1.5 text-white focus:outline-hidden focus:border-emerald-400 font-semibold cursor-pointer"
                             id={`select-request-vistoria-type-${vehicle.id}`}
                           >
-                            <option value="Periódica">Periódica (Rotina)</option>
-                            <option value="Entrega de Veículo">Entrega do Carro</option>
-                            <option value="Devolução de Veículo">Devolução do Carro</option>
+                            <option value="Periódica">Periódica (Link Único p/ Motorista Realizar)</option>
+                            <option value="Entrega de Veículo">Entrega do Carro (Link Único p/ Motorista Realizar)</option>
                           </select>
-                          <p className="text-[9px] text-emerald-400/80 italic">
-                            O tipo escolhido será preenchido na mensagem e incorporado no link enviado ao locatário.
+                          <p className="text-[9px] text-emerald-400/90 italic">
+                            Nas vistorias de <strong>Entrega</strong> e <strong>Periódica</strong>, o link único de utilização única é enviado ao motorista. A vistoria de <strong>Devolução</strong> é feita diretamente por você no botão <strong>"+ Fazer Devolução"</strong>.
                           </p>
                         </div>
 
@@ -6042,6 +6071,17 @@ _Enviado via sistema de gestão de frota._`;
                   <Printer className="w-3.5 h-3.5" />
                   <span>Imprimir</span>
                 </button>
+                {previewDoc.category !== 'Contrato' && (
+                  <button
+                    type="button"
+                    onClick={() => handleDeleteDoc(previewDoc.id)}
+                    className="px-3 py-1.5 bg-rose-600/20 hover:bg-rose-600 text-rose-300 hover:text-white border border-rose-500/30 rounded-lg text-xs font-bold flex items-center gap-1.5 transition-colors cursor-pointer"
+                    title="Excluir documento permanentemente"
+                  >
+                    <Trash2 className="w-3.5 h-3.5" />
+                    <span>Excluir</span>
+                  </button>
+                )}
                 <button
                   onClick={() => setPreviewDoc(null)}
                   className="px-3 py-1.5 bg-white/10 hover:bg-white/15 text-gray-200 hover:text-white rounded-lg font-semibold cursor-pointer"
@@ -6301,6 +6341,20 @@ _Enviado via sistema de gestão de frota._`;
         onClose={() => setIsFinesModalOpen(false)}
         vehicle={vehicle}
         onUpdateVehicle={onUpdateVehicle}
+      />
+
+      {/* Double Confirmation Modal for Document Deletion */}
+      <ConfirmDeleteModal
+        isOpen={!!docPendingDelete}
+        title="Excluir Documento? (1/2)"
+        description={`Deseja excluir o documento "${docPendingDelete?.name}" (${docPendingDelete?.category}) do veículo ${vehicle.brand} ${vehicle.model} (${vehicle.plate})?`}
+        warningNote="Na próxima etapa será solicitada uma segunda confirmação antes de apagar o arquivo."
+        requireDoubleConfirmation={true}
+        secondTitle="Confirmação Final de Exclusão (2/2)"
+        secondDescription={`Tem certeza absoluta que deseja apagar permanentemente o documento "${docPendingDelete?.name}"? Esta ação não pode ser desfeita.`}
+        secondConfirmButtonText="Sim, Excluir Definitivamente"
+        onConfirm={handleConfirmDeleteDoc}
+        onCancel={() => setDocPendingDelete(null)}
       />
     </div>
   );

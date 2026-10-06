@@ -312,8 +312,16 @@ export const RentalContractModal: React.FC<RentalContractModalProps> = ({
     setTimeout(() => setIsSavedNotification(false), 3500);
   };
 
-  // Vistoria helper functions
-  const getVistoriaLink = () => {
+  // Vistoria helper functions (Link único de utilização única para o motorista realizar a Vistoria de Entrega)
+  const [entregaReqToken, setEntregaReqToken] = useState<string>(() => `${Date.now().toString(36)}-${Math.random().toString(36).substring(2, 6)}`);
+
+  const getVistoriaLink = (forceNewToken = false) => {
+    const token = forceNewToken
+      ? `${Date.now().toString(36)}-${Math.random().toString(36).substring(2, 6)}`
+      : entregaReqToken;
+    if (forceNewToken) {
+      setEntregaReqToken(token);
+    }
     const currentVeh = vehicles.find(v => v.id === selectedVehicleId) || initialVehicle;
     const isLocalApp = !window.location.origin.startsWith('http') || window.location.origin.includes('localhost') || window.location.origin.includes('127.0.0.1');
     const origin = isLocalApp
@@ -323,13 +331,13 @@ export const RentalContractModal: React.FC<RentalContractModalProps> = ({
     const brand = currentVeh?.brand || 'Veículo';
     const model = currentVeh?.model || '';
     const driver = tenantName || currentVeh?.driver || '';
-    return `${origin}?mode=vistoria_retorno&placa=${encodeURIComponent(plate)}&brand=${encodeURIComponent(brand)}&model=${encodeURIComponent(model)}&driver=${encodeURIComponent(driver)}&type=Entrega%20de%20Ve%C3%ADculo`;
+    return `${origin}?mode=vistoria_retorno&placa=${encodeURIComponent(plate)}&brand=${encodeURIComponent(brand)}&model=${encodeURIComponent(model)}&driver=${encodeURIComponent(driver)}&type=Entrega%20de%20Ve%C3%ADculo&reqId=${encodeURIComponent(token)}`;
   };
 
   const handleSendVistoriaWhatsApp = () => {
     const currentVeh = vehicles.find(v => v.id === selectedVehicleId) || initialVehicle;
     if (!currentVeh) return;
-    const link = getVistoriaLink();
+    const link = getVistoriaLink(true);
     const name = tenantName || currentVeh.driver || 'Motorista';
     let cleanPhone = (tenantPhone || currentVeh.driverPhone || '').replace(/\D/g, '');
     if (!cleanPhone) {
@@ -341,7 +349,7 @@ export const RentalContractModal: React.FC<RentalContractModalProps> = ({
     }
     const text = `Olá ${name}! 🚗
 
-Segue o link para realizar a *Vistoria de Entrega do Veículo* ${currentVeh.brand} ${currentVeh.model} (${currentVeh.plate}):
+Segue o seu *Link Único (uso único)* para realizar a *Vistoria de Entrega do Veículo* ${currentVeh.brand} ${currentVeh.model} (${currentVeh.plate}):
 
 ${link}
 
@@ -352,7 +360,7 @@ Por favor, preencha as fotos e o checklist de entrega ao retirar o veículo.`;
   };
 
   const handleCopyVistoriaLink = () => {
-    const link = getVistoriaLink();
+    const link = getVistoriaLink(true);
     navigator.clipboard.writeText(link);
     setCopiedLinkNotification(true);
     setTimeout(() => setCopiedLinkNotification(false), 3000);
@@ -923,35 +931,26 @@ O contrato oficial em PDF já foi gerado e está arquivado nos documentos do ve�
                   </div>
                   <div>
                     <h4 className="text-xs sm:text-sm font-bold text-white uppercase tracking-wider flex items-center gap-2">
-                      Vistoria de Entrega do Veículo
+                      Vistoria de Entrega do Veículo (Link Único p/ Motorista)
                       <span className="bg-purple-500/20 text-purple-300 border border-purple-500/30 px-2 py-0.5 rounded-full text-[9px] font-black">
-                        RECOMENDADO
+                        USO ÚNICO #{entregaReqToken}
                       </span>
                     </h4>
                     <p className="text-[11px] text-gray-400 mt-0.5">
-                      Após formalizar o contrato, realize a vistoria de entrega para registrar as fotos e condições iniciais do veículo para <strong className="text-purple-300">{tenantName || 'o motorista'}</strong>.
+                      Envie o link único de utilização única para <strong className="text-purple-300">{tenantName || 'o motorista'}</strong> realizar a vistoria de entrega no celular dele.
                     </p>
                   </div>
                 </div>
 
                 {/* Opções de Vistoria */}
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
-                  <button
-                    type="button"
-                    onClick={() => setShowVistoriaForm(true)}
-                    className="px-4 py-3 bg-purple-600 hover:bg-purple-500 text-white font-bold text-xs rounded-xl flex items-center justify-center gap-2 transition-all cursor-pointer shadow-lg shadow-purple-900/30 border border-purple-400/30 hover:scale-[1.01]"
-                  >
-                    <ClipboardCheck className="w-4 h-4 text-purple-200" />
-                    <span>Realizar Vistoria Agora</span>
-                  </button>
-
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
                   <button
                     type="button"
                     onClick={handleSendVistoriaWhatsApp}
                     className="px-4 py-3 bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs rounded-xl flex items-center justify-center gap-2 transition-all cursor-pointer shadow-lg shadow-emerald-500/20 hover:scale-[1.01]"
                   >
                     <Share2 className="w-4 h-4 text-emerald-100" />
-                    <span>Enviar Vistoria no WhatsApp</span>
+                    <span>Enviar Link Único ao Motorista (WhatsApp)</span>
                   </button>
 
                   <button
@@ -960,7 +959,7 @@ O contrato oficial em PDF já foi gerado e está arquivado nos documentos do ve�
                     className="px-4 py-3 bg-white/10 hover:bg-white/15 text-white font-bold text-xs rounded-xl flex items-center justify-center gap-2 transition-all cursor-pointer border border-white/10 hover:scale-[1.01]"
                   >
                     <Copy className="w-4 h-4 text-gray-300" />
-                    <span>Copiar Link Vistoria</span>
+                    <span>Copiar Link Único de Entrega</span>
                   </button>
                 </div>
 
@@ -1599,15 +1598,15 @@ O contrato oficial em PDF já foi gerado e está arquivado nos documentos do ve�
                     <span>Editar Contrato</span>
                   </button>
 
-                  {/* Botão Vistoria de Entrega */}
+                  {/* Botão Enviar Link Vistoria de Entrega ao Motorista */}
                   <button
                     type="button"
-                    onClick={() => setShowVistoriaForm(true)}
+                    onClick={handleSendVistoriaWhatsApp}
                     className="px-4 py-2.5 bg-purple-600/20 hover:bg-purple-600/30 text-purple-300 border border-purple-500/30 font-bold rounded-xl flex items-center justify-center gap-1.5 transition-all cursor-pointer text-xs shadow-md shadow-purple-500/10"
-                    title="Realizar a Vistoria de Entrega do veículo agora"
+                    title="Enviar link único de utilização única para o motorista realizar a Vistoria de Entrega"
                   >
                     <ClipboardCheck className="w-4 h-4 text-purple-400" />
-                    <span>Vistoria de Entrega</span>
+                    <span>Enviar Link Vistoria Entrega</span>
                   </button>
 
                   {/* Botão Contrato em Branco */}

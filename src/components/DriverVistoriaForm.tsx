@@ -9,6 +9,7 @@ interface DriverVistoriaFormProps {
   vehicle: Vehicle | undefined;
   plateRequested: string;
   checklistConfig: string[];
+  existingVistorias?: Vistoria[];
   onSaveVistoria: (v: Vistoria, pdfDataUrl?: string, pdfFileName?: string) => void;
   onSavePaymentReceipt?: (receipt: { id: string; date: string; amount?: number; photoUrl: string; notes?: string; driverName?: string }) => void;
   onExit: () => void;
@@ -20,6 +21,7 @@ export function DriverVistoriaForm({
   vehicle, 
   plateRequested, 
   checklistConfig,
+  existingVistorias = [],
   onSaveVistoria, 
   onSavePaymentReceipt,
   onExit,
@@ -31,7 +33,7 @@ export function DriverVistoriaForm({
     if (initialType) return initialType;
     const params = new URLSearchParams(window.location.search);
     const typeFromUrl = params.get('type');
-    if (typeFromUrl === 'Entrega de Veículo' || typeFromUrl === 'Periódica' || typeFromUrl === 'Devolução de Veículo') {
+    if (typeFromUrl === 'Entrega de Veículo' || typeFromUrl === 'Periódica') {
       return typeFromUrl;
     }
     return 'Periódica';
@@ -106,8 +108,16 @@ export function DriverVistoriaForm({
 
   const [alreadySubmittedBefore, setAlreadySubmittedBefore] = useState<boolean>(() => {
     if (!vehicle || !requestToken) return false;
-    return localStorage.getItem(getSubmissionStorageKey()) === 'true';
+    const inLocal = localStorage.getItem(getSubmissionStorageKey()) === 'true' || localStorage.getItem(`used_vistoria_token_${requestToken}`) === 'true';
+    const inCloudVistorias = existingVistorias.some(v => v.reqId === requestToken);
+    return inLocal || inCloudVistorias;
   });
+
+  useEffect(() => {
+    if (requestToken && existingVistorias.some(v => v.reqId === requestToken)) {
+      setAlreadySubmittedBefore(true);
+    }
+  }, [requestToken, existingVistorias]);
 
   // Payment receipt specific states
   const [paymentAmount, setPaymentAmount] = useState<number>(() => {
@@ -351,12 +361,14 @@ export function DriverVistoriaForm({
       photos: combinedPhotos,
       notes: notes.trim() || undefined,
       km: parsedKm,
-      fuelLevel: fuelLevel || undefined
+      fuelLevel: fuelLevel || undefined,
+      reqId: requestToken || undefined
     };
 
     if (vehicle) {
       if (requestToken) {
         localStorage.setItem(getSubmissionStorageKey(), 'true');
+        localStorage.setItem(`used_vistoria_token_${requestToken}`, 'true');
       }
       setAlreadySubmittedBefore(true);
       try {
@@ -535,26 +547,19 @@ _Enviado via sistema de vistoria digital._`;
               <Info className="w-8 h-8 text-amber-400" />
             </div>
             
-            <div>
-              <h2 className="text-lg font-bold text-amber-400">Link Já Utilizado</h2>
-              <p className="text-xs text-gray-400 mt-2 leading-relaxed">
-                Este link {isPaymentMode ? 'de comprovante' : 'de vistoria'} já foi enviado anteriormente.
+            <div className="space-y-2">
+              <h2 className="text-lg font-bold text-amber-400">Link Único Já Utilizado</h2>
+              <p className="text-xs text-gray-300 leading-relaxed">
+                Este link {isPaymentMode ? 'de comprovante' : 'de vistoria'} é de <strong>utilização única</strong> e já foi preenchido e enviado anteriormente.
               </p>
-              <button
-                type="button"
-                onClick={() => {
-                  if (vehicle) {
-                    localStorage.removeItem(getSubmissionStorageKey());
-                    localStorage.removeItem(`vistoria_submitted_${vehicle.plate}`);
-                    localStorage.removeItem(`payment_receipt_submitted_${vehicle.plate}`);
-                  }
-                  setAlreadySubmittedBefore(false);
-                  setIsSubmitted(false);
-                }}
-                className="mt-4 w-full py-3 bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs rounded-xl transition-all cursor-pointer shadow-lg shadow-emerald-600/20"
-              >
-                {isPaymentMode ? 'Enviar Novo Comprovante Agora' : 'Realizar Nova Vistoria Agora'}
-              </button>
+              {requestToken && (
+                <p className="text-[11px] font-mono text-amber-300/80 bg-amber-500/10 border border-amber-500/20 py-1 px-2.5 rounded-lg inline-block">
+                  Token: #{requestToken} (Expirado)
+                </p>
+              )}
+              <p className="text-[11px] text-gray-500 italic pt-2">
+                Para realizar uma nova vistoria, solicite um novo link único ao gestor da frota.
+              </p>
             </div>
           </div>
         ) : isSubmitted ? (

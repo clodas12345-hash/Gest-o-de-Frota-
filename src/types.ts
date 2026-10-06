@@ -223,6 +223,7 @@ export interface Vistoria {
   approvedAt?: string;
   pdfDataUrl?: string;
   fuelLevel?: number; // 0 to 100
+  reqId?: string; // Token único de utilização única por vistoria
 }
 
 export interface FinalizedContract {
