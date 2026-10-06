@@ -5,6 +5,7 @@ import { generateNextContractNumber } from '../utils/contractHelper';
 import { sendAppNotification } from '../utils/notifications';
 import { DriverVistoriaForm } from './DriverVistoriaForm';
 import { getPublicWebBaseUrl } from './VehicleCard';
+import { encodeVistoriaParams } from '../utils/vistoriaUrl';
 import { Capacitor } from '@capacitor/core';
 import CurrencyInput from './CurrencyInput';
 import { 
@@ -331,7 +332,16 @@ export const RentalContractModal: React.FC<RentalContractModalProps> = ({
     const brand = currentVeh?.brand || 'Veículo';
     const model = currentVeh?.model || '';
     const driver = tenantName || currentVeh?.driver || '';
-    return `${origin}?mode=vistoria_retorno&placa=${encodeURIComponent(plate)}&brand=${encodeURIComponent(brand)}&model=${encodeURIComponent(model)}&driver=${encodeURIComponent(driver)}&type=Entrega%20de%20Ve%C3%ADculo&reqId=${encodeURIComponent(token)}`;
+    const encoded = encodeVistoriaParams({
+      mode: 'vistoria_retorno',
+      placa: plate,
+      brand,
+      model,
+      driver,
+      type: 'Entrega de Veículo',
+      reqId: token
+    });
+    return `${origin}?data=${encodeURIComponent(encoded)}`;
   };
 
   const handleSendVistoriaWhatsApp = () => {

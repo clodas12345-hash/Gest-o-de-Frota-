@@ -8,6 +8,7 @@ import { generateVistoriaPDF, generatePaymentReceiptPDF } from '../utils/pdfGene
 import { sendAppNotification, requestNotificationPermission } from '../utils/notifications';
 import { syncVehicleFipe } from '../utils/fipeService';
 import { PdfViewer } from './PdfViewer';
+import { encodeVistoriaParams } from '../utils/vistoriaUrl';
 import { 
   Calendar, 
   User, 
@@ -1612,17 +1613,25 @@ export const VehicleCard: React.FC<VehicleCardProps> = ({
 
     let finalMsg = customVistoriaMsgText;
     const itemsToUse = selectedRequestItems.length > 0 ? selectedRequestItems : availableChecklistItems;
-    const itemsQueryParam = itemsToUse && itemsToUse.length > 0
-      ? `&items=${encodeURIComponent(itemsToUse.join(','))}`
-      : '';
     const safeBaseLink = (vistoriaReturnLink && !vistoriaReturnLink.includes('localhost') && !vistoriaReturnLink.includes('127.0.0.1'))
       ? vistoriaReturnLink
       : getPublicWebBaseUrl();
-    const separator = safeBaseLink.includes('?') ? '&' : '?';
-    const returnUrlWithPlaca = `${safeBaseLink}${separator}placa=${encodeURIComponent(vehicle.plate)}&brand=${encodeURIComponent(vehicle.brand)}&model=${encodeURIComponent(vehicle.model)}&driver=${encodeURIComponent(vehicle.driver || '')}&type=${encodeURIComponent(requestVistoriaType)}&deadline=${encodeURIComponent(vehicle.nextVistoriaDate || '')}&reqId=${vistoriaRequestToken}${itemsQueryParam}`;
+    
+    const encoded = encodeVistoriaParams({
+      mode: 'vistoria_retorno',
+      placa: vehicle.plate,
+      brand: vehicle.brand,
+      model: vehicle.model,
+      driver: vehicle.driver || '',
+      type: requestVistoriaType,
+      deadline: vehicle.nextVistoriaDate || '',
+      reqId: vistoriaRequestToken,
+      items: itemsToUse.join(',')
+    });
+    const returnUrl = `${safeBaseLink}?data=${encodeURIComponent(encoded)}`;
 
     if (!finalMsg.includes('placa=') && !finalMsg.includes('http')) {
-      finalMsg += `\n\n🔗 *Link de Acesso / Retorno para Vistoria:*\n${returnUrlWithPlaca}`;
+      finalMsg += `\n\n🔗 *Link de Acesso / Retorno para Vistoria:*\n${returnUrl}`;
     }
 
     const waUrl = cleanPhone 

@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { Vehicle, FuelLog, MaintenanceLog, ExpenseLog, AgendaContact, Vistoria, VehicleDocument, FinalizedContract, SinistroLog } from './types';
+import { decodeVistoriaParams } from './utils/vistoriaUrl';
 import { 
   INITIAL_VEHICLES, 
   INITIAL_FUEL_LOGS, 
@@ -766,7 +767,15 @@ export default function App() {
   }, []);
 
   useEffect(() => {
-    const params = new URLSearchParams(window.location.search);
+    let search = window.location.search;
+    let params = new URLSearchParams(search);
+    if (params.has('data')) {
+      const decoded = decodeVistoriaParams(params.get('data')!);
+      if (decoded) {
+        Object.entries(decoded).forEach(([key, value]) => params.set(key, value as string));
+        window.history.replaceState({}, '', `?${params.toString()}`);
+      }
+    }
     const path = window.location.pathname;
     const hasPlaca = params.get('placa') || params.get('vistoria') || params.get('car') || params.get('veiculo') || params.get('v') || '';
     if (
