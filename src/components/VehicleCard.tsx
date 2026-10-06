@@ -409,7 +409,7 @@ const DEFAULT_PAYMENT_TEMPLATES = {
   atrasado: `Olá, *{driver}*.\n\nIdentificamos que o pagamento semanal referente ao veículo *{brand} {model}* ({plate}) com vencimento em *{data_vencimento}* consta em **atraso**.\n\n⚠️ *Valor em aberto:* R$ {valor}\n\nRegularize e envie o comprovante pelo link:\n🔗 {link_comprovante}\n\nFicamos no aguardo. Obrigado!`
 };
 
-const PUBLIC_WEB_ORIGIN = 'https://ais-pre-nxg4lixniko7ymx3t5cstw-473118395752.us-west2.run.app';
+const PUBLIC_WEB_ORIGIN = 'https://ais-dev-nxg4lixniko7ymx3t5cstw-473118395752.us-west2.run.app';
 
 export const getPublicWebBaseUrl = (): string => {
   if (
