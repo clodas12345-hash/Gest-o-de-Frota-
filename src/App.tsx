@@ -315,6 +315,7 @@ export default function App() {
     const defaultList = [
       'Estepe',
       'Chaves de roda',
+      'Triângulo',
       'Frente do carro',
       'Fundo do carro',
       'Lateral direita',
@@ -331,16 +332,13 @@ export default function App() {
       try {
         const parsed = JSON.parse(saved);
         if (Array.isArray(parsed) && parsed.length > 0) {
-          const newRequired = [
-            'Câmera do carro (Tirar foto)',
-            'Cartão de memória (Tirar foto)',
-            'Rastreador está funcionando?'
-          ];
+          const hasAnyTriangulo = parsed.some(item => item.toLowerCase().includes('triângulo') || item.toLowerCase().includes('triangulo'));
           const hasAnyCamera = parsed.some(item => item.toLowerCase().includes('câmera') || item.toLowerCase().includes('camera'));
           const hasAnySd = parsed.some(item => item.toLowerCase().includes('cartão') || item.toLowerCase().includes('cartao') || item.toLowerCase().includes('memória') || item.toLowerCase().includes('memoria'));
           const hasAnyTracker = parsed.some(item => item.toLowerCase().includes('rastreador'));
 
           const toAdd: string[] = [];
+          if (!hasAnyTriangulo) toAdd.push('Triângulo');
           if (!hasAnyCamera) toAdd.push('Câmera do carro (Tirar foto)');
           if (!hasAnySd) toAdd.push('Cartão de memória (Tirar foto)');
           if (!hasAnyTracker) toAdd.push('Rastreador está funcionando?');
@@ -770,25 +768,23 @@ export default function App() {
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     const path = window.location.pathname;
+    const hasPlaca = params.get('placa') || params.get('vistoria') || params.get('car') || params.get('veiculo') || params.get('v') || '';
     if (
       params.get('mode') === 'vistoria_retorno' ||
       params.get('mode') === 'vistoria' ||
+      params.get('mode') === 'pagamento' ||
+      params.get('mode') === 'payment_receipt' ||
+      params.get('mode') === 'portal_motorista' ||
       params.has('vistoria') ||
       params.has('placa') ||
       params.has('car') ||
       params.has('veiculo') ||
       path.includes('/upload-receipt') ||
-      path.includes('/vistoria')
+      path.includes('/vistoria') ||
+      Boolean(hasPlaca)
     ) {
       setIsVistoriaMode(true);
-      setVistoriaPlateParam(
-        params.get('placa') ||
-        params.get('vistoria') ||
-        params.get('car') ||
-        params.get('veiculo') ||
-        params.get('v') ||
-        ''
-      );
+      setVistoriaPlateParam(hasPlaca);
     }
   }, []);
 

@@ -57,7 +57,8 @@ import {
   Printer,
   GitCompare,
   AlertOctagon,
-  CircleDot
+  CircleDot,
+  Radio
 } from 'lucide-react';
 import { VistoriaComparatorModal } from './VistoriaComparatorModal';
 import { VehicleProfitabilityModal } from './VehicleProfitabilityModal';
@@ -312,6 +313,7 @@ Para nos enviar fotos das pendências ou de retorno, responda diretamente a esta
 const DEFAULT_CHECKLIST_ITEMS = [
   'Estepe',
   'Chaves de roda',
+  'Triângulo',
   'Frente do carro',
   'Fundo do carro',
   'Lateral direita',
@@ -323,6 +325,68 @@ const DEFAULT_CHECKLIST_ITEMS = [
   'Cartão de memória (Foto)',
   'Rastreador está funcionando?'
 ];
+
+export const getChecklistForVistoriaType = (type: string, customConfig?: string[]): string[] => {
+  const isPeriodica = type === 'Periódica';
+  let base: string[] = [];
+  
+  if (customConfig && customConfig.length > 0) {
+    base = [...customConfig];
+  } else {
+    base = isPeriodica ? [
+      'Frente do carro',
+      'Fundo do carro',
+      'Lateral direita',
+      'Lateral esquerda',
+      'Estofados frente',
+      'Estofados trás',
+      'Nível de combustivel'
+    ] : [
+      'Estepe',
+      'Chaves de roda',
+      'Triângulo',
+      'Frente do carro',
+      'Fundo do carro',
+      'Lateral direita',
+      'Lateral esquerda',
+      'Estofados frente',
+      'Estofados trás',
+      'Nível de combustivel'
+    ];
+  }
+
+  if (isPeriodica) {
+    // Das vistorias periódicas tira step, chave de rodas e triângulo
+    base = base.filter(item => {
+      const lower = item.toLowerCase();
+      return !lower.includes('estepe') && !lower.includes('step') && !lower.includes('chave de roda') && !lower.includes('chaves de roda') && !lower.includes('triângulo') && !lower.includes('triangulo');
+    });
+  } else {
+    // Na entrega e devolução incluir Estepe, Chaves de roda e Triângulo
+    const hasEstepe = base.some(i => i.toLowerCase().includes('estepe') || i.toLowerCase().includes('step'));
+    const hasChaves = base.some(i => i.toLowerCase().includes('chave de roda') || i.toLowerCase().includes('chaves de roda'));
+    const hasTriangulo = base.some(i => i.toLowerCase().includes('triângulo') || i.toLowerCase().includes('triangulo'));
+
+    const requiredItems: string[] = [];
+    if (!hasEstepe) requiredItems.push('Estepe');
+    if (!hasChaves) requiredItems.push('Chaves de roda');
+    if (!hasTriangulo) requiredItems.push('Triângulo');
+
+    if (requiredItems.length > 0) {
+      base = [...requiredItems, ...base];
+    }
+  }
+
+  const hasCamera = base.some(item => item.toLowerCase().includes('câmera') || item.toLowerCase().includes('camera'));
+  const hasSd = base.some(item => item.toLowerCase().includes('cartão') || item.toLowerCase().includes('cartao') || item.toLowerCase().includes('memória') || item.toLowerCase().includes('memoria'));
+  const hasTracker = base.some(item => item.toLowerCase().includes('rastreador'));
+
+  if (!hasCamera) base.push('Câmera do carro (Foto)');
+  if (!hasSd) base.push('Cartão de memória (Foto)');
+  if (!hasTracker) base.push('Rastreador está funcionando?');
+
+  return base;
+};
 
 const DEFAULT_REQUEST_TEMPLATE = `🔔 *SOLICITAÇÃO DE VISTORIA DO VEÍCULO*
 
@@ -347,6 +411,16 @@ const DEFAULT_PAYMENT_TEMPLATES = {
 const PUBLIC_WEB_ORIGIN = 'https://ais-pre-nxg4lixniko7ymx3t5cstw-473118395752.us-west2.run.app';
 
 export const getPublicWebBaseUrl = (): string => {
+  if (
+    typeof window !== 'undefined' &&
+    window.location.origin &&
+    window.location.origin.startsWith('http') &&
+    !window.location.origin.includes('localhost') &&
+    !window.location.origin.includes('127.0.0.1')
+  ) {
+    return window.location.origin.replace(/\/+$/, '');
+  }
+
   const saved = localStorage.getItem('fleet_vistoria_return_link');
   if (
     saved &&
@@ -358,15 +432,8 @@ export const getPublicWebBaseUrl = (): string => {
   ) {
     return saved.replace(/\/+$/, '');
   }
-  if (
-    typeof window !== 'undefined' &&
-    window.location.origin.startsWith('http') &&
-    !window.location.origin.includes('localhost') &&
-    !window.location.origin.includes('127.0.0.1')
-  ) {
-    return `${window.location.origin}/upload-receipt`;
-  }
-  return `${PUBLIC_WEB_ORIGIN}/upload-receipt`;
+  
+  return PUBLIC_WEB_ORIGIN;
 };
 
 const formatPaymentTemplateText = (
@@ -686,13 +753,10 @@ export const VehicleCard: React.FC<VehicleCardProps> = ({
   
   const [newVistoriaChecklist, setNewVistoriaChecklist] = useState<Record<string, boolean>>(() => {
     const initial: Record<string, boolean> = {};
-    if (checklistConfig && checklistConfig.length > 0) {
-      checklistConfig.forEach(item => {
-        initial[item] = true;
-      });
-    } else {
-      initial['Checklist Padrão'] = true;
-    }
+    const items = getChecklistForVistoriaType('Devolução de Veículo', checklistConfig);
+    items.forEach(item => {
+      initial[item] = true;
+    });
     return initial;
   });
 
@@ -815,19 +879,16 @@ export const VehicleCard: React.FC<VehicleCardProps> = ({
     return validUrl;
   });
 
-  const availableChecklistItems = (checklistConfig && checklistConfig.length > 0)
-    ? checklistConfig
-    : DEFAULT_CHECKLIST_ITEMS;
+  const availableChecklistItems = getChecklistForVistoriaType(newVistoriaType, checklistConfig);
 
   const [selectedRequestItems, setSelectedRequestItems] = useState<string[]>(() => {
-    return (checklistConfig && checklistConfig.length > 0) ? [...checklistConfig] : [...DEFAULT_CHECKLIST_ITEMS];
+    return getChecklistForVistoriaType(requestVistoriaType, checklistConfig);
   });
 
   useEffect(() => {
-    if (checklistConfig && checklistConfig.length > 0) {
-      setSelectedRequestItems(prev => prev.length === 0 ? [...checklistConfig] : prev);
-    }
-  }, [checklistConfig]);
+    const targetItems = getChecklistForVistoriaType(requestVistoriaType, checklistConfig);
+    setSelectedRequestItems(targetItems);
+  }, [checklistConfig, requestVistoriaType]);
 
   const [templateSavedStatus, setTemplateSavedStatus] = useState<string | null>(null);
 
@@ -1511,35 +1572,31 @@ export const VehicleCard: React.FC<VehicleCardProps> = ({
     setCustomVistoriaMsgText(formatted);
   };
 
-  const handleInitiateRequestVistoria = () => {
+  const handleInitiateRequestVistoria = (forcedType?: 'Entrega de Veículo' | 'Periódica') => {
     setShowPaymentWhatsApp(false);
     setShowAddPayment(false);
     setShowMaintenanceWhatsApp(false);
     setShowScheduleVistoria(false);
     setShowAddVistoria(false);
     setSharingVistoria(null);
-    const nextState = !isRequestingNewVistoria;
+    const targetType = forcedType || (requestVistoriaType === 'Devolução de Veículo' ? 'Periódica' : requestVistoriaType);
+    setRequestVistoriaType(targetType);
+    const nextState = isRequestingNewVistoria && requestVistoriaType === targetType ? false : true;
     setIsRequestingNewVistoria(nextState);
     if (nextState) {
       const freshToken = `${Date.now().toString(36)}-${Math.random().toString(36).substring(2, 6)}`;
       setVistoriaRequestToken(freshToken);
-      const safeReqType = requestVistoriaType === 'Devolução de Veículo' ? 'Periódica' : requestVistoriaType;
-      if (requestVistoriaType === 'Devolução de Veículo') {
-        setRequestVistoriaType('Periódica');
-      }
       let rawPhone = vehicle.driverPhone || '';
       if (rawPhone.startsWith('55')) {
         rawPhone = rawPhone.substring(2);
       }
       setWhatsappVistoriaPhone(rawPhone);
 
-      const itemsToUse = selectedRequestItems.length > 0 ? selectedRequestItems : availableChecklistItems;
-      if (selectedRequestItems.length === 0) {
-        setSelectedRequestItems([...availableChecklistItems]);
-      }
+      const itemsToUse = getChecklistForVistoriaType(targetType, checklistConfig);
+      setSelectedRequestItems(itemsToUse);
 
       const savedTemplate = localStorage.getItem('fleet_vistoria_request_template') || DEFAULT_REQUEST_TEMPLATE;
-      const formatted = formatTemplateText(savedTemplate, false, null, safeReqType, itemsToUse, freshToken);
+      const formatted = formatTemplateText(savedTemplate, false, null, targetType, itemsToUse, freshToken);
       setCustomVistoriaMsgText(formatted);
     }
   };
@@ -4166,7 +4223,77 @@ _Enviado via sistema de gestão de frota._`;
                   </span>
                 </button>
 
-                <div className="grid grid-cols-2 gap-1.5 w-full sm:w-auto shrink-0" onClick={(e) => e.stopPropagation()}>
+                <div className="flex flex-wrap items-center gap-1.5 w-full sm:w-auto shrink-0" onClick={(e) => e.stopPropagation()}>
+                  {/* Botão 1: Entrega (Link p/ Motorista) */}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (!isVistoriaExpanded) setIsVistoriaExpanded(true);
+                      handleInitiateRequestVistoria('Entrega de Veículo');
+                    }}
+                    className={`text-[11px] font-bold flex items-center justify-center gap-1 px-2.5 py-1 rounded-md border transition-all cursor-pointer ${
+                      isRequestingNewVistoria && requestVistoriaType === 'Entrega de Veículo'
+                        ? 'bg-emerald-500 text-slate-950 border-emerald-400 shadow-md shadow-emerald-500/20'
+                        : 'bg-emerald-500/10 text-emerald-400 hover:text-emerald-300 border-emerald-500/20 hover:bg-emerald-500/20'
+                    }`}
+                    id={`btn-vistoria-entrega-${vehicle.id}`}
+                    title="Enviar link único (uso único) para o motorista realizar a Vistoria de Entrega"
+                  >
+                    <Send className="w-3.5 h-3.5" />
+                    <span>Entrega</span>
+                  </button>
+
+                  {/* Botão 2: Periódica (Link p/ Motorista) */}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (!isVistoriaExpanded) setIsVistoriaExpanded(true);
+                      handleInitiateRequestVistoria('Periódica');
+                    }}
+                    className={`text-[11px] font-bold flex items-center justify-center gap-1 px-2.5 py-1 rounded-md border transition-all cursor-pointer ${
+                      isRequestingNewVistoria && requestVistoriaType === 'Periódica'
+                        ? 'bg-blue-500 text-white border-blue-400 shadow-md shadow-blue-500/20'
+                        : 'bg-blue-500/10 text-blue-400 hover:text-blue-300 border-blue-500/20 hover:bg-blue-500/20'
+                    }`}
+                    id={`btn-vistoria-periodica-${vehicle.id}`}
+                    title="Enviar link único (uso único) para o motorista realizar a Vistoria Periódica"
+                  >
+                    <MessageCircle className="w-3.5 h-3.5" />
+                    <span>Periódica</span>
+                  </button>
+
+                  {/* Botão 3: Devolução (Realizada pelo Gestor) */}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (!isVistoriaExpanded) setIsVistoriaExpanded(true);
+                      const nextState = !showAddVistoria || newVistoriaType !== 'Devolução de Veículo';
+                      setNewVistoriaType('Devolução de Veículo');
+                      const devItems = getChecklistForVistoriaType('Devolução de Veículo', checklistConfig);
+                      const initCheck: Record<string, boolean> = {};
+                      devItems.forEach(it => { initCheck[it] = true; });
+                      setNewVistoriaChecklist(initCheck);
+                      setShowAddVistoria(nextState);
+                      setShowScheduleVistoria(false);
+                      setShowPaymentWhatsApp(false);
+                      setShowAddPayment(false);
+                      setShowMaintenanceWhatsApp(false);
+                      setIsRequestingNewVistoria(false);
+                      setSharingVistoria(null);
+                    }}
+                    className={`text-[11px] font-bold flex items-center justify-center gap-1 px-2.5 py-1 rounded-md border transition-all cursor-pointer ${
+                      showAddVistoria && newVistoriaType === 'Devolução de Veículo'
+                        ? 'bg-purple-600 text-white border-purple-400 shadow-md shadow-purple-600/20'
+                        : 'bg-purple-500/10 text-purple-400 hover:text-purple-300 border-purple-500/20 hover:bg-purple-500/20'
+                    }`}
+                    id={`btn-vistoria-devolucao-${vehicle.id}`}
+                    title="Fazer vistoria de Devolução presencialmente (Gestor)"
+                  >
+                    <ClipboardCheck className="w-3.5 h-3.5" />
+                    <span>Devolução</span>
+                  </button>
+
+                  {/* Botão Agendar Data */}
                   <button
                     type="button"
                     onClick={() => {
@@ -4183,56 +4310,25 @@ _Enviado via sistema de gestão de frota._`;
                     }}
                     className={`text-[11px] font-bold flex items-center justify-center gap-1 px-2.5 py-1 rounded-md border transition-all cursor-pointer ${
                       vehicle.nextVistoriaDate
-                        ? 'bg-blue-500/20 text-blue-300 border-blue-500/30 hover:bg-blue-500/30'
-                        : 'bg-blue-500/10 text-blue-400 border-blue-500/20 hover:bg-blue-500/20'
+                        ? 'bg-amber-500/20 text-amber-300 border-amber-500/30 hover:bg-amber-500/30'
+                        : 'bg-white/5 text-gray-400 border-white/10 hover:bg-white/10 hover:text-white'
                     }`}
                     id={`btn-schedule-vistoria-${vehicle.id}`}
                     title="Agendar data para a realização da vistoria"
                   >
-                    <Calendar className="w-3.5 h-3.5 text-blue-400" />
+                    <Calendar className="w-3.5 h-3.5 text-amber-400" />
                     <span>{showScheduleVistoria ? 'Fechar' : (vehicle.nextVistoriaDate ? 'Agendada' : 'Agendar')}</span>
                   </button>
-                  <button
-                    onClick={() => {
-                      if (!isVistoriaExpanded) setIsVistoriaExpanded(true);
-                      handleInitiateRequestVistoria();
-                    }}
-                    className="text-[11px] text-emerald-400 hover:text-emerald-300 font-bold flex items-center justify-center gap-1 px-2.5 py-1 bg-emerald-500/10 rounded-md border border-emerald-500/10 hover:border-emerald-500/20 transition-all cursor-pointer"
-                    id={`btn-request-vistoria-${vehicle.id}`}
-                    title="Enviar link único (uso único) para o motorista realizar a Vistoria de Entrega ou Periódica"
-                  >
-                    <MessageCircle className="w-3.5 h-3.5" />
-                    <span>Link Motorista (Entrega/Periódica)</span>
-                  </button>
-                  <button
-                    onClick={() => {
-                      if (!isVistoriaExpanded) setIsVistoriaExpanded(true);
-                      const nextState = !showAddVistoria;
-                      if (nextState) {
-                        setNewVistoriaType('Devolução de Veículo');
-                      }
-                      setShowAddVistoria(nextState);
-                      setShowScheduleVistoria(false);
-                      setShowPaymentWhatsApp(false);
-                      setShowAddPayment(false);
-                      setShowMaintenanceWhatsApp(false);
-                      setIsRequestingNewVistoria(false);
-                      setSharingVistoria(null);
-                    }}
-                    className="text-[11px] text-purple-400 hover:text-purple-300 font-bold flex items-center justify-center gap-1 px-2.5 py-1 bg-purple-500/10 rounded-md border border-purple-500/10 hover:border-purple-500/20 transition-all cursor-pointer"
-                    id={`btn-new-vistoria-${vehicle.id}`}
-                    title="Realizar vistoria presencialmente pelo gestor (Devolução do veículo)"
-                  >
-                    <span>{showAddVistoria ? 'Fechar' : '+ Fazer Devolução'}</span>
-                  </button>
+
+                  {/* Botão Comparar */}
                   <button
                     type="button"
                     onClick={() => setIsComparatorOpen(true)}
-                    className="text-[11px] text-purple-300 hover:text-white font-bold flex items-center justify-center gap-1 px-2.5 py-1 bg-purple-600/20 hover:bg-purple-600/30 rounded-md border border-purple-500/30 transition-all col-span-2 cursor-pointer shadow-xs"
+                    className="text-[11px] text-zinc-300 hover:text-white font-bold flex items-center justify-center gap-1 px-2.5 py-1 bg-white/5 hover:bg-white/10 rounded-md border border-white/10 transition-all cursor-pointer"
                     title="Comparar vistorias lado a lado (Entrega vs Devolução)"
                   >
                     <GitCompare className="w-3.5 h-3.5 text-purple-400" />
-                    <span>Comparar Vistorias Lado a Lado</span>
+                    <span>Comparar</span>
                   </button>
                 </div>
               </div>
@@ -4375,7 +4471,16 @@ _Enviado via sistema de gestão de frota._`;
                       <label className="text-[9px] text-gray-400 block mb-1 font-semibold uppercase tracking-wider">Tipo de Vistoria (Gestor) *</label>
                       <select
                         value={newVistoriaType}
-                        onChange={(e) => setNewVistoriaType(e.target.value as any)}
+                        onChange={(e) => {
+                          const nextType = e.target.value as any;
+                          setNewVistoriaType(nextType);
+                          const itemsForType = getChecklistForVistoriaType(nextType, checklistConfig);
+                          const updatedChecklist: Record<string, boolean> = {};
+                          itemsForType.forEach(item => {
+                            updatedChecklist[item] = true;
+                          });
+                          setNewVistoriaChecklist(updatedChecklist);
+                        }}
                         className="w-full text-xs bg-black border border-white/10 rounded-md px-2.5 py-1.5 text-white focus:outline-hidden focus:border-purple-500/50 cursor-pointer font-medium"
                       >
                         <option value="Devolução de Veículo">Devolução de Carro (Realizada por Mim)</option>
@@ -4413,13 +4518,56 @@ _Enviado via sistema de gestão de frota._`;
                     <label className="text-[9px] text-gray-400 block font-semibold uppercase tracking-wider">Itens de Inspeção</label>
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                       {availableChecklistItems.map((item) => {
+                        const isTracker = item.toLowerCase().includes('rastreador');
                         const isChecked = newVistoriaChecklist[item] ?? true;
+
+                        if (isTracker) {
+                          return (
+                            <div
+                              key={item}
+                              className="flex items-center justify-between p-2 rounded-lg border bg-white/5 border-white/10 sm:col-span-2"
+                            >
+                              <div className="flex items-center gap-2">
+                                <Radio className="w-4 h-4 text-indigo-400 shrink-0" />
+                                <div className="flex flex-col">
+                                  <span className="text-[11px] font-bold text-white">{item}</span>
+                                  <span className="text-[9px] text-gray-400">Status operacional do rastreador</span>
+                                </div>
+                              </div>
+                              <div className="flex items-center gap-1.5">
+                                <button
+                                  type="button"
+                                  onClick={() => setNewVistoriaChecklist(prev => ({ ...prev, [item]: true }))}
+                                  className={`px-3 py-1 rounded-md text-xs font-bold border transition-all cursor-pointer ${
+                                    isChecked
+                                      ? 'bg-emerald-500 text-slate-950 border-emerald-400 shadow-xs font-black'
+                                      : 'bg-white/5 text-gray-400 border-white/10 hover:bg-white/10'
+                                  }`}
+                                >
+                                  Sim
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => setNewVistoriaChecklist(prev => ({ ...prev, [item]: false }))}
+                                  className={`px-3 py-1 rounded-md text-xs font-bold border transition-all cursor-pointer ${
+                                    !isChecked
+                                      ? 'bg-rose-500 text-white border-rose-400 shadow-xs font-black'
+                                      : 'bg-white/5 text-gray-400 border-white/10 hover:bg-white/10'
+                                  }`}
+                                >
+                                  Não
+                                </button>
+                              </div>
+                            </div>
+                          );
+                        }
+
                         return (
                           <button
                             key={item}
                             type="button"
                             onClick={() => setNewVistoriaChecklist(prev => ({ ...prev, [item]: !isChecked }))}
-                            className={`flex items-center gap-2 p-2 rounded-lg border text-left transition-all ${
+                            className={`flex items-center gap-2 p-2 rounded-lg border text-left transition-all cursor-pointer ${
                               isChecked 
                                 ? 'bg-emerald-500/5 text-emerald-400 border-emerald-500/10' 
                                 : 'bg-rose-500/5 text-rose-400 border-rose-500/10'

@@ -320,7 +320,10 @@ export async function generateVehiclePDF(
           if (y > 270) { doc.addPage(); y = 15; }
           const col = idx % 2;
           const xPos = col === 0 ? 22 : 110;
-          const statusText = isOk ? '[OK]' : '[PENDENTE]';
+          const isTracker = itemKey.toLowerCase().includes('rastreador');
+          const statusText = isTracker
+            ? (isOk ? '[SIM]' : '[NÃO]')
+            : (isOk ? '[OK]' : '[PENDENTE]');
           doc.setFont('helvetica', isOk ? 'normal' : 'bold');
           if (!isOk) doc.setTextColor(225, 29, 72);
           doc.text(`${statusText} ${itemKey}`, xPos, y);
@@ -500,7 +503,10 @@ export async function generateVistoriaPDF(
       if (y > 270) { doc.addPage(); y = 15; }
       const col = idx % 2;
       const xPos = col === 0 ? 14 : 110;
-      const statusText = isOk ? '[OK]' : '[PENDENTE]';
+      const isTracker = itemKey.toLowerCase().includes('rastreador');
+      const statusText = isTracker 
+        ? (isOk ? '[SIM]' : '[NÃO]') 
+        : (isOk ? '[OK]' : '[PENDENTE]');
       doc.setFont('helvetica', isOk ? 'normal' : 'bold');
       if (!isOk) doc.setTextColor(225, 29, 72);
       doc.text(`${statusText} ${itemKey}`, xPos, y);

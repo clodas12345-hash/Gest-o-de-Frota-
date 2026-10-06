@@ -4,6 +4,7 @@ import { generateRentalContractPDF, RentalContractData } from '../utils/pdfGener
 import { generateNextContractNumber } from '../utils/contractHelper';
 import { sendAppNotification } from '../utils/notifications';
 import { DriverVistoriaForm } from './DriverVistoriaForm';
+import { getPublicWebBaseUrl } from './VehicleCard';
 import { Capacitor } from '@capacitor/core';
 import CurrencyInput from './CurrencyInput';
 import { 
@@ -323,10 +324,7 @@ export const RentalContractModal: React.FC<RentalContractModalProps> = ({
       setEntregaReqToken(token);
     }
     const currentVeh = vehicles.find(v => v.id === selectedVehicleId) || initialVehicle;
-    const isLocalApp = !window.location.origin.startsWith('http') || window.location.origin.includes('localhost') || window.location.origin.includes('127.0.0.1');
-    const origin = isLocalApp
-      ? 'https://ais-pre-nxg4lixniko7ymx3t5cstw-473118395752.us-west2.run.app/upload-receipt'
-      : window.location.origin + window.location.pathname;
+    const origin = getPublicWebBaseUrl();
     const plate = currentVeh?.plate ? currentVeh.plate.replace(/[^A-Z0-9]/gi, '').toUpperCase() : '';
     const brand = currentVeh?.brand || 'Veículo';
     const model = currentVeh?.model || '';

@@ -42,6 +42,8 @@ export function DriverVistoriaForm({
   const [checklist, setChecklist] = useState<Record<string, { isOk: boolean, photoUrl: string | null }>>(() => {
     const params = new URLSearchParams(window.location.search);
     const itemsFromUrl = params.get('items');
+    const typeFromUrl = (params.get('type') as 'Entrega de Veículo' | 'Periódica' | 'Devolução de Veículo') || initialType || 'Periódica';
+    const isPeriodica = typeFromUrl === 'Periódica';
     const initial: Record<string, { isOk: boolean, photoUrl: string | null }> = {};
     
     let baseList: string[] = [];
@@ -50,9 +52,18 @@ export function DriverVistoriaForm({
     } else if (checklistConfig && checklistConfig.length > 0) {
       baseList = [...checklistConfig];
     } else {
-      baseList = [
+      baseList = isPeriodica ? [
+        'Frente do carro',
+        'Fundo do carro',
+        'Lateral direita',
+        'Lateral esquerda',
+        'Estofados frente',
+        'Estofados trás',
+        'Nível de combustivel'
+      ] : [
         'Estepe',
         'Chaves de roda',
+        'Triângulo',
         'Frente do carro',
         'Fundo do carro',
         'Lateral direita',
@@ -61,6 +72,28 @@ export function DriverVistoriaForm({
         'Estofados trás',
         'Nível de combustivel'
       ];
+    }
+
+    if (isPeriodica) {
+      // Das vistorias periódicas tira step, chave de rodas e triângulo
+      baseList = baseList.filter(item => {
+        const lower = item.toLowerCase();
+        return !lower.includes('estepe') && !lower.includes('step') && !lower.includes('chave de roda') && !lower.includes('chaves de roda') && !lower.includes('triângulo') && !lower.includes('triangulo');
+      });
+    } else {
+      // Na entrega e devolução incluir Estepe, Chaves de roda e Triângulo
+      const hasEstepe = baseList.some(item => item.toLowerCase().includes('estepe') || item.toLowerCase().includes('step'));
+      const hasChaves = baseList.some(item => item.toLowerCase().includes('chave de roda') || item.toLowerCase().includes('chaves de roda'));
+      const hasTriangulo = baseList.some(item => item.toLowerCase().includes('triângulo') || item.toLowerCase().includes('triangulo'));
+
+      const requiredFront: string[] = [];
+      if (!hasEstepe) requiredFront.push('Estepe');
+      if (!hasChaves) requiredFront.push('Chaves de roda');
+      if (!hasTriangulo) requiredFront.push('Triângulo');
+
+      if (requiredFront.length > 0) {
+        baseList = [...requiredFront, ...baseList];
+      }
     }
 
     const hasCamera = baseList.some(item => item.toLowerCase().includes('câmera') || item.toLowerCase().includes('camera'));
@@ -910,14 +943,29 @@ _Enviado via sistema de vistoria digital._`;
 
                         {/* Status Toggle / Icon */}
                         {isTrackerItem ? (
-                          <div className="flex items-center gap-1.5 shrink-0">
-                            <span className={`px-2.5 py-1 rounded-lg text-[10px] font-bold border transition-colors ${
-                              state.isOk 
-                                ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40' 
-                                : 'bg-red-500/20 text-red-300 border-red-500/40'
-                            }`}>
-                              {state.isOk ? '✅ SIM (Funcionando)' : '❌ NÃO (Com Defeito)'}
-                            </span>
+                          <div className="flex items-center gap-2 shrink-0" onClick={(e) => e.stopPropagation()}>
+                            <button
+                              type="button"
+                              onClick={() => setChecklist(prev => ({ ...prev, [key]: { ...prev[key], isOk: true } }))}
+                              className={`px-3 py-1.5 rounded-lg text-xs font-bold border transition-all cursor-pointer ${
+                                state.isOk 
+                                  ? 'bg-emerald-500 text-slate-950 border-emerald-400 shadow-md font-black' 
+                                  : 'bg-white/5 text-gray-400 border-white/10 hover:bg-white/10 hover:text-white'
+                              }`}
+                            >
+                              Sim
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => setChecklist(prev => ({ ...prev, [key]: { ...prev[key], isOk: false } }))}
+                              className={`px-3 py-1.5 rounded-lg text-xs font-bold border transition-all cursor-pointer ${
+                                !state.isOk 
+                                  ? 'bg-rose-500 text-white border-rose-400 shadow-md font-black' 
+                                  : 'bg-white/5 text-gray-400 border-white/10 hover:bg-white/10 hover:text-white'
+                              }`}
+                            >
+                              Não
+                            </button>
                           </div>
                         ) : (
                           <div className={`w-8 h-8 rounded-lg border flex items-center justify-center transition-all shrink-0 ${
@@ -928,50 +976,52 @@ _Enviado via sistema de vistoria digital._`;
                         )}
                       </div>
 
-                      {/* Photo Capture Section */}
-                      <div className="p-3 border-t border-white/5 flex flex-col gap-2 bg-black/20">
-                        {!state.photoUrl ? (
-                          <button
-                            type="button"
-                            onClick={() => {
-                              setTargetPhotoItem(key);
-                              cameraInputRef.current?.click();
-                            }}
-                            className={`w-full flex items-center justify-center gap-2 py-2.5 rounded-lg text-[10px] font-bold uppercase transition-all cursor-pointer ${
-                              isCameraItem || isSdItem
-                                ? 'bg-emerald-600/20 hover:bg-emerald-600/30 text-emerald-300 border border-emerald-500/40 shadow-xs'
-                                : 'bg-white/5 hover:bg-white/10 text-emerald-400 border border-white/10'
-                            }`}
-                          >
-                            <Camera className="w-4 h-4" /> 
-                            {isCameraItem ? 'Tirar Foto da Câmera do Carro' : isSdItem ? 'Tirar Foto do Cartão de Memória' : isTrackerItem ? 'Bater Foto do Rastreador / LED (Opcional)' : `Bater Foto: ${key}`}
-                          </button>
-                        ) : (
-                          <div 
-                            className="relative group rounded-lg overflow-hidden border border-emerald-500/20 w-full h-32 cursor-pointer"
-                            onClick={() => state.photoUrl && openEnlargedPhoto(state.photoUrl, `Foto: ${key}`)}
-                            title="Clique para ver foto grande"
-                          >
-                            <img src={state.photoUrl} alt={key} className="w-full h-full object-cover group-hover:scale-105 transition-transform" />
-                            <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-2">
-                              <span className="px-2 py-1 bg-black/70 text-white text-[10px] font-semibold rounded flex items-center gap-1">
-                                <ZoomIn className="w-3 h-3 text-emerald-400" /> Ver Grande
-                              </span>
-                              <button
-                                type="button"
-                                onClick={(e) => {
-                                 e.stopPropagation();
-                                 setTargetPhotoItem(key);
-                                 cameraInputRef.current?.click();
-                                }}
-                                className="px-2.5 py-1 bg-emerald-600 hover:bg-emerald-500 text-white text-[10px] font-bold rounded flex items-center gap-1 cursor-pointer"
-                              >
-                                <Camera className="w-3 h-3" /> Refazer
-                              </button>
+                      {/* Photo Capture Section - Not needed for Rastreador (Sim/Não only) */}
+                      {!isTrackerItem && (
+                        <div className="p-3 border-t border-white/5 flex flex-col gap-2 bg-black/20">
+                          {!state.photoUrl ? (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setTargetPhotoItem(key);
+                                cameraInputRef.current?.click();
+                              }}
+                              className={`w-full flex items-center justify-center gap-2 py-2.5 rounded-lg text-[10px] font-bold uppercase transition-all cursor-pointer ${
+                                isCameraItem || isSdItem
+                                  ? 'bg-emerald-600/20 hover:bg-emerald-600/30 text-emerald-300 border border-emerald-500/40 shadow-xs'
+                                  : 'bg-white/5 hover:bg-white/10 text-emerald-400 border border-white/10'
+                              }`}
+                            >
+                              <Camera className="w-4 h-4" /> 
+                              {isCameraItem ? 'Tirar Foto da Câmera do Carro' : isSdItem ? 'Tirar Foto do Cartão de Memória' : `Bater Foto: ${key}`}
+                            </button>
+                          ) : (
+                            <div 
+                              className="relative group rounded-lg overflow-hidden border border-emerald-500/20 w-full h-32 cursor-pointer"
+                              onClick={() => state.photoUrl && openEnlargedPhoto(state.photoUrl, `Foto: ${key}`)}
+                              title="Clique para ver foto grande"
+                            >
+                              <img src={state.photoUrl} alt={key} className="w-full h-full object-cover group-hover:scale-105 transition-transform" />
+                              <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-2">
+                                <span className="px-2 py-1 bg-black/70 text-white text-[10px] font-semibold rounded flex items-center gap-1">
+                                  <ZoomIn className="w-3 h-3 text-emerald-400" /> Ver Grande
+                                </span>
+                                <button
+                                  type="button"
+                                  onClick={(e) => {
+                                   e.stopPropagation();
+                                   setTargetPhotoItem(key);
+                                   cameraInputRef.current?.click();
+                                  }}
+                                  className="px-2.5 py-1 bg-emerald-600 hover:bg-emerald-500 text-white text-[10px] font-bold rounded flex items-center gap-1 cursor-pointer"
+                                >
+                                  <Camera className="w-3 h-3" /> Refazer
+                                </button>
+                              </div>
                             </div>
-                          </div>
-                        )}
-                      </div>
+                          )}
+                        </div>
+                      )}
                     </div>
                   );
                 })}
