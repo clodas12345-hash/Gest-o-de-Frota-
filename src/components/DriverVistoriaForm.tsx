@@ -534,7 +534,13 @@ _Enviado via sistema de vistoria digital._`;
           </button>
           <div>
             <h1 className="text-sm font-bold text-emerald-400 tracking-wider">
-              {isPaymentMode ? 'COMPROVANTE' : 'VISTORIA DIGITAL'}
+              {isPaymentMode 
+                ? 'COMPROVANTE' 
+                : (vistoriaType?.toLowerCase().includes('devolu') 
+                    ? 'DEVOLUÇÃO' 
+                    : vistoriaType?.toLowerCase().includes('entrega') 
+                    ? 'ENTREGA' 
+                    : 'PERIÓDICA')}
             </h1>
             <p className="text-[10px] text-gray-400 uppercase tracking-widest mt-0.5">Gestão de Frota</p>
           </div>
