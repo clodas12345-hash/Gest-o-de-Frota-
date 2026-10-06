@@ -10,9 +10,14 @@ try {
 
 interface NativePrintPlugin {
   print(options: { html?: string; title?: string }): Promise<{ success: boolean }>;
+  saveToDownloads(options: { base64: string; fileName: string; mimeType?: string }): Promise<{ success: boolean; fileName: string }>;
+  openFile(options: { base64: string; fileName: string; mimeType?: string }): Promise<{ success: boolean }>;
 }
 
 const NativePrint = registerPlugin<NativePrintPlugin>('NativePrint');
+const Filesystem = registerPlugin<any>('Filesystem');
+const Share = registerPlugin<any>('Share');
+const Directory = { Cache: 'CACHE', Documents: 'DOCUMENTS', Data: 'DATA' };
 
 /**
  * Builds printable HTML document for images
@@ -258,5 +263,210 @@ export async function printPdfDataUrl(pdfDataUrl: string, title = 'Documento PDF
   } catch (err) {
     console.error('Error in printPdfDataUrl:', err);
     window.print();
+  }
+}
+
+async function extractBase64AndMime(contentUrl: string, defaultMime = 'application/pdf'): Promise<{ base64: string; mimeType: string }> {
+  if (contentUrl.startsWith('data:')) {
+    const [header, data] = contentUrl.split(',');
+    const mimeMatch = header.match(/data:([^;]+)/);
+    return {
+      base64: data || '',
+      mimeType: mimeMatch ? mimeMatch[1] : defaultMime
+    };
+  }
+  const res = await fetch(contentUrl);
+  const blob = await res.blob();
+  const base64 = await new Promise<string>((resolve) => {
+    const reader = new FileReader();
+    reader.onloadend = () => {
+      const result = (reader.result as string) || '';
+      resolve(result.includes(',') ? result.split(',')[1] : result);
+    };
+    reader.readAsDataURL(blob);
+  });
+  return {
+    base64,
+    mimeType: blob.type || defaultMime
+  };
+}
+
+/**
+ * Saves/downloads a file directly to the device's Downloads folder (on Android APK)
+ * or triggers a direct browser download (on Web), WITHOUT opening the Share dialog.
+ */
+export async function downloadFileDirect(contentUrl: string, rawFileName: string): Promise<boolean> {
+  const cleanName = (rawFileName || 'documento.pdf').replace(/[\\/:*?"<>|]/g, '-');
+  const fileName = cleanName.includes('.') ? cleanName : `${cleanName}.pdf`;
+
+  if (Capacitor.isNativePlatform() && contentUrl) {
+    try {
+      const { base64, mimeType } = await extractBase64AndMime(contentUrl);
+      try {
+        await NativePrint.saveToDownloads({
+          base64,
+          fileName,
+          mimeType
+        });
+        return true;
+      } catch (nativeErr) {
+        console.warn('saveToDownloads fallback to Filesystem Documents:', nativeErr);
+        await Filesystem.writeFile({
+          path: fileName,
+          data: base64,
+          directory: Directory.Documents
+        });
+        return true;
+      }
+    } catch (err) {
+      console.error('Erro ao salvar documento diretamente no aparelho:', err);
+    }
+  }
+
+  // Web / Browser direct download
+  try {
+    const link = document.createElement('a');
+    if (contentUrl && contentUrl.startsWith('data:')) {
+      const { base64, mimeType } = await extractBase64AndMime(contentUrl);
+      const binary = window.atob(base64);
+      const bytes = new Uint8Array(binary.length);
+      for (let i = 0; i < binary.length; i++) {
+        bytes[i] = binary.charCodeAt(i);
+      }
+      const blob = new Blob([bytes], { type: mimeType });
+      const blobUrl = URL.createObjectURL(blob);
+      link.href = blobUrl;
+      link.download = fileName;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      setTimeout(() => URL.revokeObjectURL(blobUrl), 5000);
+      return true;
+    }
+    link.href = contentUrl;
+    link.download = fileName;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    return true;
+  } catch (err) {
+    console.error('Erro no download web:', err);
+    return false;
+  }
+}
+
+/**
+ * Opens the native Share sheet with the file attached (WhatsApp, Drive, Quick Share, etc.)
+ */
+export async function shareFileWithAttachment(contentUrl: string, rawFileName: string, title?: string): Promise<void> {
+  if (!contentUrl) return;
+  const cleanName = (rawFileName || 'documento.pdf').replace(/[\\/:*?"<>|]/g, '-');
+  const fileName = cleanName.includes('.') ? cleanName : `${cleanName}.pdf`;
+
+  if (Capacitor.isNativePlatform()) {
+    try {
+      const { base64 } = await extractBase64AndMime(contentUrl);
+      const result = await Filesystem.writeFile({
+        path: fileName,
+        data: base64,
+        directory: Directory.Cache
+      });
+
+      await Share.share({
+        title: title || rawFileName || fileName,
+        url: result.uri,
+        dialogTitle: 'Compartilhar Documento'
+      });
+      return;
+    } catch (err) {
+      console.error('Erro ao compartilhar documento nativamente:', err);
+    }
+  }
+
+  // Web fallback using navigator.share with file
+  try {
+    const { base64, mimeType } = await extractBase64AndMime(contentUrl);
+    const binary = window.atob(base64);
+    const bytes = new Uint8Array(binary.length);
+    for (let i = 0; i < binary.length; i++) {
+      bytes[i] = binary.charCodeAt(i);
+    }
+    const blob = new Blob([bytes], { type: mimeType });
+    const file = new File([blob], fileName, { type: mimeType });
+    if (navigator.canShare && navigator.canShare({ files: [file] })) {
+      await navigator.share({
+        title: title || fileName,
+        files: [file]
+      });
+      return;
+    }
+  } catch (err) {
+    console.warn('Web share fallback to download:', err);
+  }
+
+  await downloadFileDirect(contentUrl, fileName);
+}
+
+/**
+ * Opens a PDF or document externally (in Android native PDF viewer via ACTION_VIEW,
+ * or in a new browser tab with a Blob URL on Web).
+ */
+export async function openFileExternal(contentUrl: string, rawFileName = 'documento.pdf'): Promise<void> {
+  if (!contentUrl) return;
+  const cleanName = (rawFileName || 'documento.pdf').replace(/[\\/:*?"<>|]/g, '-');
+  const fileName = cleanName.includes('.') ? cleanName : `${cleanName}.pdf`;
+
+  if (Capacitor.isNativePlatform()) {
+    try {
+      const { base64, mimeType } = await extractBase64AndMime(contentUrl);
+      try {
+        await NativePrint.openFile({
+          base64,
+          fileName,
+          mimeType
+        });
+        return;
+      } catch (nativeOpenErr) {
+        console.warn('NativePrint.openFile fallback to Share:', nativeOpenErr);
+        const result = await Filesystem.writeFile({
+          path: fileName,
+          data: base64,
+          directory: Directory.Cache
+        });
+        await Share.share({
+          title: fileName,
+          url: result.uri,
+          dialogTitle: 'Abrir Documento'
+        });
+        return;
+      }
+    } catch (err) {
+      console.error('Erro ao abrir documento externamente no Android:', err);
+    }
+  }
+
+  // Web / Browser: open Blob URL in new tab
+  try {
+    const { base64, mimeType } = await extractBase64AndMime(contentUrl);
+    const binary = window.atob(base64);
+    const bytes = new Uint8Array(binary.length);
+    for (let i = 0; i < binary.length; i++) {
+      bytes[i] = binary.charCodeAt(i);
+    }
+    const blob = new Blob([bytes], { type: mimeType });
+    const blobUrl = URL.createObjectURL(blob);
+    const win = window.open(blobUrl, '_blank');
+    if (!win) {
+      const a = document.createElement('a');
+      a.href = blobUrl;
+      a.target = '_blank';
+      a.rel = 'noopener noreferrer';
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+    }
+    setTimeout(() => URL.revokeObjectURL(blobUrl), 60000);
+  } catch (err) {
+    console.error('Erro ao abrir documento em nova aba:', err);
   }
 }

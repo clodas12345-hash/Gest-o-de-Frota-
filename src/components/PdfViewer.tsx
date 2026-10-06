@@ -25,7 +25,7 @@ export const PdfViewer: React.FC<PdfViewerProps> = ({
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [numPages, setNumPages] = useState<number>(0);
-  const [scale, setScale] = useState<number>(1.2);
+  const [scale, setScale] = useState<number>(1.0);
   const [renderedPages, setRenderedPages] = useState<{ pageNum: number; dataUrl: string; width: number; height: number }[]>([]);
 
   useEffect(() => {
@@ -163,30 +163,30 @@ export const PdfViewer: React.FC<PdfViewerProps> = ({
             </button>
             <button
               type="button"
-              onClick={() => setScale((s) => Math.max(0.6, s - 0.2))}
-              className="p-1.5 hover:bg-white/10 rounded-lg text-gray-300 hover:text-white transition-colors cursor-pointer"
+              onClick={() => setScale((s) => Math.max(0.5, Number((s - 0.25).toFixed(2))))}
+              className="p-1.5 hover:bg-white/10 active:bg-white/20 rounded-lg text-gray-300 hover:text-white transition-colors cursor-pointer"
               title="Diminuir Zoom"
             >
-              <ZoomOut className="w-3.5 h-3.5" />
+              <ZoomOut className="w-4 h-4" />
             </button>
             <span className="font-mono text-[11px] w-12 text-center text-amber-400 font-bold">
               {Math.round(scale * 100)}%
             </span>
             <button
               type="button"
-              onClick={() => setScale((s) => Math.min(2.5, s + 0.2))}
-              className="p-1.5 hover:bg-white/10 rounded-lg text-gray-300 hover:text-white transition-colors cursor-pointer"
+              onClick={() => setScale((s) => Math.min(3.0, Number((s + 0.25).toFixed(2))))}
+              className="p-1.5 hover:bg-white/10 active:bg-white/20 rounded-lg text-gray-300 hover:text-white transition-colors cursor-pointer"
               title="Aumentar Zoom"
             >
-              <ZoomIn className="w-3.5 h-3.5" />
+              <ZoomIn className="w-4 h-4" />
             </button>
             <button
               type="button"
-              onClick={() => setScale(1.2)}
-              className="p-1.5 hover:bg-white/10 rounded-lg text-gray-400 hover:text-white transition-colors ml-1 cursor-pointer"
+              onClick={() => setScale(1.0)}
+              className="p-1.5 hover:bg-white/10 active:bg-white/20 rounded-lg text-gray-400 hover:text-white transition-colors ml-1 cursor-pointer"
               title="Resetar Zoom"
             >
-              <RotateCcw className="w-3.5 h-3.5" />
+              <RotateCcw className="w-4 h-4" />
             </button>
           </div>
         </div>
@@ -195,7 +195,7 @@ export const PdfViewer: React.FC<PdfViewerProps> = ({
       {/* Content Area */}
       <div 
         ref={containerRef}
-        className="flex-1 overflow-y-auto p-3 sm:p-6 flex flex-col items-center gap-6 bg-[#0f0f12]"
+        className="flex-1 overflow-auto p-3 sm:p-6 bg-[#0f0f12] space-y-6"
       >
         {loading && (
           <div className="flex flex-col items-center justify-center h-64 gap-3 text-gray-400">
@@ -226,8 +226,11 @@ export const PdfViewer: React.FC<PdfViewerProps> = ({
         {!loading && !error && renderedPages.map((page) => (
           <div 
             key={page.pageNum}
-            className="flex flex-col items-center gap-2 transition-transform duration-150"
-            style={{ width: `${Math.min(100, Math.round(scale * 100))}%`, maxWidth: `${850 * scale}px` }}
+            className="flex flex-col items-center gap-2 mx-auto transition-all duration-150"
+            style={{
+              width: `${Math.round(scale * 100)}%`,
+              maxWidth: scale <= 1 ? `${Math.round(850 * scale)}px` : 'none'
+            }}
           >
             <div className="w-full bg-white rounded-lg shadow-2xl overflow-hidden border border-white/20">
               <img 

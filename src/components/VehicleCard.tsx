@@ -64,7 +64,7 @@ import { VehicleProfitabilityModal } from './VehicleProfitabilityModal';
 import { TiresManagementModal } from './TiresManagementModal';
 import { FinesManagementModal } from './FinesManagementModal';
 import CurrencyInput from './CurrencyInput';
-import { printImage, printPdfDataUrl } from '../utils/printHelper';
+import { printImage, printPdfDataUrl, downloadFileDirect, shareFileWithAttachment, openFileExternal } from '../utils/printHelper';
 
 interface InlineEditProps {
   value: number;
@@ -1383,63 +1383,33 @@ export const VehicleCard: React.FC<VehicleCardProps> = ({
     });
   };
 
+  const [docDownloadFeedback, setDocDownloadFeedback] = useState<string | null>(null);
+
   const handleDownloadDoc = async (doc: any) => {
-    // Suporte nativo para download/compartilhamento no celular (Capacitor)
-    if (Capacitor.isNativePlatform() && doc.contentUrl) {
-      try {
-        let base64Data = '';
-        if (doc.contentUrl.startsWith('data:')) {
-          base64Data = doc.contentUrl.split(',')[1];
-        } else {
-          // Caso seja um blob URL ou link externo, precisamos buscar os dados
-          const res = await fetch(doc.contentUrl);
-          const blob = await res.blob();
-          const reader = new FileReader();
-          base64Data = await new Promise((resolve) => {
-            reader.onloadend = () => {
-              const base64 = (reader.result as string).split(',')[1];
-              resolve(base64);
-            };
-            reader.readAsDataURL(blob);
-          });
-        }
-
-        // Garante que o nome do arquivo tenha extensão
-        const fileName = doc.name.includes('.') ? doc.name : `${doc.name}.pdf`;
-        
-        // Grava no cache temporário para poder compartilhar
-        const result = await Filesystem.writeFile({
-          path: fileName,
-          data: base64Data,
-          directory: Directory.Cache,
-        });
-
-        // Abre o menu nativo de salvar/compartilhar arquivo
-        await Share.share({
-          title: doc.name,
-          url: result.uri,
-          dialogTitle: 'Salvar ou Compartilhar Documento'
-        });
-        return;
-      } catch (err) {
-        console.error('Erro ao baixar documento nativamente:', err);
-      }
-    }
-
-    // Fallback padrão para Navegador Web
-    const link = document.createElement('a');
     if (doc.contentUrl) {
-      link.href = doc.contentUrl;
-    } else {
-      // Fallback para dados de demonstração sem URL real
-      const mockText = `Documento: ${doc.name}\nCategoria: ${doc.category}\nVeículo: ${vehicle.brand} ${vehicle.model} (${vehicle.plate})\nData: ${doc.uploadDate}\nGerado automaticamente para demonstração.`;
-      const blob = new Blob([mockText], { type: 'text/plain' });
-      link.href = URL.createObjectURL(blob);
+      const ok = await downloadFileDirect(doc.contentUrl, doc.name || 'documento.pdf');
+      if (ok) {
+        setDocDownloadFeedback('✅ Salvo em Downloads!');
+        setTimeout(() => setDocDownloadFeedback(null), 3500);
+      }
+      return;
     }
+
+    // Fallback para dados de demonstração sem URL real
+    const mockText = `Documento: ${doc.name}\nCategoria: ${doc.category}\nVeículo: ${vehicle.brand} ${vehicle.model} (${vehicle.plate})\nData: ${doc.uploadDate}\nGerado automaticamente para demonstração.`;
+    const blob = new Blob([mockText], { type: 'text/plain' });
+    const link = document.createElement('a');
+    link.href = URL.createObjectURL(blob);
     link.download = doc.name;
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
+  };
+
+  const handleShareDocAttachment = async (doc: any) => {
+    if (doc.contentUrl) {
+      await shareFileWithAttachment(doc.contentUrl, doc.name || 'documento.pdf', doc.name);
+    }
   };
 
   const handleInitiateShare = (doc: any) => {
@@ -5605,14 +5575,21 @@ _Enviado via sistema de gestão de frota._`;
                         </button>
                         <button
                           onClick={() => handleDownloadDoc(doc)}
-                          className="text-gray-400 hover:text-white bg-white/5 hover:bg-white/10 border border-white/5 transition-colors p-1 rounded-md"
-                          title="Baixar Documento"
+                          className="text-gray-400 hover:text-white bg-white/5 hover:bg-white/10 border border-white/5 transition-colors p-1 rounded-md cursor-pointer"
+                          title="Baixar Documento Direto"
                         >
                           <Download className="w-3.5 h-3.5" />
                         </button>
                         <button
+                          onClick={() => handleShareDocAttachment(doc)}
+                          className="text-gray-400 hover:text-indigo-400 bg-white/5 hover:bg-indigo-500/10 border border-white/5 hover:border-indigo-500/20 transition-colors p-1 rounded-md cursor-pointer"
+                          title="Compartilhar com Anexo"
+                        >
+                          <Share2 className="w-3.5 h-3.5 text-indigo-400" />
+                        </button>
+                        <button
                           onClick={() => handleInitiateShare(doc)}
-                          className="text-gray-400 hover:text-emerald-400 bg-white/5 hover:bg-emerald-500/10 border border-white/5 hover:border-emerald-500/10 transition-colors p-1 rounded-md"
+                          className="text-gray-400 hover:text-emerald-400 bg-white/5 hover:bg-emerald-500/10 border border-white/5 hover:border-emerald-500/10 transition-colors p-1 rounded-md cursor-pointer"
                           title="Enviar p/ WhatsApp"
                         >
                           <MessageCircle className="w-3.5 h-3.5 text-emerald-400" />
@@ -5998,14 +5975,13 @@ _Enviado via sistema de gestão de frota._`;
                       >
                         <Download className="w-4 h-4" /> Baixar Documento
                       </button>
-                      <a
-                        href={previewDoc.contentUrl}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="px-4 py-2 bg-white/5 hover:bg-white/10 text-white rounded-xl text-xs font-bold flex items-center gap-1.5 transition-colors"
+                      <button
+                        type="button"
+                        onClick={() => openFileExternal(previewDoc.contentUrl || '', previewDoc.name)}
+                        className="px-4 py-2 bg-white/5 hover:bg-white/10 text-white rounded-xl text-xs font-bold flex items-center gap-1.5 transition-colors cursor-pointer"
                       >
                         <Share2 className="w-4 h-4" /> Abrir em Nova Guia
-                      </a>
+                      </button>
                     </div>
                   </div>
                 )
@@ -6025,15 +6001,27 @@ _Enviado via sistema de gestão de frota._`;
 
             {/* Footer */}
             <div className="p-3 bg-[#111111] border-t border-white/5 flex flex-wrap justify-between items-center gap-2 text-xs px-4">
-              <span className="text-[10px] text-gray-500 font-mono">{previewDoc.fileSize || '---'}</span>
-              <div className="flex items-center gap-2">
+              <span className="text-[10px] text-emerald-400 font-mono font-bold">
+                {docDownloadFeedback || <span className="text-gray-500 font-normal">{previewDoc.fileSize || '---'}</span>}
+              </span>
+              <div className="flex items-center gap-2 flex-wrap">
                 <button
                   type="button"
                   onClick={() => handleDownloadDoc(previewDoc)}
-                  className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg text-xs font-bold flex items-center gap-1.5 transition-colors cursor-pointer"
+                  className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-500 active:bg-emerald-700 text-white rounded-lg text-xs font-bold flex items-center gap-1.5 transition-colors cursor-pointer"
+                  title="Baixar o arquivo diretamente para a pasta Downloads do aparelho"
                 >
                   <Download className="w-3.5 h-3.5" />
-                  <span>Salvar / Baixar</span>
+                  <span>{docDownloadFeedback ? 'Baixado!' : 'Salvar / Baixar'}</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleShareDocAttachment(previewDoc)}
+                  className="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-500 active:bg-indigo-700 text-white rounded-lg text-xs font-bold flex items-center gap-1.5 transition-colors cursor-pointer"
+                  title="Compartilhar o arquivo em anexo (WhatsApp, Drive, etc.)"
+                >
+                  <Share2 className="w-3.5 h-3.5" />
+                  <span>Compartilhar</span>
                 </button>
                 <button
                   type="button"

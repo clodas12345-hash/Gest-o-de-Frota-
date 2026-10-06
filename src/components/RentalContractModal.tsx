@@ -42,7 +42,7 @@ import {
   Download
 } from 'lucide-react';
 import { PdfViewer } from './PdfViewer';
-import { printPdfDataUrl } from '../utils/printHelper';
+import { printPdfDataUrl, downloadFileDirect, openFileExternal } from '../utils/printHelper';
 
 interface RentalContractModalProps {
   isOpen: boolean;
@@ -574,42 +574,14 @@ Por favor, preencha as fotos e o checklist de entrega ao retirar o veículo.`;
 
   const downloadPdfFile = (pdfDataUrl: string, fileName: string) => {
     if (!pdfDataUrl) return;
-
-    // Ensure inline viewer is shown on screen immediately
     setShowInlinePdfPreview(true);
-
-    try {
-      const blobUrl = getPdfBlobUrl(pdfDataUrl);
-      const targetUrl = blobUrl || pdfDataUrl;
-
-      // 1. Direct anchor download trigger
-      const a = document.createElement('a');
-      a.href = targetUrl;
-      a.download = fileName;
-      document.body.appendChild(a);
-      a.click();
-      setTimeout(() => {
-        if (document.body.contains(a)) document.body.removeChild(a);
-      }, 2000);
-    } catch (e) {
-      console.warn('Download error:', e);
-    }
+    downloadFileDirect(pdfDataUrl, fileName);
   };
 
   const openPdfInNewTab = (pdfDataUrl: string) => {
     if (!pdfDataUrl) return;
-    try {
-      const blobUrl = getPdfBlobUrl(pdfDataUrl);
-      const targetUrl = blobUrl || pdfDataUrl;
-      const win = window.open(targetUrl, '_blank');
-      if (!win) {
-        window.location.href = targetUrl;
-      }
-    } catch (e) {
-      console.warn('Open in new tab error:', e);
-      window.open(pdfDataUrl, '_blank');
-    }
     setShowInlinePdfPreview(true);
+    openFileExternal(pdfDataUrl, generatedPdfFileName || 'Contrato_Locacao.pdf');
   };
 
   const handlePrintPdf = () => {
