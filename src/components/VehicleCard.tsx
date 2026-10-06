@@ -412,6 +412,11 @@ const DEFAULT_PAYMENT_TEMPLATES = {
 const PUBLIC_WEB_ORIGIN = 'https://ais-dev-nxg4lixniko7ymx3t5cstw-473118395752.us-west2.run.app';
 
 export const getPublicWebBaseUrl = (): string => {
+  // Se houver uma origem hardcoded (dev), usá-la prioritariamente se o usuário estiver no ambiente 'pre' que ele diz estar errado
+  if (PUBLIC_WEB_ORIGIN && (typeof window !== 'undefined' && window.location.origin.includes('ais-pre'))) {
+    return PUBLIC_WEB_ORIGIN.replace(/\/+$/, '');
+  }
+
   if (
     typeof window !== 'undefined' &&
     window.location.origin &&
@@ -433,8 +438,8 @@ export const getPublicWebBaseUrl = (): string => {
   ) {
     return saved.replace(/\/+$/, '');
   }
-  
-  return PUBLIC_WEB_ORIGIN;
+
+  return PUBLIC_WEB_ORIGIN.replace(/\/+$/, '');
 };
 
 const formatPaymentTemplateText = (
@@ -918,7 +923,7 @@ export const VehicleCard: React.FC<VehicleCardProps> = ({
       ? vistoriaReturnLink
       : getPublicWebBaseUrl();
     const separator = safeBaseLink.includes('?') ? '&' : '?';
-    const returnUrlWithPlaca = `${safeBaseLink}${separator}placa=${encodeURIComponent(vehicle.plate)}&brand=${encodeURIComponent(vehicle.brand)}&model=${encodeURIComponent(vehicle.model)}&driver=${encodeURIComponent(vehicle.driver || '')}&type=${encodeURIComponent(typeToUse)}&deadline=${encodeURIComponent(vehicle.nextVistoriaDate || '')}&reqId=${tokenToUse}${itemsQueryParam}`;
+    const returnUrlWithPlaca = `${safeBaseLink}${separator}mode=vistoria_retorno&placa=${encodeURIComponent(vehicle.plate)}&brand=${encodeURIComponent(vehicle.brand)}&model=${encodeURIComponent(vehicle.model)}&driver=${encodeURIComponent(vehicle.driver || '')}&type=${encodeURIComponent(typeToUse)}&deadline=${encodeURIComponent(vehicle.nextVistoriaDate || '')}&reqId=${tokenToUse}${itemsQueryParam}`;
 
     text = text.replace(/{veiculo}/g, veiculoStr);
     text = text.replace(/{placa}/g, plateStr);
@@ -2178,7 +2183,7 @@ _Enviado via sistema de gestão de frota._`;
               type="button"
               onClick={(e) => {
                 e.stopPropagation();
-                const baseUrl = window.location.origin + window.location.pathname;
+                const baseUrl = getPublicWebBaseUrl();
                 const portalLink = `${baseUrl}?mode=portal_motorista&placa=${encodeURIComponent(vehicle.plate)}`;
                 navigator.clipboard.writeText(portalLink);
                 setCopiedPortalLink(true);
