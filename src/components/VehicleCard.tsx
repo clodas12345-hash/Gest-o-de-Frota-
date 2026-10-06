@@ -1628,7 +1628,7 @@ export const VehicleCard: React.FC<VehicleCardProps> = ({
       reqId: vistoriaRequestToken,
       items: itemsToUse.join(',')
     });
-    const returnUrl = `${safeBaseLink}?data=${encodeURIComponent(encoded)}`;
+    const returnUrl = `${safeBaseLink}/#/?data=${encodeURIComponent(encoded)}`;
 
     if (!finalMsg.includes('placa=') && !finalMsg.includes('http')) {
       finalMsg += `\n\n🔗 *Link de Acesso / Retorno para Vistoria:*\n${returnUrl}`;

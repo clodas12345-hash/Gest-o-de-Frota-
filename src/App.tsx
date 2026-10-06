@@ -768,6 +768,9 @@ export default function App() {
 
   useEffect(() => {
     let search = window.location.search;
+    if (!search && window.location.hash.includes('?')) {
+      search = window.location.hash.split('?')[1];
+    }
     let params = new URLSearchParams(search);
     if (params.has('data')) {
       const decoded = decodeVistoriaParams(params.get('data')!);

@@ -1,11 +1,15 @@
 export const encodeVistoriaParams = (params: Record<string, string | string[]>) => {
   const jsonString = JSON.stringify(params);
-  return btoa(unescape(encodeURIComponent(jsonString)));
+  const bytes = new TextEncoder().encode(jsonString);
+  const binString = String.fromCodePoint(...bytes);
+  return btoa(binString);
 };
 
 export const decodeVistoriaParams = (encoded: string) => {
   try {
-    const jsonString = decodeURIComponent(escape(atob(encoded)));
+    const binString = atob(encoded);
+    const bytes = Uint8Array.from(binString, (m) => m.codePointAt(0)!);
+    const jsonString = new TextDecoder().decode(bytes);
     return JSON.parse(jsonString);
   } catch (e) {
     console.error('Error decoding vistoria params:', e);

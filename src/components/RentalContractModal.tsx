@@ -341,7 +341,7 @@ export const RentalContractModal: React.FC<RentalContractModalProps> = ({
       type: 'Entrega de Veículo',
       reqId: token
     });
-    return `${origin}?data=${encodeURIComponent(encoded)}`;
+    return `${origin}/#/?data=${encodeURIComponent(encoded)}`;
   };
 
   const handleSendVistoriaWhatsApp = () => {
