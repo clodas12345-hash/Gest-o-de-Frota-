@@ -34,6 +34,12 @@ export const DocumentUploadModal: React.FC<DocumentUploadModalProps> = ({
   const [queuedFiles, setQueuedFiles] = useState<QueuedFile[]>([]);
   const [isProcessing, setIsProcessing] = useState(false);
 
+  React.useEffect(() => {
+    if (isOpen && !selectedVehicleId && vehicles.length > 0) {
+      setSelectedVehicleId(vehicles[0].id);
+    }
+  }, [isOpen, vehicles, selectedVehicleId]);
+
   if (!isOpen) return null;
 
   const processSingleFile = (file: File): Promise<QueuedFile> => {
@@ -119,7 +125,7 @@ export const DocumentUploadModal: React.FC<DocumentUploadModalProps> = ({
     try {
       const processed = await Promise.all(files.map(processSingleFile));
       if (processed.length === 1 && queuedFiles.length === 0) {
-        setDocName(processed[0].name);
+        if (!docName.trim()) setDocName(processed[0].name);
         setFileDataUrl(processed[0].contentUrl);
         setFileSize(processed[0].fileSize);
       }
@@ -150,7 +156,7 @@ export const DocumentUploadModal: React.FC<DocumentUploadModalProps> = ({
     try {
       const processed = await Promise.all(files.map(processSingleFile));
       if (processed.length === 1 && queuedFiles.length === 0) {
-        setDocName(processed[0].name);
+        if (!docName.trim()) setDocName(processed[0].name);
         setFileDataUrl(processed[0].contentUrl);
         setFileSize(processed[0].fileSize);
       }
@@ -172,9 +178,10 @@ export const DocumentUploadModal: React.FC<DocumentUploadModalProps> = ({
     const finalCategory = docCategory === 'Outros' && customCategory.trim() ? customCategory.trim() : docCategory;
 
     if (queuedFiles.length > 0) {
-      queuedFiles.forEach((qFile) => {
+      queuedFiles.forEach((qFile, index) => {
+        const finalFileName = queuedFiles.length === 1 && docName.trim() ? docName.trim() : qFile.name;
         onUploadDocument(selectedVehicleId, {
-          name: qFile.name,
+          name: finalFileName,
           category: finalCategory,
           contentUrl: qFile.contentUrl,
           fileSize: qFile.fileSize || '15 KB',
@@ -210,7 +217,6 @@ export const DocumentUploadModal: React.FC<DocumentUploadModalProps> = ({
     }
 
     // Reset states
-    setSelectedVehicleId('');
     setDocName('');
     setDocCategory('Contrato');
     setCustomCategory('');

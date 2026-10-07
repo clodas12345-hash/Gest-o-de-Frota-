@@ -1194,36 +1194,39 @@ export default function App() {
 
   const handleUploadDocument = (
     vehicleId: string,
-    doc: { name: string; category: string; contentUrl: string; fileSize: string; fileType: string }
+    docData: { name: string; category: string; contentUrl: string; fileSize: string; fileType: string }
   ) => {
-    const targetV = vehicles.find((v) => v.id === vehicleId);
+    const targetV = vehicles.find((v) => String(v.id) === String(vehicleId) || v.plate === vehicleId);
     if (targetV) {
       sendAppNotification(`📎 Novo Documento Anexado: ${targetV.brand} (${targetV.plate})`, {
-        body: `Documento "${doc.name}" (${doc.category}) salvo na pasta do veículo.`,
+        body: `Documento "${docData.name}" (${docData.category}) salvo na pasta do veículo.`,
         eventKey: 'document_uploaded',
       });
+      setDeleteToastMsg(`Documento "${docData.name}" vinculado ao veículo ${targetV.brand} ${targetV.model} (${targetV.plate}) com sucesso!`);
+      setTimeout(() => setDeleteToastMsg(null), 4000);
     }
-    setVehicles((prev) =>
-      prev.map((v) => {
-        if (v.id === vehicleId) {
+    setVehicles((prev) => {
+      const nextVehicles = prev.map((v) => {
+        if (String(v.id) === String(vehicleId) || v.plate === vehicleId) {
           const currentDocs = v.documents || [];
           const newDoc = {
-            id: `doc-${Date.now()}`,
-            name: doc.name,
-            category: doc.category,
+            id: `doc-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
+            name: docData.name,
+            category: docData.category,
             uploadDate: new Date().toISOString().split('T')[0],
-            fileSize: doc.fileSize,
-            fileType: doc.fileType,
-            contentUrl: doc.contentUrl,
+            fileSize: docData.fileSize,
+            fileType: docData.fileType,
+            contentUrl: docData.contentUrl,
           };
           return {
             ...v,
-            documents: [...currentDocs, newDoc],
+            documents: [newDoc, ...currentDocs],
           };
         }
         return v;
-      })
-    );
+      });
+      return nextVehicles;
+    });
   };
 
   // Actions: Save Fuel Log + UPDATE VEHICLE ODOMETER & FUEL LEVEL (Set to 8/8 on fuel)
@@ -1418,16 +1421,8 @@ export default function App() {
 
       setFinalizedContracts((prev) => [newContract, ...prev]);
 
-      // 3. Attach finalized contract PDF to vehicle documents
-      const finalDoc: VehicleDocument = {
-        id: `doc-final-${Date.now()}`,
-        name: `Contrato Finalizado - ${targetVehicle.driver || 'Motorista'} (${new Date().toLocaleDateString('pt-BR').replace(/\//g, '-')}).pdf`,
-        category: 'Contrato',
-        uploadDate: new Date().toISOString().split('T')[0],
-        fileSize: 'PDF Arquivado',
-        fileType: 'pdf',
-        contentUrl: pdfDataUrl
-      };
+      // 3. Remove active contract documents from vehicle (since contract is now archived in Contratos Finalizados)
+      const remainingDocs = (targetVehicle.documents || []).filter((d) => d.category !== 'Contrato');
 
       // Preserve Locatário in contacts list
       if (targetVehicle.driver && targetVehicle.driver.trim()) {
@@ -1456,7 +1451,7 @@ export default function App() {
         });
       }
 
-      // 4. Update vehicle: PRESERVE vehicle & maintenance info, RESET active driver/contract info
+      // 4. Update vehicle: PRESERVE vehicle & maintenance info, RESET active driver/contract info and remove old contracts from vehicle
       const updatedVehicle: Vehicle = {
         ...targetVehicle,
         driver: '',
@@ -1477,7 +1472,7 @@ export default function App() {
         driverCnhExpiration: '',
         driverCnhPhotoUrl: '',
         driverAddressProofUrl: '',
-        documents: [finalDoc, ...(targetVehicle.documents || [])]
+        documents: remainingDocs
       };
 
       setVehicles((prev) => prev.map((v) => (v.id === id ? updatedVehicle : v)));

@@ -1443,13 +1443,25 @@ export const VehicleCard: React.FC<VehicleCardProps> = ({
   };
 
   const [docPendingDelete, setDocPendingDelete] = useState<VehicleDocument | null>(null);
+  const [contractDeleteBlockModal, setContractDeleteBlockModal] = useState<{
+    type: 'generated' | 'signed';
+    docName: string;
+  } | null>(null);
 
   const handleDeleteDoc = (docId: string) => {
-    const docToDelete = (vehicle.documents || []).find((d) => d.id === docId);
+    const allDocs = vehicle.documents || [];
+    const docToDelete = allDocs.find((d) => d.id === docId);
     if (!docToDelete) return;
     if (docToDelete.category === 'Contrato') {
-      alert('Contratos de locação são documentos protegidos e só podem ser removidos ao excluir o veículo do sistema.');
-      return;
+      const contractsCount = allDocs.filter((d) => d.category === 'Contrato').length;
+      if (contractsCount <= 1) {
+        const isGeneratedOnly = docToDelete.id.startsWith('doc-contract-') || docToDelete.fileSize === 'PDF Oficial';
+        setContractDeleteBlockModal({
+          type: isGeneratedOnly ? 'generated' : 'signed',
+          docName: docToDelete.name,
+        });
+        return;
+      }
     }
     setDocPendingDelete(docToDelete);
   };
@@ -5805,16 +5817,19 @@ _Enviado via sistema de gestão de frota._`;
                           <MessageCircle className="w-3.5 h-3.5 text-emerald-400" />
                         </button>
                         {doc.category === 'Contrato' ? (
-                          <span
-                            className="text-gray-500 bg-white/5 border border-white/5 p-1 rounded-md cursor-not-allowed"
-                            title="Contrato de locação protegido. Exclusão permitida apenas ao remover o veículo."
+                          <button
+                            type="button"
+                            onClick={() => handleDeleteDoc(doc.id)}
+                            className="text-gray-400 hover:text-rose-400 bg-white/5 hover:bg-rose-500/10 border border-white/5 hover:border-rose-500/10 transition-colors p-1 rounded-md cursor-pointer"
+                            title="Excluir Contrato"
                           >
-                            <Lock className="w-3.5 h-3.5 text-amber-400/80" />
-                          </span>
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
                         ) : (
                           <button
+                            type="button"
                             onClick={() => handleDeleteDoc(doc.id)}
-                            className="text-gray-400 hover:text-rose-400 bg-white/5 hover:bg-rose-500/10 border border-white/5 hover:border-rose-500/10 transition-colors p-1 rounded-md"
+                            className="text-gray-400 hover:text-rose-400 bg-white/5 hover:bg-rose-500/10 border border-white/5 hover:border-rose-500/10 transition-colors p-1 rounded-md cursor-pointer"
                             title="Excluir Documento"
                           >
                             <Trash2 className="w-3.5 h-3.5" />
@@ -6537,6 +6552,75 @@ _Enviado via sistema de gestão de frota._`;
         onConfirm={handleConfirmDeleteDoc}
         onCancel={() => setDocPendingDelete(null)}
       />
+
+      {/* Pop-up Modal for Contract Deletion Restriction */}
+      {contractDeleteBlockModal && (
+        <div className="fixed inset-0 z-[110] flex items-center justify-center p-4 bg-black/80 backdrop-blur-xs animate-in fade-in duration-150">
+          <div className="bg-[#141414] border border-white/15 rounded-2xl w-full max-w-md p-5 space-y-4 shadow-2xl animate-in zoom-in-95 duration-150">
+            <div className="flex items-start justify-between gap-3 border-b border-white/10 pb-3">
+              <div className="flex items-center gap-2.5">
+                <div className={`p-2 rounded-xl border ${contractDeleteBlockModal.type === 'generated' ? 'bg-amber-500/15 text-amber-400 border-amber-500/30' : 'bg-rose-500/15 text-rose-400 border-rose-500/30'}`}>
+                  <FileText className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="text-sm font-bold text-white">
+                    {contractDeleteBlockModal.type === 'generated'
+                      ? 'Envie o Contrato Assinado Primeiro'
+                      : 'Exclusão Não Permitida'}
+                  </h3>
+                  <p className="text-[11px] text-gray-400 truncate max-w-[240px]">
+                    {contractDeleteBlockModal.docName}
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setContractDeleteBlockModal(null)}
+                className="text-gray-400 hover:text-white p-1 rounded-lg hover:bg-white/5 transition-colors cursor-pointer"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <div className="text-xs text-gray-300 leading-relaxed space-y-2">
+              {contractDeleteBlockModal.type === 'generated' ? (
+                <p>
+                  Este contrato foi apenas gerado pelo sistema. Para excluí-lo, por favor <strong>faça primeiro o upload do documento assinado</strong> no veículo. Assim que o contrato assinado for anexado, você poderá excluir este rascunho gerado.
+                </p>
+              ) : (
+                <p>
+                  Este documento já foi assinado e enviado por upload. <strong>O veículo não pode ficar sem documento de contrato vinculado.</strong> Para substituí-lo, anexe o novo contrato primeiro antes de excluir este.
+                </p>
+              )}
+            </div>
+
+            <div className="flex items-center justify-end gap-2 pt-2 border-t border-white/10">
+              <button
+                type="button"
+                onClick={() => setContractDeleteBlockModal(null)}
+                className="px-3.5 py-2 bg-white/5 hover:bg-white/10 text-gray-300 hover:text-white rounded-xl text-xs font-semibold transition-colors cursor-pointer"
+              >
+                Fechar
+              </button>
+              {contractDeleteBlockModal.type === 'generated' && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setContractDeleteBlockModal(null);
+                    setIsDocExpanded(true);
+                    setNewDocCategory('Contrato');
+                    setShowAddDoc(true);
+                  }}
+                  className="px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded-xl text-xs font-bold flex items-center gap-1.5 transition-colors shadow-md shadow-blue-500/20 cursor-pointer"
+                >
+                  <UploadCloud className="w-4 h-4" />
+                  <span>Fazer Upload do Assinado</span>
+                </button>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

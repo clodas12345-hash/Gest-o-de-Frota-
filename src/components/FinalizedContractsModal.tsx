@@ -53,6 +53,10 @@ export function FinalizedContractsModal({
   const [selectedPdfPreview, setSelectedPdfPreview] = useState<{ name: string; pdfDataUrl: string; subtitle?: string } | null>(null);
   const [contractToDelete, setContractToDelete] = useState<FinalizedContract | null>(null);
   const [docToDelete, setDocToDelete] = useState<{ id: string; name: string; category: string; vehicleId: string; vehicleBrand: string; vehicleModel: string; vehiclePlate: string } | null>(null);
+  const [contractDeleteBlockModal, setContractDeleteBlockModal] = useState<{
+    type: 'generated' | 'signed';
+    docName: string;
+  } | null>(null);
 
   React.useEffect(() => {
     if (isOpen && onMarkAllAsViewed) {
@@ -427,20 +431,35 @@ export function FinalizedContractsModal({
                             </button>
                           </>
                         )}
-                        {onDeleteVehicleDocument && doc.category !== 'Contrato' && (
+                        {onDeleteVehicleDocument && (
                           <button
                             type="button"
-                            onClick={() => setDocToDelete({
-                              id: doc.id,
-                              name: doc.name,
-                              category: doc.category,
-                              vehicleId: doc.vehicleId,
-                              vehicleBrand: doc.vehicleBrand,
-                              vehicleModel: doc.vehicleModel,
-                              vehiclePlate: doc.vehiclePlate
-                            })}
+                            onClick={() => {
+                              if (doc.category === 'Contrato') {
+                                const vehicleContractsCount = allVehicleDocs.filter(
+                                  d => d.vehicleId === doc.vehicleId && d.category === 'Contrato'
+                                ).length;
+                                if (vehicleContractsCount <= 1) {
+                                  const isGeneratedOnly = doc.id.startsWith('doc-contract-') || doc.fileSize === 'PDF Oficial';
+                                  setContractDeleteBlockModal({
+                                    type: isGeneratedOnly ? 'generated' : 'signed',
+                                    docName: doc.name,
+                                  });
+                                  return;
+                                }
+                              }
+                              setDocToDelete({
+                                id: doc.id,
+                                name: doc.name,
+                                category: doc.category,
+                                vehicleId: doc.vehicleId,
+                                vehicleBrand: doc.vehicleBrand,
+                                vehicleModel: doc.vehicleModel,
+                                vehiclePlate: doc.vehiclePlate
+                              });
+                            }}
                             className="p-1.5 text-gray-500 hover:text-rose-400 hover:bg-rose-500/10 rounded-lg transition-colors cursor-pointer"
-                            title="Excluir documento"
+                            title={doc.category === 'Contrato' ? 'Excluir contrato' : 'Excluir documento'}
                           >
                             <Trash2 className="w-4 h-4" />
                           </button>
@@ -617,6 +636,60 @@ export function FinalizedContractsModal({
           }}
           onCancel={() => setDocToDelete(null)}
         />
+
+        {/* Pop-up Modal for Contract Deletion Restriction */}
+        {contractDeleteBlockModal && (
+          <div className="fixed inset-0 z-[110] flex items-center justify-center p-4 bg-black/80 backdrop-blur-xs animate-in fade-in duration-150">
+            <div className="bg-[#141414] border border-white/15 rounded-2xl w-full max-w-md p-5 space-y-4 shadow-2xl animate-in zoom-in-95 duration-150">
+              <div className="flex items-start justify-between gap-3 border-b border-white/10 pb-3">
+                <div className="flex items-center gap-2.5">
+                  <div className={`p-2 rounded-xl border ${contractDeleteBlockModal.type === 'generated' ? 'bg-amber-500/15 text-amber-400 border-amber-500/30' : 'bg-rose-500/15 text-rose-400 border-rose-500/30'}`}>
+                    <FileText className="w-5 h-5" />
+                  </div>
+                  <div>
+                    <h3 className="text-sm font-bold text-white">
+                      {contractDeleteBlockModal.type === 'generated'
+                        ? 'Envie o Contrato Assinado Primeiro'
+                        : 'Exclusão Não Permitida'}
+                    </h3>
+                    <p className="text-[11px] text-gray-400 truncate max-w-[240px]">
+                      {contractDeleteBlockModal.docName}
+                    </p>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setContractDeleteBlockModal(null)}
+                  className="text-gray-400 hover:text-white p-1 rounded-lg hover:bg-white/5 transition-colors cursor-pointer"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+
+              <div className="text-xs text-gray-300 leading-relaxed space-y-2">
+                {contractDeleteBlockModal.type === 'generated' ? (
+                  <p>
+                    Este contrato foi apenas gerado pelo sistema. Para excluí-lo, por favor <strong>faça primeiro o upload do documento assinado</strong> no veículo. Assim que o contrato assinado for anexado, você poderá excluir este contrato gerado.
+                  </p>
+                ) : (
+                  <p>
+                    Este documento já foi assinado e enviado por upload. <strong>O veículo não pode ficar sem documento de contrato vinculado.</strong>
+                  </p>
+                )}
+              </div>
+
+              <div className="flex items-center justify-end gap-2 pt-2 border-t border-white/10">
+                <button
+                  type="button"
+                  onClick={() => setContractDeleteBlockModal(null)}
+                  className="px-4 py-2 bg-white/10 hover:bg-white/15 text-white rounded-xl text-xs font-bold transition-colors cursor-pointer"
+                >
+                  Entendi
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
 
         {/* PDF Viewer Sub-modal / Preview with Print & Save */}
         {selectedPdfPreview && (
