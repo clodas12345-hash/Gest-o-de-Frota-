@@ -32,6 +32,7 @@ interface HeaderActionsMenuProps {
   onOpenHelp: () => void;
   onOpenAgenda: () => void;
   onOpenLogForm: (type: 'fuel' | 'maintenance' | 'expense') => void;
+  onOpenMaintenanceHistory?: () => void;
   onOpenDocumentUpload: () => void;
   onOpenSettings?: () => void;
   onOpenNotificationCenter?: () => void;
@@ -53,6 +54,7 @@ export function HeaderActionsMenu({
   onOpenHelp,
   onOpenAgenda,
   onOpenLogForm,
+  onOpenMaintenanceHistory,
   onOpenDocumentUpload,
   onOpenSettings,
   onOpenNotificationCenter,
@@ -159,7 +161,7 @@ export function HeaderActionsMenu({
               </div>
             </button>
 
-            {/* Option: Registrar Manutenção */}
+            {/* Option: Nova Manutenção */}
             <button
               type="button"
               onClick={() => handleAction(() => onOpenLogForm('maintenance'))}
@@ -169,10 +171,27 @@ export function HeaderActionsMenu({
                 <Wrench className="w-4 h-4" />
               </div>
               <div>
-                <p className="text-xs font-bold text-white group-hover:text-amber-300">Registrar Manutenção</p>
-                <p className="text-[10px] text-gray-400">Oficina, peças e custos de conserto</p>
+                <p className="text-xs font-bold text-white group-hover:text-amber-300">Nova Manutenção</p>
+                <p className="text-[10px] text-gray-400">Adicionar novos dados de peças, oficinas e reparos</p>
               </div>
             </button>
+
+            {/* Option: Histórico de Manutenções por Carro */}
+            {onOpenMaintenanceHistory && (
+              <button
+                type="button"
+                onClick={() => handleAction(onOpenMaintenanceHistory)}
+                className="w-full flex items-center gap-3 p-3 rounded-xl bg-orange-500/10 hover:bg-orange-500/20 text-left group transition-all cursor-pointer border border-orange-500/20 hover:border-orange-500/40"
+              >
+                <div className="p-2 bg-orange-600 text-white rounded-lg group-hover:scale-105 transition-transform shadow-md shadow-orange-500/20">
+                  <Wrench className="w-4 h-4" />
+                </div>
+                <div>
+                  <p className="text-xs font-bold text-white group-hover:text-orange-300">Histórico de Manutenções</p>
+                  <p className="text-[10px] text-gray-400">Detentor de todos os dados separados por carros</p>
+                </div>
+              </button>
+            )}
 
             {/* Option: Gerar Contrato de Locação */}
             {onOpenRentalContract && (

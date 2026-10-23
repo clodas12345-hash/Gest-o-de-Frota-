@@ -2129,73 +2129,78 @@ _Enviado via sistema de gestão de frota._`;
             <h3 className="text-lg font-bold text-white mt-1 flex items-center gap-2 break-all break-words">
               {vehicle.brand} <span className="font-medium text-gray-300 break-all break-words">{vehicle.model}</span>
             </h3>
-            <p className="text-xs text-gray-400 mt-1 flex items-center gap-1.5 flex-wrap break-all break-words">
-              <User className="w-3.5 h-3.5 text-gray-500 shrink-0" />
-              Locatário: <strong className="text-gray-200 font-semibold break-all break-words">{vehicle.driver || 'Não definido'}</strong>
-              {vehicle.driverPhone && (
-                <span className="text-[10px] text-gray-500 font-mono ml-1 shrink-0">({vehicle.driverPhone})</span>
-              )}
-              <button
-                type="button"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  if (!isExpanded) setIsExpanded(true);
-                  setActiveTab('pagamentos');
-                  setShowPaymentWhatsApp(true);
-                  setShowAddPayment(false);
-                  const type = paymentWhatsAppType;
-                  const rawTpl = localStorage.getItem(`fleet_payment_msg_${type}`) || DEFAULT_PAYMENT_TEMPLATES[type];
-                  const text = formatPaymentTemplateText(
-                    rawTpl,
-                    vehicle.driver || '',
-                    vehicle.brand || '',
-                    vehicle.model || '',
-                    vehicle.plate || '',
-                    paymentWhatsAppAmount || vehicle.valorRecebido || 0,
-                    paymentWhatsAppDueDate
-                  );
-                  setCustomPaymentMsgText(text);
-                }}
-                className="ml-1 text-[10px] text-emerald-400 hover:text-white bg-emerald-500/10 hover:bg-emerald-500/20 border border-emerald-500/20 px-2 py-0.5 rounded font-medium transition-all flex items-center gap-1 cursor-pointer"
-                title="Enviar cobrança ou lembrete de pagamento via WhatsApp"
-              >
-                <MessageCircle className="w-3 h-3 text-emerald-400" />
-                <span>Lembrete Pagamento</span>
-              </button>
+            <div className="text-xs text-gray-400 mt-1 flex flex-col sm:flex-row sm:items-center justify-between gap-2 flex-wrap min-w-0 max-w-full">
+              <div className="flex items-center gap-1.5 flex-wrap min-w-0">
+                <User className="w-3.5 h-3.5 text-gray-500 shrink-0" />
+                <span>Locatário: <strong className="text-gray-200 font-semibold break-all">{vehicle.driver || 'Não definido'}</strong></span>
+                {vehicle.driverPhone && (
+                  <span className="text-[10px] text-gray-500 font-mono shrink-0">({vehicle.driverPhone})</span>
+                )}
+              </div>
 
-              {/* #2 Botão Pagamento Rápido (1 Clique) */}
-              {(vehicle.valorSemanal || vehicle.valorRecebido > 0) && (
+              <div className="flex items-center gap-1.5 flex-wrap shrink-0">
                 <button
                   type="button"
-                  disabled={alreadyPaid}
                   onClick={(e) => {
                     e.stopPropagation();
-                    if (alreadyPaid) return;
-                    const quickAmt = vehicle.valorSemanal || vehicle.valorRecebido || 0;
-                    if (quickAmt <= 0) return;
-                    const todayIso = new Date().toISOString().split('T')[0];
-                    const newPay = {
-                      id: `wp-${Date.now()}`,
-                      date: todayIso,
-                      amount: quickAmt
-                    };
-                    onUpdateVehicle({
-                      ...vehicle,
-                      weeklyPayments: [...(vehicle.weeklyPayments || []), newPay]
-                    });
-                    sendAppNotification(`💰 Pagamento Semanal Confirmado: ${vehicle.brand} (${vehicle.plate})`, {
-                      body: `Pagamento rápido de R$ ${quickAmt.toLocaleString('pt-BR', { minimumFractionDigits: 2 })} lançado em 1 clique!`,
-                      eventKey: 'payment_registered'
-                    });
+                    if (!isExpanded) setIsExpanded(true);
+                    setActiveTab('pagamentos');
+                    setShowPaymentWhatsApp(true);
+                    setShowAddPayment(false);
+                    const type = paymentWhatsAppType;
+                    const rawTpl = localStorage.getItem(`fleet_payment_msg_${type}`) || DEFAULT_PAYMENT_TEMPLATES[type];
+                    const text = formatPaymentTemplateText(
+                      rawTpl,
+                      vehicle.driver || '',
+                      vehicle.brand || '',
+                      vehicle.model || '',
+                      vehicle.plate || '',
+                      paymentWhatsAppAmount || vehicle.valorRecebido || 0,
+                      paymentWhatsAppDueDate
+                    );
+                    setCustomPaymentMsgText(text);
                   }}
-                  className={`ml-1 text-[10px] text-amber-300 hover:text-slate-950 bg-amber-500/15 hover:bg-amber-400 border border-amber-500/30 px-2 py-0.5 rounded font-bold transition-all flex items-center gap-1 cursor-pointer shadow-xs ${alreadyPaid ? 'opacity-50 cursor-not-allowed' : ''}`}
-                  title={alreadyPaid ? "Pagamento semanal já confirmado" : "Lançar pagamento semanal de hoje com 1 clique"}
+                  className="text-[10px] text-emerald-400 hover:text-white bg-emerald-500/10 hover:bg-emerald-500/20 border border-emerald-500/20 px-2 py-0.5 rounded font-medium transition-all flex items-center gap-1 cursor-pointer shrink-0"
+                  title="Enviar cobrança ou lembrete de pagamento via WhatsApp"
                 >
-                  <Check className="w-3 h-3" />
-                  <span>{alreadyPaid ? 'Confirmado' : `Confirmar Semanal (R$ ${(vehicle.valorSemanal || vehicle.valorRecebido || 0).toLocaleString('pt-BR')})`}</span>
+                  <MessageCircle className="w-3 h-3 text-emerald-400" />
+                  <span>Lembrete Pagamento</span>
                 </button>
-              )}
-            </p>
+
+                {/* #2 Botão Pagamento Rápido (1 Clique) */}
+                {(vehicle.valorSemanal || vehicle.valorRecebido > 0) && (
+                  <button
+                    type="button"
+                    disabled={alreadyPaid}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      if (alreadyPaid) return;
+                      const quickAmt = vehicle.valorSemanal || vehicle.valorRecebido || 0;
+                      if (quickAmt <= 0) return;
+                      const todayIso = new Date().toISOString().split('T')[0];
+                      const newPay = {
+                        id: `wp-${Date.now()}`,
+                        date: todayIso,
+                        amount: quickAmt
+                      };
+                      onUpdateVehicle({
+                        ...vehicle,
+                        weeklyPayments: [...(vehicle.weeklyPayments || []), newPay]
+                      });
+                      sendAppNotification(`💰 Pagamento Semanal Confirmado: ${vehicle.brand} (${vehicle.plate})`, {
+                        body: `Pagamento rápido de R$ ${quickAmt.toLocaleString('pt-BR', { minimumFractionDigits: 2 })} lançado em 1 clique!`,
+                        eventKey: 'payment_registered'
+                      });
+                    }}
+                    className={`text-[10px] text-amber-300 hover:text-slate-950 bg-amber-500/15 hover:bg-amber-400 border border-amber-500/30 px-2 py-0.5 rounded font-bold transition-all flex items-center gap-1 cursor-pointer shadow-xs shrink-0 ${alreadyPaid ? 'opacity-50 cursor-not-allowed' : ''}`}
+                    title={alreadyPaid ? "Pagamento semanal já confirmado" : "Lançar pagamento semanal de hoje com 1 clique"}
+                  >
+                    <Check className="w-3 h-3" />
+                    <span>{alreadyPaid ? 'Confirmado' : `Confirmar Semanal (R$ ${(vehicle.valorSemanal || vehicle.valorRecebido || 0).toLocaleString('pt-BR')})`}</span>
+                  </button>
+                )}
+              </div>
+            </div>
           </div>
           
           <div className="flex items-center gap-1.5 sm:gap-2 flex-wrap self-end sm:self-auto shrink-0" onClick={(e) => e.stopPropagation()}>
@@ -3895,16 +3900,50 @@ _Enviado via sistema de gestão de frota._`;
 
               {isAgendaExpanded && (
                 <div className="space-y-3 pt-1 animate-in slide-in-from-top-1 duration-150">
-                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
                     {/* KM Atual */}
                     <div className="bg-white/[0.01] p-3 rounded-xl border border-white/5 flex flex-col justify-between hover:border-white/10 transition-colors">
                       <span className="text-[10px] text-gray-400 font-semibold mb-1">KM Atual</span>
                       <div className="flex items-center justify-between">
                         <span className="text-gray-500"><Gauge className="w-3.5 h-3.5" /></span>
                         <InlineEdit
-                          value={vehicle.preventiveMaintCurrentKm || 0}
+                          value={vehicle.preventiveMaintCurrentKm || vehicle.currentKm || 0}
                           label="KM Atual"
-                          onSave={(val) => handleUpdateField('preventiveMaintCurrentKm', val)}
+                          onSave={(val) => {
+                            const newCur = Number(val) || 0;
+                            const interval = vehicle.preventiveMaintIntervalKm || 10000;
+                            const nextKm = newCur + interval;
+                            onUpdateVehicle({
+                              ...vehicle,
+                              preventiveMaintCurrentKm: newCur,
+                              preventiveMaintNextKm: nextKm
+                            });
+                          }}
+                          isCurrency={false}
+                        />
+                      </div>
+                    </div>
+
+                    {/* Intervalo de Revisão em KM */}
+                    <div className="bg-white/[0.01] p-3 rounded-xl border border-white/5 flex flex-col justify-between hover:border-white/10 transition-colors">
+                      <div className="flex justify-between items-center mb-1">
+                        <span className="text-[10px] text-blue-400 font-semibold">Intervalo Revisão (KM)</span>
+                        <span className="text-[9px] text-gray-500 font-mono">Ex: 10.000</span>
+                      </div>
+                      <div className="flex items-center justify-between">
+                        <span className="text-blue-400"><Wrench className="w-3.5 h-3.5" /></span>
+                        <InlineEdit
+                          value={vehicle.preventiveMaintIntervalKm || 10000}
+                          label="Intervalo KM"
+                          onSave={(val) => {
+                            const newInterval = Number(val) || 10000;
+                            const cur = vehicle.preventiveMaintCurrentKm || vehicle.currentKm || 0;
+                            onUpdateVehicle({
+                              ...vehicle,
+                              preventiveMaintIntervalKm: newInterval,
+                              preventiveMaintNextKm: cur + newInterval
+                            });
+                          }}
                           isCurrency={false}
                         />
                       </div>
@@ -3916,7 +3955,7 @@ _Enviado via sistema de gestão de frota._`;
                       <div className="flex items-center justify-between">
                         <span className="text-gray-500"><Wrench className="w-3.5 h-3.5" /></span>
                         <InlineEdit
-                          value={vehicle.preventiveMaintNextKm || 0}
+                          value={vehicle.preventiveMaintNextKm || ((vehicle.preventiveMaintCurrentKm || vehicle.currentKm || 0) + (vehicle.preventiveMaintIntervalKm || 10000))}
                           label="Próximo KM"
                           onSave={(val) => handleUpdateField('preventiveMaintNextKm', val)}
                           isCurrency={false}

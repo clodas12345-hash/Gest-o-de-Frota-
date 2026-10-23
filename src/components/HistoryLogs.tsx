@@ -1,5 +1,5 @@
-import { useState } from 'react';
-import { Vehicle, MaintenanceLog, ExpenseLog, Vistoria, FuelLog } from '../types';
+import React, { useState } from 'react';
+import { Vehicle, MaintenanceLog, ExpenseLog, Vistoria, FuelLog, MAINTENANCE_CATEGORIES, MAINTENANCE_SCOPES } from '../types';
 import { Search, Wrench, Landmark, Trash2, Calendar, User, Gauge, Edit2, Check, X, ChevronDown, ChevronUp, History, ClipboardCheck, Droplets, MapPin } from 'lucide-react';
 import CurrencyInput from './CurrencyInput';
 
@@ -46,10 +46,23 @@ export function HistoryLogs({
   const [isExpanded, setIsExpanded] = useState(defaultExpanded);
   const [activeCategory, setActiveCategory] = useState<LogCategory>('maintenance');
   const [filterVehicleId, setFilterVehicleId] = useState<string>('all');
+  const [filterMonth, setFilterMonth] = useState<string>('all');
+  const [filterMaintCategory, setFilterMaintCategory] = useState<string>('all');
+  const [filterMaintScope, setFilterMaintScope] = useState<string>('all');
   const [searchQuery, setSearchQuery] = useState<string>('');
+
+  React.useEffect(() => {
+    const handleOpenHistory = () => {
+      setIsExpanded(true);
+      setActiveCategory('maintenance');
+    };
+    window.addEventListener('open-maintenance-history', handleOpenHistory);
+    return () => window.removeEventListener('open-maintenance-history', handleOpenHistory);
+  }, []);
 
   // Inline editing states for expenses
   const [editingExpenseId, setEditingExpenseId] = useState<string | null>(null);
+  const [editExpenseVehicleId, setEditExpenseVehicleId] = useState<string>('');
   const [editDesc, setEditDesc] = useState('');
   const [editCost, setEditCost] = useState(0);
   const [editCategory, setEditCategory] = useState<ExpenseLog['category']>('Outros');
@@ -57,10 +70,14 @@ export function HistoryLogs({
 
   // Inline editing states for maintenance
   const [editingMaintId, setEditingMaintId] = useState<string | null>(null);
+  const [editMaintVehicleId, setEditMaintVehicleId] = useState<string>('');
   const [editMaintDate, setEditMaintDate] = useState('');
   const [editMaintType, setEditMaintType] = useState<MaintenanceLog['type']>('Outro');
+  const [editMaintCategory, setEditMaintCategory] = useState<string>('');
+  const [editMaintScope, setEditMaintScope] = useState<string>('');
   const [editMaintDesc, setEditMaintDesc] = useState('');
   const [editMaintShop, setEditMaintShop] = useState('');
+  const [editMaintCurrentKm, setEditMaintCurrentKm] = useState<number | undefined>(undefined);
   const [editMaintNextKm, setEditMaintNextKm] = useState(0);
   const [editMaintCost, setEditMaintCost] = useState(0);
   const [editMaintBoNumber, setEditMaintBoNumber] = useState('');
@@ -87,6 +104,7 @@ export function HistoryLogs({
   // Start editing handlers
   const handleStartEditExpense = (log: ExpenseLog) => {
     setEditingExpenseId(log.id);
+    setEditExpenseVehicleId(log.vehicleId);
     setEditDesc(log.description);
     setEditCost(log.cost);
     setEditCategory(log.category);
@@ -95,10 +113,14 @@ export function HistoryLogs({
 
   const handleStartEditMaint = (log: MaintenanceLog) => {
     setEditingMaintId(log.id);
+    setEditMaintVehicleId(log.vehicleId);
     setEditMaintDate(log.date);
     setEditMaintType(log.type);
+    setEditMaintCategory(log.category || MAINTENANCE_CATEGORIES[0]);
+    setEditMaintScope(log.scope || MAINTENANCE_SCOPES[0]);
     setEditMaintDesc(log.description);
     setEditMaintShop(log.shopName || '');
+    setEditMaintCurrentKm(log.currentKm);
     setEditMaintNextKm(log.nextKm || 0);
     setEditMaintCost(log.cost);
     setEditMaintBoNumber(log.boNumber || '');
@@ -134,6 +156,7 @@ export function HistoryLogs({
     if (onUpdateExpense) {
       onUpdateExpense({
         ...log,
+        vehicleId: editExpenseVehicleId || log.vehicleId,
         description: editDesc.trim(),
         cost: editCost,
         category: editCategory,
@@ -151,10 +174,14 @@ export function HistoryLogs({
     if (onUpdateMaintenance) {
       onUpdateMaintenance({
         ...log,
+        vehicleId: editMaintVehicleId || log.vehicleId,
         date: editMaintDate,
         type: editMaintType,
+        category: editMaintCategory || undefined,
+        scope: editMaintScope || undefined,
         description: editMaintDesc.trim(),
         shopName: editMaintShop.trim() || undefined,
+        currentKm: editMaintCurrentKm,
         nextKm: editMaintNextKm > 0 ? editMaintNextKm : undefined,
         cost: editMaintCost,
         boNumber: editMaintBoNumber.trim() || undefined,
@@ -217,13 +244,38 @@ export function HistoryLogs({
     return new Date(dateStr).toLocaleDateString('pt-BR');
   };
 
-  // Filter logs based on search and vehicle selection
+  // Month helpers
+  const MONTH_NAMES_PT = [
+    'Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho',
+    'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro'
+  ];
+
+  const formatMonthYear = (monthKey: string) => {
+    if (!monthKey || monthKey === 'Sem data') return 'Sem data';
+    const [yearStr, monthStr] = monthKey.split('-');
+    const monthIdx = parseInt(monthStr, 10) - 1;
+    const monthName = MONTH_NAMES_PT[monthIdx] || monthStr;
+    return `${monthName} de ${yearStr}`;
+  };
+
+  const groupLogsByMonth = <T extends { date: string }>(logs: T[]): [string, T[]][] => {
+    const groups: { [key: string]: T[] } = {};
+    logs.forEach((log) => {
+      const key = log.date && log.date.length >= 7 ? log.date.substring(0, 7) : 'Sem data';
+      if (!groups[key]) groups[key] = [];
+      groups[key].push(log);
+    });
+    return Object.entries(groups).sort(([a], [b]) => b.localeCompare(a));
+  };
+
+  // Filter logs based on search, vehicle, and month selection
   const filterByCarAndSearch = <T extends { vehicleId: string; date: string; [key: string]: any }>(
     logsList: T[],
     searchFields: (item: T) => boolean
   ) => {
     return logsList
       .filter((item) => filterVehicleId === 'all' || item.vehicleId === filterVehicleId)
+      .filter((item) => filterMonth === 'all' || (item.date && item.date.startsWith(filterMonth)))
       .filter((item) => {
         if (!searchQuery) return true;
         return searchFields(item);
@@ -231,12 +283,36 @@ export function HistoryLogs({
       .sort((a, b) => b.date.localeCompare(a.date)); // Latest first
   };
 
+  const availableMonths = React.useMemo(() => {
+    const currentList =
+      activeCategory === 'maintenance'
+        ? maintenanceLogs
+        : activeCategory === 'expense'
+        ? expenseLogs
+        : activeCategory === 'vistoria'
+        ? vistorias
+        : fuelLogs;
+    const set = new Set<string>();
+    currentList.forEach((item) => {
+      if (item.date && item.date.length >= 7) {
+        set.add(item.date.substring(0, 7));
+      }
+    });
+    return Array.from(set).sort((a, b) => b.localeCompare(a));
+  }, [activeCategory, maintenanceLogs, expenseLogs, vistorias, fuelLogs]);
+
   const filteredMaint = filterByCarAndSearch(maintenanceLogs, (item) =>
-    item.description.toLowerCase().includes(searchQuery.toLowerCase()) ||
+    (item.description || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
     (item.shopName?.toLowerCase() || '').includes(searchQuery.toLowerCase()) ||
-    item.type.toLowerCase().includes(searchQuery.toLowerCase()) ||
+    (item.type || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
+    (item.category || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
+    (item.scope || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
     getVehicleName(item.vehicleId).toLowerCase().includes(searchQuery.toLowerCase())
-  );
+  ).filter((item) => {
+    if (filterMaintCategory !== 'all' && item.category !== filterMaintCategory) return false;
+    if (filterMaintScope !== 'all' && item.scope !== filterMaintScope) return false;
+    return true;
+  });
 
   const filteredExpenses = filterByCarAndSearch(expenseLogs, (item) =>
     item.description.toLowerCase().includes(searchQuery.toLowerCase()) ||
@@ -256,6 +332,10 @@ export function HistoryLogs({
     getVehicleName(item.vehicleId).toLowerCase().includes(searchQuery.toLowerCase())
   );
 
+  const groupedMaint = React.useMemo(() => groupLogsByMonth(filteredMaint), [filteredMaint]);
+  const groupedExpenses = React.useMemo(() => groupLogsByMonth(filteredExpenses), [filteredExpenses]);
+  const groupedVistorias = React.useMemo(() => groupLogsByMonth(filteredVistorias), [filteredVistorias]);
+
   const parseInstallmentInfo = (description: string) => {
     if (!description) return null;
     const match = description.match(/\(\s*(\d+)\s*[\/]\s*(\d+)\s*\)/) || description.match(/\b(\d+)\s*[\/]\s*(\d+)\b/);
@@ -269,6 +349,244 @@ export function HistoryLogs({
     }
     return null;
   };
+
+  const renderMaintEditForm = (log: MaintenanceLog) => (
+    <div className="space-y-4">
+      {/* Top Header & Buttons */}
+      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-white/10 pb-3">
+        <div className="flex items-center gap-2.5 min-w-0">
+          <div className="p-2 bg-blue-500/20 text-blue-400 rounded-xl shrink-0">
+            <Wrench className="w-4 h-4" />
+          </div>
+          <div className="min-w-0">
+            <p className="text-xs font-bold text-white flex items-center gap-2 flex-wrap">
+              <span>Editar Manutenção</span>
+              <span className="text-blue-400 font-mono bg-blue-500/10 px-2 py-0.5 rounded border border-blue-500/20">
+                {getVehiclePlate(editMaintVehicleId || log.vehicleId)}
+              </span>
+            </p>
+            <p className="text-[10px] text-gray-400">Preencha os campos e salve as alterações.</p>
+          </div>
+        </div>
+        <div className="flex items-center gap-2 w-full sm:w-auto justify-end">
+          <button
+            type="button"
+            onClick={() => setEditingMaintId(null)}
+            className="flex-1 sm:flex-initial px-3 py-1.5 text-xs text-gray-300 hover:text-white bg-white/5 hover:bg-white/10 rounded-lg transition-colors cursor-pointer flex items-center justify-center gap-1 border border-white/10"
+          >
+            <X className="w-3.5 h-3.5" />
+            <span>Cancelar</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => handleSaveMaintEdit(log)}
+            className="flex-1 sm:flex-initial px-3.5 py-1.5 text-xs font-bold text-white bg-blue-600 hover:bg-blue-500 rounded-lg transition-all cursor-pointer flex items-center justify-center gap-1 shadow-md shadow-blue-500/20"
+          >
+            <Check className="w-3.5 h-3.5" />
+            <span>Salvar Alterações</span>
+          </button>
+        </div>
+      </div>
+
+      {/* Grid of Inputs */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3 text-xs">
+        {/* Veículo Selector */}
+        <div className="space-y-1 sm:col-span-2">
+          <label className="text-[11px] font-semibold text-gray-400 flex items-center justify-between">
+            <span>Veículo / Carro</span>
+            <span className="text-[10px] text-blue-400 font-medium">Trocar carro</span>
+          </label>
+          <select
+            value={editMaintVehicleId}
+            onChange={(e) => setEditMaintVehicleId(e.target.value)}
+            className="w-full h-9 bg-black/60 border border-blue-500/40 text-blue-200 font-medium rounded-lg px-2.5 py-1.5 text-xs focus:outline-hidden focus:border-blue-400"
+          >
+            {vehicles.map((v) => (
+              <option key={v.id} value={v.id} className="bg-[#111111] text-white">
+                {v.brand} {v.model} ({v.plate})
+              </option>
+            ))}
+          </select>
+        </div>
+
+        <div className="space-y-1">
+          <label className="text-[11px] font-semibold text-gray-400">Data do Serviço</label>
+          <input
+            type="date"
+            value={editMaintDate}
+            onChange={(e) => setEditMaintDate(e.target.value)}
+            className="w-full h-9 bg-black/60 border border-white/15 text-white rounded-lg px-2.5 py-1.5 text-xs focus:outline-hidden focus:border-blue-500 scheme-dark font-mono"
+          />
+        </div>
+
+        <div className="space-y-1">
+          <label className="text-[11px] font-semibold text-gray-400">Tipo de Manutenção</label>
+          <select
+            value={editMaintType}
+            onChange={(e) => setEditMaintType(e.target.value as any)}
+            className="w-full h-9 bg-black/60 border border-white/15 text-white rounded-lg px-2.5 py-1.5 text-xs focus:outline-hidden focus:border-blue-500 font-medium"
+          >
+            <option value="Revisão">Revisão</option>
+            <option value="Preventiva">Preventiva</option>
+            <option value="Corretiva">Corretiva</option>
+            <option value="Batida/Acidente">Batida/Acidente</option>
+            <option value="Pneus">Pneus</option>
+            <option value="Palhetas">Palhetas</option>
+            <option value="Pastilhas">Pastilhas</option>
+            <option value="Outro">Outro</option>
+          </select>
+        </div>
+
+        <div className="space-y-1">
+          <label className="text-[11px] font-semibold text-gray-400">Categoria</label>
+          <select
+            value={editMaintCategory}
+            onChange={(e) => setEditMaintCategory(e.target.value)}
+            className="w-full h-9 bg-black/60 border border-blue-500/40 text-blue-300 rounded-lg px-2.5 py-1.5 text-xs focus:outline-hidden focus:border-blue-400 font-medium"
+          >
+            {MAINTENANCE_CATEGORIES.map((cat) => (
+              <option key={cat} value={cat} className="bg-[#111111] text-white">
+                {cat}
+              </option>
+            ))}
+          </select>
+        </div>
+
+        <div className="space-y-1">
+          <label className="text-[11px] font-semibold text-gray-400">Escopo</label>
+          <select
+            value={editMaintScope}
+            onChange={(e) => setEditMaintScope(e.target.value)}
+            className="w-full h-9 bg-black/60 border border-purple-500/40 text-purple-300 rounded-lg px-2.5 py-1.5 text-xs focus:outline-hidden focus:border-purple-400 font-medium"
+          >
+            {MAINTENANCE_SCOPES.map((sc) => (
+              <option key={sc} value={sc} className="bg-[#111111] text-white">
+                {sc}
+              </option>
+            ))}
+          </select>
+        </div>
+
+        <div className="space-y-1">
+          <label className="text-[11px] font-semibold text-gray-400">KM no Serviço</label>
+          <input
+            type="number"
+            value={editMaintCurrentKm ?? ''}
+            onChange={(e) => setEditMaintCurrentKm(e.target.value === '' ? undefined : Number(e.target.value))}
+            placeholder="Ex: 45000"
+            className="w-full h-9 bg-black/60 border border-cyan-500/40 text-cyan-300 font-mono font-bold rounded-lg px-2.5 py-1.5 text-xs focus:outline-hidden focus:border-cyan-400"
+          />
+        </div>
+
+        <div className="space-y-1">
+          <label className="text-[11px] font-semibold text-gray-400">Próxima Revisão (KM)</label>
+          <input
+            type="number"
+            value={editMaintNextKm || ''}
+            onChange={(e) => setEditMaintNextKm(Number(e.target.value))}
+            placeholder="Ex: 55000"
+            className="w-full h-9 bg-black/60 border border-white/15 text-white font-mono rounded-lg px-2.5 py-1.5 text-xs focus:outline-hidden focus:border-blue-500"
+          />
+        </div>
+
+        <div className="space-y-1">
+          <label className="text-[11px] font-semibold text-gray-400">Custo Total (R$)</label>
+          <CurrencyInput
+            value={editMaintCost}
+            onChange={setEditMaintCost}
+            placeholder="0,00"
+            className="w-full h-9 bg-black/60 border border-white/15 text-emerald-400 font-mono font-bold rounded-lg px-2.5 py-1.5 text-xs focus:outline-hidden focus:border-emerald-500"
+          />
+        </div>
+
+        <div className="space-y-1">
+          <label className="text-[11px] font-semibold text-gray-400">Oficina / Estabelecimento</label>
+          <input
+            type="text"
+            value={editMaintShop}
+            onChange={(e) => setEditMaintShop(e.target.value)}
+            placeholder="Ex: Concessionária Fiat"
+            className="w-full h-9 bg-black/60 border border-white/15 text-white rounded-lg px-2.5 py-1.5 text-xs focus:outline-hidden focus:border-blue-500"
+          />
+        </div>
+
+        <div className="space-y-1">
+          <label className="text-[11px] font-semibold text-gray-400">Nº do B.O. (Opcional)</label>
+          <input
+            type="text"
+            value={editMaintBoNumber}
+            onChange={(e) => setEditMaintBoNumber(e.target.value)}
+            placeholder="Ex: BO 12345/2026"
+            className="w-full h-9 bg-black/60 border border-white/15 text-white rounded-lg px-2.5 py-1.5 text-xs focus:outline-hidden focus:border-blue-500"
+          />
+        </div>
+
+        <div className="space-y-1">
+          <label className="text-[11px] font-semibold text-gray-400">Peças Trocadas</label>
+          <input
+            type="text"
+            value={editMaintPartsReplaced}
+            onChange={(e) => setEditMaintPartsReplaced(e.target.value)}
+            placeholder="Ex: Óleo, Filtros, Pastilhas..."
+            className="w-full h-9 bg-black/60 border border-white/15 text-white rounded-lg px-2.5 py-1.5 text-xs focus:outline-hidden focus:border-blue-500"
+          />
+        </div>
+
+        <div className="space-y-1">
+          <label className="text-[11px] font-semibold text-gray-400">Parcelas Pagas</label>
+          <input
+            type="number"
+            value={editMaintParcelasPagas ?? ''}
+            onChange={(e) => setEditMaintParcelasPagas(e.target.value === '' ? undefined : Number(e.target.value))}
+            placeholder="Ex: 1"
+            className="w-full h-9 bg-black/60 border border-white/15 text-white rounded-lg px-2.5 py-1.5 text-xs focus:outline-hidden focus:border-amber-500"
+          />
+        </div>
+
+        <div className="space-y-1">
+          <label className="text-[11px] font-semibold text-gray-400">Total de Parcelas</label>
+          <input
+            type="number"
+            value={editMaintParcelasTotais ?? ''}
+            onChange={(e) => setEditMaintParcelasTotais(e.target.value === '' ? undefined : Number(e.target.value))}
+            placeholder="Ex: 10"
+            className="w-full h-9 bg-black/60 border border-white/15 text-white rounded-lg px-2.5 py-1.5 text-xs focus:outline-hidden focus:border-amber-500"
+          />
+        </div>
+      </div>
+
+      <div className="space-y-1">
+        <label className="text-[11px] font-semibold text-gray-400">Descrição Detalhada do Serviço</label>
+        <input
+          type="text"
+          value={editMaintDesc}
+          onChange={(e) => setEditMaintDesc(e.target.value)}
+          placeholder="Descreva o serviço realizado..."
+          className="w-full h-9 bg-black/60 border border-white/15 text-white rounded-lg px-2.5 py-1.5 text-xs focus:outline-hidden focus:border-blue-500"
+        />
+      </div>
+
+      {/* Bottom Action Bar */}
+      <div className="flex flex-col-reverse sm:flex-row items-center justify-end gap-2 pt-3 border-t border-white/10">
+        <button
+          type="button"
+          onClick={() => setEditingMaintId(null)}
+          className="w-full sm:w-auto px-4 py-2 text-xs font-semibold text-gray-300 hover:text-white bg-white/5 hover:bg-white/10 rounded-xl transition-colors cursor-pointer flex items-center justify-center gap-1.5 border border-white/10"
+        >
+          <X className="w-3.5 h-3.5" />
+          <span>Cancelar</span>
+        </button>
+        <button
+          type="button"
+          onClick={() => handleSaveMaintEdit(log)}
+          className="w-full sm:w-auto px-5 py-2 text-xs font-bold text-white bg-blue-600 hover:bg-blue-500 rounded-xl transition-all cursor-pointer flex items-center justify-center gap-1.5 shadow-md shadow-blue-500/25"
+        >
+          <Check className="w-3.5 h-3.5" />
+          <span>Salvar Alterações</span>
+        </button>
+      </div>
+    </div>
+  );
 
   return (
     <div id="history-section" className="bg-[#111111] border border-white/5 rounded-2xl p-5 sm:p-6 shadow-xl space-y-4">
@@ -294,14 +612,14 @@ export function HistoryLogs({
       </div>
 
       {isExpanded && (
-        <div className="space-y-6 pt-2 border-t border-white/5">
+        <div className="space-y-6 pt-2 border-t border-white/5 max-w-full overflow-hidden">
           {/* Global Filter Bar */}
-          <div className="flex flex-col sm:flex-row gap-2 justify-end">
+          <div className={`grid grid-cols-1 sm:grid-cols-2 ${activeCategory === 'maintenance' ? 'lg:grid-cols-3 xl:grid-cols-5' : 'sm:grid-cols-3'} gap-2.5 w-full max-w-full min-w-0`}>
             {/* Vehicle Select */}
             <select
               value={filterVehicleId}
               onChange={(e) => setFilterVehicleId(e.target.value)}
-              className="text-xs font-semibold bg-white/[0.03] border border-white/10 text-gray-200 px-3 py-2 rounded-xl focus:outline-hidden focus:border-blue-500/50 focus:bg-[#1a1a1a]"
+              className="w-full h-10 max-w-full text-xs font-semibold bg-white/[0.03] border border-white/10 text-gray-200 px-3 rounded-xl focus:outline-hidden focus:border-blue-500/50 focus:bg-[#1a1a1a] truncate min-w-0"
               id="filter-select-vehicle"
             >
               <option value="all" className="bg-[#111111] text-gray-200">Filtro: Todos os Carros</option>
@@ -312,21 +630,70 @@ export function HistoryLogs({
               ))}
             </select>
 
+            {/* Month Select Filter */}
+            <select
+              value={filterMonth}
+              onChange={(e) => setFilterMonth(e.target.value)}
+              className="w-full h-10 max-w-full text-xs font-semibold bg-white/[0.03] border border-white/10 text-gray-200 px-3 rounded-xl focus:outline-hidden focus:border-blue-500/50 focus:bg-[#1a1a1a] truncate min-w-0"
+              id="filter-select-month"
+            >
+              <option value="all" className="bg-[#111111] text-gray-200">Filtro: Todos os Meses</option>
+              {availableMonths.map((mKey) => (
+                <option key={mKey} value={mKey} className="bg-[#111111] text-gray-200">
+                  {formatMonthYear(mKey)}
+                </option>
+              ))}
+            </select>
+
+            {/* Maintenance Category Select Filter */}
+            {activeCategory === 'maintenance' && (
+              <select
+                value={filterMaintCategory}
+                onChange={(e) => setFilterMaintCategory(e.target.value)}
+                className="w-full h-10 max-w-full text-xs font-semibold bg-blue-500/10 border border-blue-500/30 text-blue-300 px-3 rounded-xl focus:outline-hidden focus:border-blue-500 focus:bg-[#1a1a1a] truncate min-w-0"
+                id="filter-select-category"
+              >
+                <option value="all" className="bg-[#111111] text-gray-200">Categoria: Todas ({MAINTENANCE_CATEGORIES.length})</option>
+                {MAINTENANCE_CATEGORIES.map((cat) => (
+                  <option key={cat} value={cat} className="bg-[#111111] text-white">
+                    {cat}
+                  </option>
+                ))}
+              </select>
+            )}
+
+            {/* Maintenance Scope Select Filter */}
+            {activeCategory === 'maintenance' && (
+              <select
+                value={filterMaintScope}
+                onChange={(e) => setFilterMaintScope(e.target.value)}
+                className="w-full h-10 max-w-full text-xs font-semibold bg-purple-500/10 border border-purple-500/30 text-purple-300 px-3 rounded-xl focus:outline-hidden focus:border-purple-500 focus:bg-[#1a1a1a] truncate min-w-0"
+                id="filter-select-scope"
+              >
+                <option value="all" className="bg-[#111111] text-gray-200">Escopo: Todos ({MAINTENANCE_SCOPES.length})</option>
+                {MAINTENANCE_SCOPES.map((sc) => (
+                  <option key={sc} value={sc} className="bg-[#111111] text-white">
+                    {sc}
+                  </option>
+                ))}
+              </select>
+            )}
+
             {/* Search Input */}
-            <div className="relative">
-              <Search className="w-4 h-4 text-gray-500 absolute left-3 top-2.5" />
+            <div className="relative w-full min-w-0 flex items-center">
+              <Search className="w-4 h-4 text-gray-500 absolute left-3 pointer-events-none" />
               <input
                 type="text"
                 placeholder="Buscar registros..."
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
-                className="text-xs border border-white/10 rounded-xl pl-9 pr-4 py-2 w-full sm:w-56 bg-white/[0.03] focus:outline-hidden focus:bg-[#1a1a1a] focus:border-blue-500/50 text-white font-medium placeholder-gray-500"
+                className="h-10 text-xs border border-white/10 rounded-xl pl-9 pr-4 w-full bg-white/[0.03] focus:outline-hidden focus:bg-[#1a1a1a] focus:border-blue-500/50 text-white font-medium placeholder-gray-500 truncate"
                 id="filter-search-input"
               />
             </div>
           </div>
 
-      {/* Categories Toggle Row */}
+      {/* Categories Toggle Row (Aba Abastecimentos removida do histórico de manutenção) */}
       <div className="flex gap-2 border-b border-white/5 pb-2 overflow-x-auto shrink-0 scrollbar-none">
         <button
           onClick={() => setActiveCategory('maintenance')}
@@ -339,19 +706,6 @@ export function HistoryLogs({
         >
           <Wrench className="w-4 h-4" />
           Manutenções ({filteredMaint.length})
-        </button>
-
-        <button
-          onClick={() => setActiveCategory('fuel')}
-          className={`flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs font-semibold transition-all shrink-0 ${
-            activeCategory === 'fuel'
-              ? 'bg-amber-500/10 text-amber-400 border border-amber-500/20'
-              : 'text-gray-400 hover:bg-white/5 hover:text-white'
-          }`}
-          id="tab-history-fuel"
-        >
-          <Droplets className="w-4 h-4" />
-          Abastecimentos ({filteredFuel.length})
         </button>
 
         <button
@@ -382,231 +736,306 @@ export function HistoryLogs({
       </div>
 
       {/* Lists Display Area */}
-      <div id="history-logs-display" className="overflow-x-auto">
+      <div id="history-logs-display">
         {/* Tab: Maintenance */}
         {activeCategory === 'maintenance' && (
-          <div className="min-w-[600px] text-gray-300">
+          <div>
             {filteredMaint.length === 0 ? (
               <p className="text-center text-gray-500 text-xs py-8">Nenhuma manutenção encontrada.</p>
             ) : (
-              <table className="w-full text-left text-xs border-collapse">
-                <thead>
-                  <tr className="border-b border-white/5 text-gray-500 font-semibold uppercase tracking-wider text-[10px]">
-                    <th className="py-3">Data</th>
-                    <th className="py-3">Veículo</th>
-                    <th className="py-3">Tipo</th>
-                    <th className="py-3">Descrição / Oficina</th>
-                    <th className="py-3">Próxima Manutenção</th>
-                    <th className="py-3 text-right">Custo</th>
-                    <th className="py-3 text-center">Ações</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-white/[0.03]">
-                  {filteredMaint.map((log) => {
-                    const isEditing = editingMaintId === log.id;
+              <>
+                {/* Mobile View: Responsive Cards (No overflow, fits phone screens) */}
+                <div className="md:hidden space-y-4">
+                  {groupedMaint.map(([monthKey, monthItems]) => {
+                    const monthTotal = monthItems.reduce((acc, it) => acc + (it.cost || 0), 0);
                     return (
-                    <tr key={log.id} className={`transition-colors ${isEditing ? 'bg-blue-500/5' : 'hover:bg-white/[0.01]'}`}>
-                      <td className="py-3.5 font-medium text-gray-400 font-mono">
-                        {isEditing ? (
-                          <input
-                            type="date"
-                            value={editMaintDate}
-                            onChange={(e) => setEditMaintDate(e.target.value)}
-                            className="bg-neutral-900 border border-white/10 text-white rounded px-2 py-1 text-xs focus:outline-hidden font-mono"
-                          />
-                        ) : (
-                          <span className="flex items-center gap-1.5">
-                            <Calendar className="w-3.5 h-3.5 text-gray-600" />
-                            {formatDate(log.date)}
+                      <div key={monthKey} className="space-y-2.5">
+                        {/* Month Header Banner */}
+                        <div className="flex items-center justify-between bg-emerald-500/10 border border-emerald-500/25 rounded-xl px-3.5 py-2">
+                          <div className="flex items-center gap-2 min-w-0">
+                            <Calendar className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
+                            <span className="text-xs font-bold text-white uppercase tracking-wider truncate">
+                              {formatMonthYear(monthKey)}
+                            </span>
+                            <span className="text-[10px] font-semibold text-emerald-300 bg-emerald-500/20 px-1.5 py-0.5 rounded shrink-0">
+                              {monthItems.length} {monthItems.length === 1 ? 'item' : 'itens'}
+                            </span>
+                          </div>
+                          <span className="text-xs font-bold font-mono text-emerald-400 shrink-0 ml-2">
+                            {formatBRL(monthTotal)}
                           </span>
-                        )}
-                      </td>
-                      <td className="py-3.5">
-                        <button
-                          onClick={() => {
-                            window.dispatchEvent(new CustomEvent('focus-vehicle', { detail: { vehicleId: log.vehicleId } }));
-                          }}
-                          className="font-bold text-blue-400 hover:text-blue-300 hover:underline cursor-pointer text-left focus:outline-hidden"
-                          title="Clique para ir direto para este carro"
-                        >
-                          {getVehiclePlate(log.vehicleId)}
-                        </button>
-                      </td>
-                      <td className="py-3.5">
-                        {isEditing ? (
-                          <select
-                            value={editMaintType}
-                            onChange={(e) => setEditMaintType(e.target.value as any)}
-                            className="bg-neutral-900 border border-white/10 text-white rounded px-2 py-1 text-xs focus:outline-hidden font-medium"
-                          >
-                            <option value="Revisão">Revisão</option>
-                            <option value="Preventiva">Preventiva</option>
-                            <option value="Corretiva">Corretiva</option>
-                            <option value="Batida/Acidente">Batida/Acidente</option>
-                            <option value="Pneus">Pneus</option>
-                            <option value="Palhetas">Palhetas</option>
-                            <option value="Pastilhas">Pastilhas</option>
-                            <option value="Outro">Outro</option>
-                          </select>
-                        ) : (
-                          <span className="px-2 py-0.5 bg-emerald-500/10 text-emerald-400 border border-emerald-500/15 font-semibold rounded-md text-[10px]">
+                        </div>
+
+                        {/* Cards for this month */}
+                        <div className="space-y-2.5">
+                          {monthItems.map((log) => {
+                    const isEditing = editingMaintId === log.id;
+                    if (isEditing) {
+                      return (
+                        <div key={log.id} className="p-4 bg-[#121620] border-2 border-blue-500/50 rounded-2xl shadow-xl">
+                          {renderMaintEditForm(log)}
+                        </div>
+                      );
+                    }
+
+                    return (
+                      <div key={log.id} className="p-3.5 bg-white/[0.02] hover:bg-white/[0.04] border border-white/10 rounded-2xl space-y-2.5 transition-all">
+                        {/* Header: Plate, Date, Cost */}
+                        <div className="flex items-center justify-between gap-2">
+                          <div className="flex items-center gap-2">
+                            <button
+                              onClick={() => {
+                                window.dispatchEvent(new CustomEvent('focus-vehicle', { detail: { vehicleId: log.vehicleId } }));
+                              }}
+                              className="font-bold text-xs font-mono text-blue-400 bg-blue-500/10 px-2 py-0.5 rounded-md border border-blue-500/20 hover:text-blue-300 cursor-pointer"
+                              title="Clique para ir direto para este carro"
+                            >
+                              {getVehiclePlate(log.vehicleId)}
+                            </button>
+                            <span className="flex items-center gap-1 text-[11px] text-gray-400 font-mono">
+                              <Calendar className="w-3 h-3 text-gray-500" />
+                              {formatDate(log.date)}
+                            </span>
+                          </div>
+                          <span className="font-bold font-mono text-sm text-emerald-400">
+                            {formatBRL(log.cost)}
+                          </span>
+                        </div>
+
+                        {/* Description & Workshop */}
+                        <div>
+                          <p className="text-xs font-semibold text-white line-clamp-2">{log.description || 'Sem descrição'}</p>
+                          <p className="text-[11px] text-gray-400 flex items-center gap-1 mt-0.5">
+                            <MapPin className="w-3 h-3 text-gray-500 shrink-0" />
+                            <span className="truncate">{log.shopName || 'Oficina não especificada'}</span>
+                          </p>
+                        </div>
+
+                        {/* Badges */}
+                        <div className="flex flex-wrap gap-1.5 pt-0.5">
+                          <span className="px-2 py-0.5 bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 font-semibold rounded-md text-[10px]">
                             {log.type}
                           </span>
-                        )}
-                      </td>
-                      <td className="py-3.5 max-w-xs">
-                        {isEditing ? (
-                          <div className="flex flex-col gap-1.5 py-1">
-                            <input
-                              type="text"
-                              value={editMaintDesc}
-                              onChange={(e) => setEditMaintDesc(e.target.value)}
-                              placeholder="Descrição"
-                              className="bg-neutral-900 border border-white/10 text-white rounded px-2 py-1 text-xs focus:outline-hidden w-full max-w-[220px]"
-                            />
-                            <input
-                              type="text"
-                              value={editMaintShop}
-                              onChange={(e) => setEditMaintShop(e.target.value)}
-                              placeholder="Oficina"
-                              className="bg-neutral-900 border border-white/10 text-white rounded px-2 py-1 text-xs focus:outline-hidden w-full max-w-[220px]"
-                            />
-                            <div className="grid grid-cols-2 gap-1 max-w-[220px]">
-                              <input
-                                type="text"
-                                value={editMaintBoNumber}
-                                onChange={(e) => setEditMaintBoNumber(e.target.value)}
-                                placeholder="Nº B.O."
-                                className="bg-neutral-900 border border-white/10 text-white rounded px-2 py-1 text-[11px] focus:outline-hidden"
-                              />
-                              <input
-                                type="text"
-                                value={editMaintPartsReplaced}
-                                onChange={(e) => setEditMaintPartsReplaced(e.target.value)}
-                                placeholder="Peças"
-                                className="bg-neutral-900 border border-white/10 text-white rounded px-2 py-1 text-[11px] focus:outline-hidden"
-                              />
-                            </div>
-                            <div className="grid grid-cols-2 gap-1 max-w-[220px]">
-                              <input
-                                type="number"
-                                value={editMaintParcelasPagas ?? ''}
-                                onChange={(e) => setEditMaintParcelasPagas(e.target.value === '' ? undefined : Number(e.target.value))}
-                                placeholder="Parc. Pagas"
-                                className="bg-neutral-900 border border-white/10 text-white rounded px-2 py-1 text-[10px] focus:outline-hidden"
-                              />
-                              <input
-                                type="number"
-                                value={editMaintParcelasTotais ?? ''}
-                                onChange={(e) => setEditMaintParcelasTotais(e.target.value === '' ? undefined : Number(e.target.value))}
-                                placeholder="Parc. Totais"
-                                className="bg-neutral-900 border border-white/10 text-white rounded px-2 py-1 text-[10px] focus:outline-hidden"
-                              />
-                            </div>
-                          </div>
-                        ) : (
-                          <div className="flex flex-col gap-0.5">
-                            <span className="font-semibold text-white line-clamp-1">{log.description}</span>
-                            <span className="text-[10px] text-gray-400">{log.shopName || 'Oficina não especificada'}</span>
-                            {(log.boNumber || log.partsReplaced || (log.parcelasTotais && log.parcelasTotais > 1)) && (
-                              <div className="flex flex-wrap gap-1 mt-0.5">
-                                {log.boNumber && (
-                                  <span className="px-1.5 py-0.5 bg-rose-500/10 text-rose-400 border border-rose-500/20 text-[9px] font-mono rounded">
-                                    B.O.: {log.boNumber}
-                                  </span>
-                                )}
-                                {log.partsReplaced && (
-                                  <span className="px-1.5 py-0.5 bg-blue-500/10 text-blue-400 border border-blue-500/20 text-[9px] rounded">
-                                    Peças: {log.partsReplaced}
-                                  </span>
-                                )}
-                                {log.parcelasTotais && log.parcelasTotais > 1 && (
-                                  <span className="px-1.5 py-0.5 bg-amber-500/10 text-amber-400 border border-amber-500/20 text-[9px] font-bold rounded">
-                                    Parc: {log.parcelasPagas || 1}/{log.parcelasTotais}
-                                  </span>
-                                )}
+                          {log.category && (
+                            <span className="px-2 py-0.5 bg-blue-500/10 text-blue-300 border border-blue-500/20 text-[10px] font-semibold rounded-md">
+                              {log.category}
+                            </span>
+                          )}
+                          {log.scope && (
+                            <span className="px-2 py-0.5 bg-purple-500/10 text-purple-300 border border-purple-500/20 text-[10px] font-semibold rounded-md">
+                              {log.scope}
+                            </span>
+                          )}
+                          {log.currentKm && (
+                            <span className="px-2 py-0.5 bg-cyan-500/10 text-cyan-300 border border-cyan-500/20 text-[10px] font-mono font-bold rounded-md flex items-center gap-1">
+                              <Gauge className="w-3 h-3 text-cyan-400" />
+                              {log.currentKm.toLocaleString('pt-BR')} km
+                            </span>
+                          )}
+                          {log.nextKm ? (
+                            <span className="px-2 py-0.5 bg-blue-500/10 text-blue-300 border border-blue-500/20 text-[10px] font-mono rounded-md">
+                              Próx: {log.nextKm.toLocaleString('pt-BR')} km
+                            </span>
+                          ) : null}
+                          {log.boNumber && (
+                            <span className="px-2 py-0.5 bg-rose-500/10 text-rose-400 border border-rose-500/20 text-[10px] font-mono rounded-md">
+                              B.O.: {log.boNumber}
+                            </span>
+                          )}
+                          {log.partsReplaced && (
+                            <span className="px-2 py-0.5 bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 text-[10px] rounded-md">
+                              Peças: {log.partsReplaced}
+                            </span>
+                          )}
+                          {log.parcelasTotais && log.parcelasTotais > 1 && (
+                            <span className="px-2 py-0.5 bg-amber-500/10 text-amber-400 border border-amber-500/20 text-[10px] font-bold rounded-md">
+                              Parc: {log.parcelasPagas || 1}/{log.parcelasTotais}
+                            </span>
+                          )}
+                        </div>
+
+                        {/* Actions */}
+                        <div className="flex items-center justify-end gap-2 pt-2 border-t border-white/5">
+                          <button
+                            onClick={() => handleStartEditMaint(log)}
+                            className="flex items-center gap-1 px-2.5 py-1 text-xs text-blue-400 bg-blue-500/10 hover:bg-blue-500/20 border border-blue-500/20 rounded-lg transition-colors cursor-pointer"
+                          >
+                            <Edit2 className="w-3 h-3" />
+                            <span>Editar</span>
+                          </button>
+                          <button
+                            onClick={() => onDeleteMaintenance(log.id)}
+                            className="flex items-center gap-1 px-2.5 py-1 text-xs text-rose-400 bg-rose-500/10 hover:bg-rose-500/20 border border-rose-500/20 rounded-lg transition-colors cursor-pointer"
+                          >
+                            <Trash2 className="w-3 h-3" />
+                            <span>Excluir</span>
+                          </button>
+                        </div>
+                      </div>
+                    );
+                          })}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+
+                {/* Desktop View: Table */}
+                <div className="hidden md:block overflow-x-auto text-gray-300">
+                  <table className="w-full text-left text-xs border-collapse">
+                    <thead>
+                      <tr className="border-b border-white/5 text-gray-500 font-semibold uppercase tracking-wider text-[10px]">
+                        <th className="py-3">Data</th>
+                        <th className="py-3">Veículo</th>
+                        <th className="py-3">Tipo</th>
+                        <th className="py-3">Descrição / Oficina</th>
+                        <th className="py-3">Próxima Manutenção</th>
+                        <th className="py-3 text-right">Custo</th>
+                        <th className="py-3 text-center">Ações</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-white/[0.03]">
+                      {groupedMaint.map(([monthKey, monthItems]) => {
+                        const monthTotal = monthItems.reduce((acc, it) => acc + (it.cost || 0), 0);
+                        return (
+                          <React.Fragment key={monthKey}>
+                            <tr className="bg-emerald-950/30 border-y border-emerald-500/25">
+                              <td colSpan={7} className="py-2.5 px-3">
+                                <div className="flex items-center justify-between">
+                                  <div className="flex items-center gap-2">
+                                    <Calendar className="w-3.5 h-3.5 text-emerald-400" />
+                                    <span className="font-bold text-xs text-white uppercase tracking-wider">
+                                      {formatMonthYear(monthKey)}
+                                    </span>
+                                    <span className="text-[10px] font-semibold text-emerald-300 bg-emerald-500/20 px-2 py-0.5 rounded-full">
+                                      {monthItems.length} {monthItems.length === 1 ? 'manutenção' : 'manutenções'}
+                                    </span>
+                                  </div>
+                                  <div className="flex items-center gap-1.5 text-right">
+                                    <span className="text-[11px] text-gray-400">Total no mês:</span>
+                                    <span className="font-bold font-mono text-xs text-emerald-400">
+                                      {formatBRL(monthTotal)}
+                                    </span>
+                                  </div>
+                                </div>
+                              </td>
+                            </tr>
+                            {monthItems.map((log) => {
+                              const isEditing = editingMaintId === log.id;
+                        if (isEditing) {
+                          return (
+                            <tr key={log.id} className="bg-[#121620] border-2 border-blue-500/40">
+                              <td colSpan={7} className="p-4 sm:p-5">
+                                {renderMaintEditForm(log)}
+                              </td>
+                            </tr>
+                          );
+                        }
+
+                        return (
+                          <tr key={log.id} className="transition-colors hover:bg-white/[0.01]">
+                            <td className="py-3.5 font-medium text-gray-400 font-mono">
+                              <span className="flex items-center gap-1.5">
+                                <Calendar className="w-3.5 h-3.5 text-gray-600" />
+                                {formatDate(log.date)}
+                              </span>
+                            </td>
+                            <td className="py-3.5">
+                              <button
+                                onClick={() => {
+                                  window.dispatchEvent(new CustomEvent('focus-vehicle', { detail: { vehicleId: log.vehicleId } }));
+                                }}
+                                className="font-bold text-blue-400 hover:text-blue-300 hover:underline cursor-pointer text-left focus:outline-hidden"
+                                title="Clique para ir direto para este carro"
+                              >
+                                {getVehiclePlate(log.vehicleId)}
+                              </button>
+                            </td>
+                            <td className="py-3.5">
+                              <span className="px-2 py-0.5 bg-emerald-500/10 text-emerald-400 border border-emerald-500/15 font-semibold rounded-md text-[10px]">
+                                {log.type}
+                              </span>
+                            </td>
+                            <td className="py-3.5 max-w-xs">
+                              <div className="flex flex-col gap-0.5">
+                                <span className="font-semibold text-white line-clamp-1">{log.description}</span>
+                                <span className="text-[10px] text-gray-400">{log.shopName || 'Oficina não especificada'}</span>
+                                <div className="flex flex-wrap gap-1 mt-0.5">
+                                  {log.category && (
+                                    <span className="px-1.5 py-0.5 bg-blue-500/10 text-blue-300 border border-blue-500/20 text-[9px] font-semibold rounded">
+                                      {log.category}
+                                    </span>
+                                  )}
+                                  {log.scope && (
+                                    <span className="px-1.5 py-0.5 bg-purple-500/10 text-purple-300 border border-purple-500/20 text-[9px] font-semibold rounded">
+                                      {log.scope}
+                                    </span>
+                                  )}
+                                  {log.currentKm && (
+                                    <span className="px-1.5 py-0.5 bg-cyan-500/10 text-cyan-300 border border-cyan-500/20 text-[9px] font-mono font-bold rounded flex items-center gap-1">
+                                      <Gauge className="w-2.5 h-2.5 text-cyan-400" />
+                                      {log.currentKm.toLocaleString('pt-BR')} km
+                                    </span>
+                                  )}
+                                  {log.boNumber && (
+                                    <span className="px-1.5 py-0.5 bg-rose-500/10 text-rose-400 border border-rose-500/20 text-[9px] font-mono rounded">
+                                      B.O.: {log.boNumber}
+                                    </span>
+                                  )}
+                                  {log.partsReplaced && (
+                                    <span className="px-1.5 py-0.5 bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 text-[9px] rounded">
+                                      Peças: {log.partsReplaced}
+                                    </span>
+                                  )}
+                                  {log.parcelasTotais && log.parcelasTotais > 1 && (
+                                    <span className="px-1.5 py-0.5 bg-amber-500/10 text-amber-400 border border-amber-500/20 text-[9px] font-bold rounded">
+                                      Parc: {log.parcelasPagas || 1}/{log.parcelasTotais}
+                                    </span>
+                                  )}
+                                </div>
                               </div>
-                            )}
-                          </div>
-                        )}
-                      </td>
-                      <td className="py-3.5">
-                        {isEditing ? (
-                          <div className="flex items-center gap-1">
-                            <input
-                              type="number"
-                              value={editMaintNextKm || ''}
-                              onChange={(e) => setEditMaintNextKm(Number(e.target.value))}
-                              placeholder="Km"
-                              className="bg-neutral-900 border border-white/10 text-white rounded px-2 py-1 text-xs focus:outline-hidden w-20 text-right font-mono"
-                            />
-                            <span className="text-gray-500 text-[10px]">km</span>
-                          </div>
-                        ) : log.nextKm ? (
-                          <span className="font-mono font-medium text-blue-400 flex items-center gap-1">
-                            <Gauge className="w-3.5 h-3.5" />
-                            {log.nextKm.toLocaleString('pt-BR')} km
-                          </span>
-                        ) : (
-                          <span className="text-gray-500">---</span>
-                        )}
-                      </td>
-                      <td className="py-3.5 text-right font-bold font-mono text-white">
-                        {isEditing ? (
-                          <div className="flex items-center justify-end gap-1">
-                            <span className="text-gray-500 text-[10px]">R$</span>
-                            <CurrencyInput
-                              value={editMaintCost}
-                              onChange={setEditMaintCost}
-                              placeholder="0,00"
-                              className="bg-neutral-900 border border-white/10 text-white rounded px-1.5 py-1 text-xs focus:outline-hidden w-20 text-right font-mono"
-                            />
-                          </div>
-                        ) : (
-                          formatBRL(log.cost)
-                        )}
-                      </td>
-                      <td className="py-3.5 text-center">
-                        {isEditing ? (
-                          <div className="flex items-center justify-center gap-1">
-                            <button
-                              onClick={() => handleSaveMaintEdit(log)}
-                              className="p-1 text-emerald-400 hover:text-emerald-300 hover:bg-emerald-500/10 rounded-lg transition-colors"
-                              title="Salvar manutenção"
-                            >
-                              <Check className="w-3.5 h-3.5" />
-                            </button>
-                            <button
-                              onClick={() => setEditingMaintId(null)}
-                              className="p-1 text-gray-400 hover:text-white hover:bg-white/5 rounded-lg transition-colors"
-                              title="Cancelar edição"
-                            >
-                              <X className="w-3.5 h-3.5" />
-                            </button>
-                          </div>
-                        ) : (
-                          <div className="flex items-center justify-center gap-1">
-                            <button
-                              onClick={() => handleStartEditMaint(log)}
-                              className="p-1 text-gray-500 hover:text-blue-400 hover:bg-blue-500/10 rounded-lg transition-colors"
-                              title="Editar manutenção"
-                            >
-                              <Edit2 className="w-3.5 h-3.5" />
-                            </button>
-                            <button
-                              onClick={() => onDeleteMaintenance(log.id)}
-                              className="p-1 text-gray-500 hover:text-rose-400 hover:bg-rose-500/10 rounded-lg transition-colors"
-                              title="Excluir manutenção"
-                            >
-                              <Trash2 className="w-3.5 h-3.5" />
-                            </button>
-                          </div>
-                        )}
-                      </td>
-                    </tr>
-                  )})}
-                </tbody>
-              </table>
+                            </td>
+                            <td className="py-3.5">
+                              {log.nextKm ? (
+                                <span className="font-mono font-medium text-blue-400 flex items-center gap-1">
+                                  <Gauge className="w-3.5 h-3.5" />
+                                  {log.nextKm.toLocaleString('pt-BR')} km
+                                </span>
+                              ) : (
+                                <span className="text-gray-500">---</span>
+                              )}
+                            </td>
+                            <td className="py-3.5 text-right font-bold font-mono text-white">
+                              {formatBRL(log.cost)}
+                            </td>
+                            <td className="py-3.5 text-center">
+                              <div className="flex items-center justify-center gap-1">
+                                <button
+                                  onClick={() => handleStartEditMaint(log)}
+                                  className="p-1 text-gray-500 hover:text-blue-400 hover:bg-blue-500/10 rounded-lg transition-colors cursor-pointer"
+                                  title="Editar manutenção"
+                                >
+                                  <Edit2 className="w-3.5 h-3.5" />
+                                </button>
+                                <button
+                                  onClick={() => onDeleteMaintenance(log.id)}
+                                  className="p-1 text-gray-500 hover:text-rose-400 hover:bg-rose-500/10 rounded-lg transition-colors cursor-pointer"
+                                  title="Excluir manutenção"
+                                >
+                                  <Trash2 className="w-3.5 h-3.5" />
+                                </button>
+                              </div>
+                            </td>
+                          </tr>
+                        );
+                            })}
+                          </React.Fragment>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              </>
             )}
           </div>
         )}
@@ -777,11 +1206,181 @@ export function HistoryLogs({
 
         {/* Tab: Other Expenses */}
         {activeCategory === 'expense' && (
-          <div className="min-w-[600px] text-gray-300">
+          <div>
             {filteredExpenses.length === 0 ? (
               <p className="text-center text-gray-500 text-xs py-8">Nenhuma outra despesa registrada.</p>
             ) : (
-              <table className="w-full text-left text-xs border-collapse">
+              <>
+                {/* Mobile View: Cards */}
+                <div className="md:hidden space-y-4">
+                  {groupedExpenses.map(([monthKey, monthItems]) => {
+                    const monthTotal = monthItems.reduce((acc, it) => acc + (it.cost || 0), 0);
+                    return (
+                      <div key={monthKey} className="space-y-2.5">
+                        {/* Month Header Banner */}
+                        <div className="flex items-center justify-between bg-purple-500/10 border border-purple-500/25 rounded-xl px-3.5 py-2">
+                          <div className="flex items-center gap-2 min-w-0">
+                            <Calendar className="w-3.5 h-3.5 text-purple-400 shrink-0" />
+                            <span className="text-xs font-bold text-white uppercase tracking-wider truncate">
+                              {formatMonthYear(monthKey)}
+                            </span>
+                            <span className="text-[10px] font-semibold text-purple-300 bg-purple-500/20 px-1.5 py-0.5 rounded shrink-0">
+                              {monthItems.length} {monthItems.length === 1 ? 'item' : 'itens'}
+                            </span>
+                          </div>
+                          <span className="text-xs font-bold font-mono text-emerald-400 shrink-0 ml-2">
+                            {formatBRL(monthTotal)}
+                          </span>
+                        </div>
+
+                        {/* Cards for this month */}
+                        <div className="space-y-2.5">
+                          {monthItems.map((log) => {
+                    const isEditing = editingExpenseId === log.id;
+                    if (isEditing) {
+                      return (
+                        <div key={log.id} className="p-4 bg-[#121620] border-2 border-purple-500/50 rounded-2xl shadow-xl space-y-3">
+                          <div className="flex items-center justify-between border-b border-white/10 pb-2">
+                            <span className="text-xs font-bold text-white">Editar Despesa ({getVehiclePlate(editExpenseVehicleId || log.vehicleId)})</span>
+                            <div className="flex items-center gap-1.5">
+                              <button
+                                type="button"
+                                onClick={() => setEditingExpenseId(null)}
+                                className="px-2.5 py-1 text-xs text-gray-300 hover:text-white bg-white/5 rounded-lg border border-white/10"
+                              >
+                                Cancelar
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => handleSaveExpenseEdit(log)}
+                                className="px-3 py-1 text-xs font-bold text-white bg-purple-600 hover:bg-purple-500 rounded-lg shadow-md shadow-purple-500/20"
+                              >
+                                Salvar
+                              </button>
+                            </div>
+                          </div>
+                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 text-xs">
+                            <div className="space-y-1 sm:col-span-2">
+                              <label className="text-[11px] font-semibold text-gray-400 flex items-center justify-between">
+                                <span>Veículo / Carro</span>
+                                <span className="text-[10px] text-purple-400 font-medium">Trocar carro</span>
+                              </label>
+                              <select
+                                value={editExpenseVehicleId}
+                                onChange={(e) => setEditExpenseVehicleId(e.target.value)}
+                                className="w-full h-9 bg-black/60 border border-purple-500/40 text-purple-200 font-medium rounded-lg px-2.5 py-1.5 text-xs focus:outline-hidden focus:border-purple-400"
+                              >
+                                {vehicles.map((v) => (
+                                  <option key={v.id} value={v.id} className="bg-[#111111] text-white">
+                                    {v.brand} {v.model} ({v.plate})
+                                  </option>
+                                ))}
+                              </select>
+                            </div>
+                            <div className="space-y-1">
+                              <label className="text-[11px] font-semibold text-gray-400">Data</label>
+                              <input
+                                type="date"
+                                value={editDate}
+                                onChange={(e) => setEditDate(e.target.value)}
+                                className="w-full h-9 bg-black/60 border border-white/15 text-white rounded-lg px-2.5 py-1.5 text-xs focus:outline-hidden focus:border-purple-500 scheme-dark font-mono"
+                              />
+                            </div>
+                            <div className="space-y-1">
+                              <label className="text-[11px] font-semibold text-gray-400">Categoria</label>
+                              <select
+                                value={editCategory}
+                                onChange={(e) => setEditCategory(e.target.value as any)}
+                                className="w-full h-9 bg-black/60 border border-white/15 text-white rounded-lg px-2.5 py-1.5 text-xs focus:outline-hidden focus:border-purple-500"
+                              >
+                                <option value="IPVA">IPVA</option>
+                                <option value="Seguro">Seguro</option>
+                                <option value="Licenciamento">Licenciamento</option>
+                                <option value="Multa">Multa</option>
+                                <option value="Lavagem">Lavagem</option>
+                                <option value="Estacionamento">Estacionamento</option>
+                                <option value="Financiamento">Financiamento</option>
+                                <option value="Rastreador">Rastreador</option>
+                                <option value="Outros">Outros</option>
+                              </select>
+                            </div>
+                            <div className="space-y-1 sm:col-span-2">
+                              <label className="text-[11px] font-semibold text-gray-400">Descrição</label>
+                              <input
+                                type="text"
+                                value={editDesc}
+                                onChange={(e) => setEditDesc(e.target.value)}
+                                className="w-full h-9 bg-black/60 border border-white/15 text-white rounded-lg px-2.5 py-1.5 text-xs focus:outline-hidden focus:border-purple-500"
+                              />
+                            </div>
+                            <div className="space-y-1 sm:col-span-2">
+                              <label className="text-[11px] font-semibold text-gray-400">Valor Total (R$)</label>
+                              <CurrencyInput
+                                value={editCost}
+                                onChange={setEditCost}
+                                className="w-full h-9 bg-black/60 border border-white/15 text-emerald-400 font-mono font-bold rounded-lg px-2.5 py-1.5 text-xs focus:outline-hidden focus:border-emerald-500"
+                              />
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    }
+
+                    return (
+                      <div key={log.id} className="p-3.5 bg-white/[0.02] hover:bg-white/[0.04] border border-white/10 rounded-2xl space-y-2.5 transition-all">
+                        <div className="flex items-center justify-between gap-2">
+                          <div className="flex items-center gap-2">
+                            <button
+                              onClick={() => {
+                                window.dispatchEvent(new CustomEvent('focus-vehicle', { detail: { vehicleId: log.vehicleId } }));
+                              }}
+                              className="font-bold text-xs font-mono text-purple-400 bg-purple-500/10 px-2 py-0.5 rounded-md border border-purple-500/20 hover:text-purple-300 cursor-pointer"
+                            >
+                              {getVehiclePlate(log.vehicleId)}
+                            </button>
+                            <span className="flex items-center gap-1 text-[11px] text-gray-400 font-mono">
+                              <Calendar className="w-3 h-3 text-gray-500" />
+                              {formatDate(log.date)}
+                            </span>
+                          </div>
+                          <span className="font-bold font-mono text-sm text-emerald-400">
+                            {formatBRL(log.cost)}
+                          </span>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <span className="px-2 py-0.5 bg-purple-500/10 text-purple-300 border border-purple-500/20 text-[10px] font-semibold rounded-md">
+                            {log.category}
+                          </span>
+                          <span className="text-xs text-white line-clamp-1">{log.description}</span>
+                        </div>
+                        <div className="flex items-center justify-end gap-2 pt-2 border-t border-white/5">
+                          <button
+                            onClick={() => handleStartEditExpense(log)}
+                            className="flex items-center gap-1 px-2.5 py-1 text-xs text-blue-400 bg-blue-500/10 hover:bg-blue-500/20 border border-blue-500/20 rounded-lg transition-colors cursor-pointer"
+                          >
+                            <Edit2 className="w-3 h-3" />
+                            <span>Editar</span>
+                          </button>
+                          <button
+                            onClick={() => onDeleteExpense(log.id)}
+                            className="flex items-center gap-1 px-2.5 py-1 text-xs text-rose-400 bg-rose-500/10 hover:bg-rose-500/20 border border-rose-500/20 rounded-lg transition-colors cursor-pointer"
+                          >
+                            <Trash2 className="w-3 h-3" />
+                            <span>Excluir</span>
+                          </button>
+                        </div>
+                      </div>
+                    );
+                          })}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+
+                {/* Desktop View: Table */}
+                <div className="hidden md:block overflow-x-auto text-gray-300">
+                  <table className="w-full text-left text-xs border-collapse">
                 <thead>
                   <tr className="border-b border-white/5 text-gray-500 font-semibold uppercase tracking-wider text-[10px]">
                     <th className="py-3">Data</th>
@@ -793,8 +1392,33 @@ export function HistoryLogs({
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-white/[0.03]">
-                  {filteredExpenses.map((log) => {
-                    const isEditing = editingExpenseId === log.id;
+                  {groupedExpenses.map(([monthKey, monthItems]) => {
+                    const monthTotal = monthItems.reduce((acc, it) => acc + (it.cost || 0), 0);
+                    return (
+                      <React.Fragment key={monthKey}>
+                        <tr className="bg-purple-950/30 border-y border-purple-500/25">
+                          <td colSpan={6} className="py-2.5 px-3">
+                            <div className="flex items-center justify-between">
+                              <div className="flex items-center gap-2">
+                                <Calendar className="w-3.5 h-3.5 text-purple-400" />
+                                <span className="font-bold text-xs text-white uppercase tracking-wider">
+                                  {formatMonthYear(monthKey)}
+                                </span>
+                                <span className="text-[10px] font-semibold text-purple-300 bg-purple-500/20 px-2 py-0.5 rounded-full">
+                                  {monthItems.length} {monthItems.length === 1 ? 'lançamento' : 'lançamentos'}
+                                </span>
+                              </div>
+                              <div className="flex items-center gap-1.5 text-right">
+                                <span className="text-[11px] text-gray-400">Total no mês:</span>
+                                <span className="font-bold font-mono text-xs text-emerald-400">
+                                  {formatBRL(monthTotal)}
+                                </span>
+                              </div>
+                            </div>
+                          </td>
+                        </tr>
+                        {monthItems.map((log) => {
+                          const isEditing = editingExpenseId === log.id;
                     return (
                       <tr key={log.id} className={`transition-colors ${isEditing ? 'bg-blue-500/5' : 'hover:bg-white/[0.01]'}`}>
                         {/* Date field */}
@@ -816,15 +1440,29 @@ export function HistoryLogs({
 
                         {/* Vehicle Plate */}
                         <td className="py-2.5">
-                          <button
-                            onClick={() => {
-                              window.dispatchEvent(new CustomEvent('focus-vehicle', { detail: { vehicleId: log.vehicleId } }));
-                            }}
-                            className="font-bold text-blue-400 hover:text-blue-300 hover:underline cursor-pointer text-left focus:outline-hidden"
-                            title="Clique para ir direto para este carro"
-                          >
-                            {getVehiclePlate(log.vehicleId)}
-                          </button>
+                          {isEditing ? (
+                            <select
+                              value={editExpenseVehicleId}
+                              onChange={(e) => setEditExpenseVehicleId(e.target.value)}
+                              className="bg-neutral-900 border border-purple-500/30 text-purple-200 rounded px-2 py-1 text-xs focus:outline-hidden font-medium max-w-[130px]"
+                            >
+                              {vehicles.map((v) => (
+                                <option key={v.id} value={v.id} className="bg-[#111111] text-white">
+                                  {v.plate}
+                                </option>
+                              ))}
+                            </select>
+                          ) : (
+                            <button
+                              onClick={() => {
+                                window.dispatchEvent(new CustomEvent('focus-vehicle', { detail: { vehicleId: log.vehicleId } }));
+                              }}
+                              className="font-bold text-blue-400 hover:text-blue-300 hover:underline cursor-pointer text-left focus:outline-hidden"
+                              title="Clique para ir direto para este carro"
+                            >
+                              {getVehiclePlate(log.vehicleId)}
+                            </button>
+                          )}
                         </td>
 
                         {/* Category */}
@@ -932,20 +1570,25 @@ export function HistoryLogs({
                         </td>
                       </tr>
                     );
+                        })}
+                      </React.Fragment>
+                    );
                   })}
                 </tbody>
               </table>
-            )}
-          </div>
+            </div>
+          </>
         )}
+      </div>
+    )}
 
         {/* Tab: Vistorias */}
         {activeCategory === 'vistoria' && (
-          <div className="min-w-[600px] text-gray-300 space-y-3">
+          <div className="space-y-3">
             {onClearAllVistorias && filteredVistorias.length > 0 && (
-              <div className="flex justify-between items-center bg-purple-950/20 border border-purple-500/20 p-2.5 rounded-xl">
+              <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2 bg-purple-950/20 border border-purple-500/20 p-2.5 rounded-xl">
                 <span className="text-xs font-semibold text-purple-200 flex items-center gap-2">
-                  <ClipboardCheck className="w-4 h-4 text-purple-400" />
+                  <ClipboardCheck className="w-4 h-4 text-purple-400 shrink-0" />
                   Total de vistorias registradas: <strong>{filteredVistorias.length}</strong>
                 </span>
                 <button
@@ -955,7 +1598,7 @@ export function HistoryLogs({
                       onClearAllVistorias();
                     }
                   }}
-                  className="px-3 py-1.5 bg-rose-600 hover:bg-rose-500 text-white rounded-xl text-xs font-bold transition-all shadow-md flex items-center gap-1.5 cursor-pointer"
+                  className="w-full sm:w-auto justify-center px-3 py-1.5 bg-rose-600 hover:bg-rose-500 text-white rounded-xl text-xs font-bold transition-all shadow-md flex items-center gap-1.5 cursor-pointer"
                   title="Excluir todas as vistorias registradas"
                 >
                   <Trash2 className="w-3.5 h-3.5" />
@@ -967,7 +1610,84 @@ export function HistoryLogs({
             {filteredVistorias.length === 0 ? (
               <p className="text-center text-gray-500 text-xs py-8">Nenhuma vistoria encontrada.</p>
             ) : (
-              <table className="w-full text-left text-xs border-collapse">
+              <>
+                {/* Mobile View: Cards */}
+                <div className="md:hidden space-y-4">
+                  {groupedVistorias.map(([monthKey, monthItems]) => (
+                    <div key={monthKey} className="space-y-2.5">
+                      <div className="flex items-center justify-between bg-indigo-500/10 border border-indigo-500/25 rounded-xl px-3.5 py-2">
+                        <div className="flex items-center gap-2 min-w-0">
+                          <Calendar className="w-3.5 h-3.5 text-indigo-400 shrink-0" />
+                          <span className="text-xs font-bold text-white uppercase tracking-wider truncate">
+                            {formatMonthYear(monthKey)}
+                          </span>
+                        </div>
+                        <span className="text-[10px] font-semibold text-indigo-300 bg-indigo-500/20 px-1.5 py-0.5 rounded">
+                          {monthItems.length} {monthItems.length === 1 ? 'vistoria' : 'vistorias'}
+                        </span>
+                      </div>
+                      <div className="space-y-2.5">
+                        {monthItems.map((log) => {
+                    const totalItems = Object.keys(log.checklist || {}).length;
+                    const approvedCount = Object.values(log.checklist || {}).filter(Boolean).length;
+                    const isFullApproved = totalItems > 0 && approvedCount === totalItems;
+
+                    return (
+                      <div key={log.id} className="p-3.5 bg-white/[0.02] hover:bg-white/[0.04] border border-white/10 rounded-2xl space-y-2.5 transition-all">
+                        <div className="flex items-center justify-between gap-2">
+                          <button
+                            onClick={() => {
+                              window.dispatchEvent(new CustomEvent('focus-vehicle', { detail: { vehicleId: log.vehicleId } }));
+                            }}
+                            className="font-bold text-xs font-mono text-indigo-400 bg-indigo-500/10 px-2 py-0.5 rounded-md border border-indigo-500/20 hover:text-indigo-300 cursor-pointer"
+                          >
+                            {getVehiclePlate(log.vehicleId)}
+                          </button>
+                          <span className="flex items-center gap-1 text-[11px] text-gray-400 font-mono">
+                            <Calendar className="w-3 h-3 text-purple-400" />
+                            {formatDate(log.date)}
+                          </span>
+                        </div>
+                        <div className="flex flex-wrap items-center gap-2">
+                          <span className="px-2 py-0.5 bg-purple-500/10 text-purple-300 border border-purple-500/20 text-[10px] font-semibold rounded-md">
+                            {log.type || 'Semanal'}
+                          </span>
+                          <span className={`px-2 py-0.5 rounded font-bold text-[10px] ${
+                            log.status === 'approved'
+                              ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40'
+                              : isFullApproved
+                              ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20'
+                              : 'bg-amber-500/10 text-amber-400 border border-amber-500/20'
+                          }`}>
+                            {log.status === 'approved' ? '✅ Aprovada' : isFullApproved ? 'Aprovado (100%)' : `${approvedCount}/${totalItems} itens`}
+                          </span>
+                        </div>
+                        {log.notes && (
+                          <p className="text-xs text-gray-300 line-clamp-2">{log.notes}</p>
+                        )}
+                        <div className="flex items-center justify-end gap-2 pt-2 border-t border-white/5">
+                          {onDeleteVistoria && (
+                            <button
+                              type="button"
+                              onClick={() => onDeleteVistoria(log.id)}
+                              className="flex items-center gap-1 px-2.5 py-1 text-xs text-rose-400 bg-rose-500/10 hover:bg-rose-500/20 border border-rose-500/20 rounded-lg transition-colors cursor-pointer"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                              <span>Excluir</span>
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                    );
+                        })}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+
+                {/* Desktop View: Table */}
+                <div className="hidden md:block overflow-x-auto text-gray-300">
+                  <table className="w-full text-left text-xs border-collapse">
                 <thead>
                   <tr className="border-b border-white/5 text-gray-500 font-semibold uppercase tracking-wider text-[10px]">
                     <th className="py-3">Data</th>
@@ -979,8 +1699,25 @@ export function HistoryLogs({
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-white/[0.03]">
-                  {filteredVistorias.map((log) => {
-                    const isEditing = editingVistoriaId === log.id;
+                  {groupedVistorias.map(([monthKey, monthItems]) => (
+                    <React.Fragment key={monthKey}>
+                      <tr className="bg-indigo-950/30 border-y border-indigo-500/25">
+                        <td colSpan={6} className="py-2.5 px-3">
+                          <div className="flex items-center justify-between">
+                            <div className="flex items-center gap-2">
+                              <Calendar className="w-3.5 h-3.5 text-indigo-400" />
+                              <span className="font-bold text-xs text-white uppercase tracking-wider">
+                                {formatMonthYear(monthKey)}
+                              </span>
+                            </div>
+                            <span className="text-[10px] font-semibold text-indigo-300 bg-indigo-500/20 px-2 py-0.5 rounded-full">
+                              {monthItems.length} {monthItems.length === 1 ? 'vistoria' : 'vistorias'}
+                            </span>
+                          </div>
+                        </td>
+                      </tr>
+                      {monthItems.map((log) => {
+                        const isEditing = editingVistoriaId === log.id;
                     const totalItems = Object.keys(log.checklist || {}).length;
                     const approvedCount = Object.values(log.checklist || {}).filter(Boolean).length;
                     const isFullApproved = totalItems > 0 && approvedCount === totalItems;
@@ -1094,12 +1831,16 @@ export function HistoryLogs({
                         </td>
                       </tr>
                     );
-                  })}
+                      })}
+                    </React.Fragment>
+                  ))}
                 </tbody>
               </table>
-            )}
-          </div>
+            </div>
+          </>
         )}
+      </div>
+    )}
       </div>
       </div>
       )}

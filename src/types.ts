@@ -51,6 +51,7 @@ export interface Vehicle {
   }[];
   preventiveMaintCurrentKm?: number;
   preventiveMaintNextKm?: number;
+  preventiveMaintIntervalKm?: number;
   preventiveMaintDate?: string;
   documents?: VehicleDocument[];
   caucaoValor?: number;
@@ -160,13 +161,48 @@ export interface FuelLog {
   station?: string;
 }
 
+export const MAINTENANCE_CATEGORIES = [
+  'Revisão Periódica / Concessionária',
+  'Manutenção Preventiva',
+  'Manutenção Corretiva (Defeito)',
+  'Motor & Injeção Eletrônica',
+  'Freios, Suspensão & Direção',
+  'Transmissão, Embreagem & Câmbio',
+  'Pneus, Rodas & Geometria',
+  'Elétrica, Bateria & Iluminação',
+  'Ar Condicionado & Arrefecimento',
+  'Funilaria, Pintura & Estética',
+  'Vidros, Palhetas & Acessórios',
+  'Batida, Acidente & B.O.'
+] as const;
+
+export const MAINTENANCE_SCOPES = [
+  'Troca de Óleo, Filtros e Lubrificantes',
+  'Sistema de Freios (Pastilhas, Discos e Fluido)',
+  'Suspensão e Direção (Amortecedores, Buchas e Pivôs)',
+  'Pneus (Troca, Rodízio, Alinhamento e Balanceamento)',
+  'Sistema Elétrico (Bateria, Alternador e Iluminação)',
+  'Injeção Eletrônica, Velas, Cabos e Bobinas',
+  'Correia Dentada, Tensores e Correias Auxiliares',
+  'Embreagem, Câmbio e Troca de Fluido da Transmissão',
+  'Sistema de Arrefecimento (Radiador, Aditivo e Bomba d\'Água)',
+  'Ar Condicionado (Higienização, Filtro de Cabine e Gás)',
+  'Funilaria, Martelinho de Ouro e Pintura',
+  'Troca de Palhetas, Vidros e Retrovisores',
+  'Escapamento, Catalisador e Sensores',
+  'Higienização Interna, Polimento e Detalhamento'
+] as const;
+
 export interface MaintenanceLog {
   id: string;
   vehicleId: string;
   date: string;
   type: 'Preventiva' | 'Corretiva' | 'Revisão' | 'Pneus' | 'Batida/Acidente' | 'Palhetas' | 'Pastilhas' | 'Outro';
+  category?: string;
+  scope?: string;
   description: string;
   cost: number;
+  currentKm?: number;
   shopName?: string;
   shopPhone?: string;
   nextKm?: number;

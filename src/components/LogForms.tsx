@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Vehicle, VehicleDocument, FuelLog, MaintenanceLog, ExpenseLog, AgendaContact, SinistroLog, TireState } from '../types';
+import { Vehicle, VehicleDocument, FuelLog, MaintenanceLog, ExpenseLog, AgendaContact, SinistroLog, TireState, MAINTENANCE_CATEGORIES, MAINTENANCE_SCOPES } from '../types';
 import { X, Save, AlertCircle, Users, BookOpen, Sparkles, Mic, MicOff, Calculator, Plus, Trash2, User, Phone, Search, Smartphone, Check, Upload, ExternalLink, AlertTriangle, Car, Calendar, Camera, Shield, Bell, Paperclip, Eye, FileText, Building2, FilePlus, Layers, FileCheck, Loader2 } from 'lucide-react';
 import { Contacts } from '@capacitor-community/contacts';
 import { Capacitor } from '@capacitor/core';
@@ -196,6 +196,7 @@ export function LogForms({
   const [manutencaoPreventiva, setManutencaoPreventiva] = useState(0);
   const [currentKm, setCurrentKm] = useState(0);
   const [preventiveMaintNextKm, setPreventiveMaintNextKm] = useState<number | undefined>(undefined);
+  const [preventiveMaintIntervalKm, setPreventiveMaintIntervalKm] = useState<number>(10000);
   const [fuelLevel, setFuelLevel] = useState(8);
   const [driver, setDriver] = useState('');
   const [driverPhone, setDriverPhone] = useState('');
@@ -252,8 +253,11 @@ export function LogForms({
   // 3. Maintenance Form State
   const [maintDate, setMaintDate] = useState(getTodayStr);
   const [maintType, setMaintType] = useState<MaintenanceLog['type']>('Revisão');
+  const [maintCategory, setMaintCategory] = useState<string>('Revisão Periódica / Concessionária');
+  const [maintScope, setMaintScope] = useState<string>('Troca de Óleo, Filtros e Lubrificantes');
   const [maintDescription, setMaintDescription] = useState('');
   const [maintCost, setMaintCost] = useState(0);
+  const [maintCurrentKm, setMaintCurrentKm] = useState<number | undefined>(undefined);
   const [maintShop, setMaintShop] = useState('');
   const [maintShopPhone, setMaintShopPhone] = useState('');
   const [maintNextKm, setMaintNextKm] = useState<number | undefined>(undefined);
@@ -589,8 +593,11 @@ export function LogForms({
       } else if (formType === 'maintenance') {
         if (extracted.maintDate) setMaintDate(extracted.maintDate);
         if (extracted.maintType) setMaintType(extracted.maintType.charAt(0).toUpperCase() + extracted.maintType.slice(1).toLowerCase());
+        if (extracted.maintCategory) setMaintCategory(extracted.maintCategory);
+        if (extracted.maintScope) setMaintScope(extracted.maintScope);
         if (extracted.maintDescription) setMaintDescription(extracted.maintDescription);
         if (extracted.maintCost !== undefined) setMaintCost(extracted.maintCost);
+        if (extracted.maintCurrentKm !== undefined) setMaintCurrentKm(extracted.maintCurrentKm);
         if (extracted.maintShop) setMaintShop(extracted.maintShop);
         if (extracted.maintNextKm !== undefined) setMaintNextKm(extracted.maintNextKm);
       } else if (formType === 'expense') {
@@ -696,6 +703,7 @@ export function LogForms({
         setManutencaoPreventiva(vehicleToEdit.manutencaoPreventiva || 0);
         setCurrentKm(vehicleToEdit.currentKm);
         setPreventiveMaintNextKm(vehicleToEdit.preventiveMaintNextKm);
+        setPreventiveMaintIntervalKm(vehicleToEdit.preventiveMaintIntervalKm || 10000);
         setFuelLevel(vehicleToEdit.fuelLevel);
         setDriver(vehicleToEdit.driver);
         setDriverPhone(vehicleToEdit.driverPhone || '');
@@ -814,11 +822,14 @@ export function LogForms({
       if (!prefilledData) {
         setMaintDate(getTodayStr());
         setMaintType('Revisão');
+        setMaintCategory('Revisão Periódica / Concessionária');
+        setMaintScope('Troca de Óleo, Filtros e Lubrificantes');
         setMaintDescription('');
         setMaintCost(0);
+        setMaintCurrentKm(currentSelectedCar ? (currentSelectedCar.currentKm || currentSelectedCar.preventiveMaintCurrentKm || 0) : undefined);
         setMaintShop('');
         setMaintShopPhone('');
-        setMaintNextKm(currentSelectedCar ? currentSelectedCar.currentKm + 10000 : undefined);
+        setMaintNextKm(currentSelectedCar ? ((currentSelectedCar.currentKm || currentSelectedCar.preventiveMaintCurrentKm || 0) + 10000) : undefined);
         setMaintBoNumber('');
         setMaintPartsReplaced('');
         setMaintParcelasPagas(undefined);
@@ -1122,7 +1133,8 @@ export function LogForms({
         custoExtra: extraExpenses.reduce((sum, exp) => sum + (exp.value || 0), 0),
         custoExtraLabel: extraExpenses.length > 0 ? extraExpenses[0].label : 'Outras Despesas',
         preventiveMaintCurrentKm: vehicleToEdit ? (vehicleToEdit.preventiveMaintCurrentKm ?? (Number(currentKm) || 0)) : (Number(currentKm) || 0),
-        preventiveMaintNextKm: preventiveMaintNextKm !== undefined ? Number(preventiveMaintNextKm) : (vehicleToEdit ? (vehicleToEdit.preventiveMaintNextKm ?? ((Number(currentKm) || 0) + 10000)) : ((Number(currentKm) || 0) + 10000)),
+        preventiveMaintIntervalKm: Number(preventiveMaintIntervalKm) || 10000,
+        preventiveMaintNextKm: preventiveMaintNextKm !== undefined ? Number(preventiveMaintNextKm) : (vehicleToEdit ? (vehicleToEdit.preventiveMaintNextKm ?? ((Number(currentKm) || 0) + (Number(preventiveMaintIntervalKm) || 10000))) : ((Number(currentKm) || 0) + (Number(preventiveMaintIntervalKm) || 10000))),
         preventiveMaintDate: vehicleToEdit ? (vehicleToEdit.preventiveMaintDate || getTodayStr()) : getTodayStr(),
         nextVistoriaDate: nextVistoriaDate || '',
         insuranceExpirationDate: insuranceExpirationDate || '',
@@ -1237,8 +1249,11 @@ export function LogForms({
         vehicleId,
         date: maintDate,
         type: maintType,
+        category: maintCategory,
+        scope: maintScope,
         description: maintDescription,
         cost: Number(maintCost),
+        currentKm: maintCurrentKm !== undefined ? Number(maintCurrentKm) : undefined,
         shopName: maintShop,
         shopPhone: maintShopPhone || undefined,
         nextKm: maintNextKm ? Number(maintNextKm) : undefined,
@@ -1409,7 +1424,7 @@ export function LogForms({
                 </div>
               )}
 
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div className="space-y-1">
                   <label className="font-semibold text-gray-400">Marca *</label>
                   <input 
@@ -1417,7 +1432,7 @@ export function LogForms({
                     value={brand} 
                     onChange={e => setBrand(e.target.value ? e.target.value.charAt(0).toUpperCase() + e.target.value.slice(1) : '')}
                     placeholder="Ex: Chevrolet"
-                    className="w-full text-xs bg-white/[0.03] border border-white/10 rounded-xl px-3 py-2 text-white placeholder-gray-500 focus:outline-hidden focus:border-blue-500/50 focus:bg-[#1a1a1a]"
+                    className="w-full h-10 text-xs bg-white/[0.03] border border-white/10 rounded-xl px-3 py-2 text-white placeholder-gray-500 focus:outline-hidden focus:border-blue-500/50 focus:bg-[#1a1a1a]"
                   />
                 </div>
                 <div className="space-y-1">
@@ -1427,7 +1442,7 @@ export function LogForms({
                     value={model} 
                     onChange={e => setModel(e.target.value ? e.target.value.charAt(0).toUpperCase() + e.target.value.slice(1) : '')}
                     placeholder="Ex: Onix Hatch LT"
-                    className="w-full text-xs bg-white/[0.03] border border-white/10 rounded-xl px-3 py-2 text-white placeholder-gray-500 focus:outline-hidden focus:border-blue-500/50 focus:bg-[#1a1a1a]"
+                    className="w-full h-10 text-xs bg-white/[0.03] border border-white/10 rounded-xl px-3 py-2 text-white placeholder-gray-500 focus:outline-hidden focus:border-blue-500/50 focus:bg-[#1a1a1a]"
                   />
                 </div>
               </div>
@@ -1440,7 +1455,7 @@ export function LogForms({
                     value={plate} 
                     onChange={e => setPlate(e.target.value)}
                     placeholder="BRA2E19"
-                    className="w-full text-xs bg-white/[0.03] border border-white/10 rounded-xl px-3 py-2 text-white uppercase placeholder-gray-500 focus:outline-hidden focus:border-blue-500/50 focus:bg-[#1a1a1a] font-mono"
+                    className="w-full h-10 text-xs bg-white/[0.03] border border-white/10 rounded-xl px-3 py-2 text-white uppercase placeholder-gray-500 focus:outline-hidden focus:border-blue-500/50 focus:bg-[#1a1a1a] font-mono"
                   />
                 </div>
                 <div className="space-y-1">
@@ -1451,7 +1466,7 @@ export function LogForms({
                     value={yearFab} 
                     onChange={e => setYearFab(e.target.value ? Number(e.target.value) : '')}
                     placeholder="Ex: 2023"
-                    className="w-full text-xs bg-white/[0.03] border border-white/10 rounded-xl px-3 py-2 text-white placeholder-gray-500 focus:outline-hidden focus:border-blue-500/50 focus:bg-[#1a1a1a] font-mono"
+                    className="w-full h-10 text-xs bg-white/[0.03] border border-white/10 rounded-xl px-3 py-2 text-white placeholder-gray-500 focus:outline-hidden focus:border-blue-500/50 focus:bg-[#1a1a1a] font-mono"
                   />
                 </div>
                 <div className="space-y-1">
@@ -1462,7 +1477,7 @@ export function LogForms({
                     value={yearModel} 
                     onChange={e => setYearModel(e.target.value ? Number(e.target.value) : '')}
                     placeholder="Ex: 2024"
-                    className="w-full text-xs bg-white/[0.03] border border-white/10 rounded-xl px-3 py-2 text-white placeholder-gray-500 focus:outline-hidden focus:border-blue-500/50 focus:bg-[#1a1a1a] font-mono"
+                    className="w-full h-10 text-xs bg-white/[0.03] border border-white/10 rounded-xl px-3 py-2 text-white placeholder-gray-500 focus:outline-hidden focus:border-blue-500/50 focus:bg-[#1a1a1a] font-mono"
                   />
                 </div>
                 <div className="space-y-1">
@@ -1472,7 +1487,7 @@ export function LogForms({
                     value={color} 
                     onChange={e => setColor(e.target.value ? e.target.value.charAt(0).toUpperCase() + e.target.value.slice(1) : '')}
                     placeholder="Ex: Prata Metálico"
-                    className="w-full text-xs bg-white/[0.03] border border-white/10 rounded-xl px-3 py-2 text-white placeholder-gray-500 focus:outline-hidden focus:border-blue-500/50 focus:bg-[#1a1a1a]"
+                    className="w-full h-10 text-xs bg-white/[0.03] border border-white/10 rounded-xl px-3 py-2 text-white placeholder-gray-500 focus:outline-hidden focus:border-blue-500/50 focus:bg-[#1a1a1a]"
                   />
                 </div>
               </div>
@@ -1737,7 +1752,7 @@ export function LogForms({
                 )}
               </div>
 
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div className="space-y-1">
                   <label className="font-semibold text-emerald-400">Odômetro Atual (KM)</label>
                   <input 
@@ -1746,7 +1761,7 @@ export function LogForms({
                     value={currentKm} 
                     onChange={e => setCurrentKm(Number(e.target.value))}
                     placeholder="Ex: 45000"
-                    className="w-full text-xs bg-emerald-500/5 border border-emerald-500/20 rounded-xl px-3 py-2 text-white placeholder-gray-500 focus:outline-hidden focus:border-emerald-500 font-mono"
+                    className="w-full h-10 text-xs bg-emerald-500/5 border border-emerald-500/20 rounded-xl px-3 py-2 text-white placeholder-gray-500 focus:outline-hidden focus:border-emerald-500 font-mono"
                   />
                   <span className="text-[9px] text-gray-500 block">Km atual marcado no painel.</span>
                 </div>
@@ -1758,7 +1773,7 @@ export function LogForms({
                     value={preventiveMaintNextKm !== undefined ? preventiveMaintNextKm : ''} 
                     onChange={e => setPreventiveMaintNextKm(e.target.value !== '' ? Number(e.target.value) : undefined)}
                     placeholder="Ex: 55000"
-                    className="w-full text-xs bg-amber-500/5 border border-amber-500/20 rounded-xl px-3 py-2 text-white placeholder-gray-500 focus:outline-hidden focus:border-amber-500 font-mono"
+                    className="w-full h-10 text-xs bg-amber-500/5 border border-amber-500/20 rounded-xl px-3 py-2 text-white placeholder-gray-500 focus:outline-hidden focus:border-amber-500 font-mono"
                   />
                   <span className="text-[9px] text-gray-500 block">KM alvo para o próximo alerta de revisão.</span>
                 </div>
@@ -1767,7 +1782,7 @@ export function LogForms({
               {/* Dados do Contrato */}
               <div className="bg-white/[0.02] border border-white/5 rounded-xl p-3 space-y-2">
                 <span className="text-[10px] font-bold text-blue-400 uppercase tracking-wider block">Dados do Contrato</span>
-                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                   <div className="space-y-1">
                     <label className="text-[11px] font-semibold text-gray-400">N° Contrato</label>
                     <input 
@@ -1775,7 +1790,7 @@ export function LogForms({
                       value={contractNumber} 
                       onChange={e => setContractNumber(e.target.value)}
                       placeholder="Ex: CT-GKD-ABC2323-08-2026-01"
-                      className="w-full text-xs bg-white/[0.03] border border-white/10 rounded-lg px-2.5 py-1.5 text-white placeholder-gray-500 focus:outline-hidden font-mono"
+                      className="w-full h-10 text-xs bg-white/[0.03] border border-white/10 rounded-lg px-2.5 py-1.5 text-white placeholder-gray-500 focus:outline-hidden font-mono"
                     />
                   </div>
                   <div className="space-y-1">
@@ -1788,7 +1803,7 @@ export function LogForms({
                       onFocus={e => e.target.select()}
                       onClick={e => (e.target as HTMLInputElement).select()}
                       placeholder="Ex: 12000"
-                      className="w-full text-xs bg-white/[0.03] border border-white/10 rounded-lg px-2.5 py-1.5 text-white placeholder-gray-500 focus:outline-hidden font-mono"
+                      className="w-full h-10 text-xs bg-white/[0.03] border border-white/10 rounded-lg px-2.5 py-1.5 text-white placeholder-gray-500 focus:outline-hidden font-mono"
                     />
                   </div>
                   <div className="space-y-1">
@@ -1797,7 +1812,7 @@ export function LogForms({
                       type="date" 
                       value={startDate} 
                       onChange={e => setStartDate(e.target.value)}
-                      className="w-full text-xs bg-white/[0.03] border border-white/10 rounded-lg px-2.5 py-1.5 text-white focus:outline-hidden font-mono scheme-dark"
+                      className="w-full h-10 text-xs bg-white/[0.03] border border-white/10 rounded-lg px-2.5 py-1.5 text-white focus:outline-hidden font-mono scheme-dark"
                     />
                     {startDate && (
                       <span className="text-[9px] text-emerald-400 font-mono block">
@@ -1808,7 +1823,7 @@ export function LogForms({
                 </div>
               </div>
 
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div className="space-y-1">
                   <label className="font-semibold text-emerald-400 flex items-center justify-between">
                     <span>Valor Semanal (R$)</span>
@@ -1817,7 +1832,7 @@ export function LogForms({
                     value={valorSemanal} 
                     onChange={setValorSemanal}
                     placeholder="0,00"
-                    className="w-full text-xs bg-emerald-500/5 border border-emerald-500/20 rounded-xl px-3 py-2 text-white focus:outline-hidden focus:border-emerald-500 focus:bg-[#1a1a1a] font-mono"
+                    className="w-full h-10 text-xs bg-emerald-500/5 border border-emerald-500/20 rounded-xl px-3 py-2 text-white focus:outline-hidden focus:border-emerald-500 focus:bg-[#1a1a1a] font-mono"
                   />
                   <span className="text-[9px] text-gray-500 block">Cobrança semanal (não conta na receita inicial de contrato).</span>
                 </div>
@@ -1827,7 +1842,7 @@ export function LogForms({
                     value={valorRecebido} 
                     onChange={setValorRecebido}
                     placeholder="0,00"
-                    className="w-full text-xs bg-white/[0.03] border border-white/10 rounded-xl px-3 py-2 text-white focus:outline-hidden focus:border-blue-500/50 focus:bg-[#1a1a1a] font-mono"
+                    className="w-full h-10 text-xs bg-white/[0.03] border border-white/10 rounded-xl px-3 py-2 text-white focus:outline-hidden focus:border-blue-500/50 focus:bg-[#1a1a1a] font-mono"
                   />
                   <span className="text-[9px] text-gray-500 block">No início de contrato inicia em R$ 0,00 até o lançamento de pagamentos.</span>
                 </div>
@@ -2054,46 +2069,48 @@ export function LogForms({
                   </div>
                 )}
 
-                <div className="space-y-1">
-                  <div className="flex items-center justify-between">
-                    <label className="font-semibold text-gray-400 text-xs">Nome do Locatário</label>
-                    <span className="text-[10px] text-gray-500">Editável</span>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div className="space-y-1">
+                    <div className="flex items-center justify-between min-h-[20px]">
+                      <label className="font-semibold text-gray-400 text-xs">Nome do Locatário</label>
+                      <span className="text-[10px] text-gray-500">Editável</span>
+                    </div>
+                    <input 
+                      type="text" 
+                      value={driver} 
+                      onChange={e => setDriver(toTitleCase(e.target.value))}
+                      placeholder="Ex: Carlos Souza"
+                      className="w-full h-10 text-xs bg-black/40 border border-white/10 rounded-xl px-3 py-2 text-white placeholder-gray-500 focus:outline-hidden focus:border-blue-500/50 focus:bg-[#1a1a1a]"
+                      id="input-driver-name"
+                    />
                   </div>
-                  <input 
-                    type="text" 
-                    value={driver} 
-                    onChange={e => setDriver(toTitleCase(e.target.value))}
-                    placeholder="Ex: Carlos Souza"
-                    className="w-full text-xs bg-black/40 border border-white/10 rounded-xl px-3 py-2 text-white placeholder-gray-500 focus:outline-hidden focus:border-blue-500/50 focus:bg-[#1a1a1a]"
-                    id="input-driver-name"
-                  />
-                </div>
 
-                <div className="space-y-1">
-                  <div className="flex items-center justify-between">
-                    <label className="font-semibold text-gray-400 text-xs">Telefone do Locatário (WhatsApp)</label>
-                    <span className="text-[10px] text-gray-500">Editável</span>
+                  <div className="space-y-1">
+                    <div className="flex items-center justify-between min-h-[20px]">
+                      <label className="font-semibold text-gray-400 text-xs">Telefone do Locatário (WhatsApp)</label>
+                      <span className="text-[10px] text-gray-500">Editável</span>
+                    </div>
+                    <input 
+                      type="text" 
+                      value={driverPhone} 
+                      onChange={e => setDriverPhone(e.target.value)}
+                      placeholder="Ex: 5511999991234"
+                      className="w-full h-10 text-xs bg-black/40 border border-white/10 rounded-xl px-3 py-2 text-white placeholder-gray-500 focus:outline-hidden focus:border-blue-500/50 focus:bg-[#1a1a1a] font-mono"
+                      id="input-driver-phone"
+                    />
                   </div>
-                  <input 
-                    type="text" 
-                    value={driverPhone} 
-                    onChange={e => setDriverPhone(e.target.value)}
-                    placeholder="Ex: 5511999991234"
-                    className="w-full text-xs bg-black/40 border border-white/10 rounded-xl px-3 py-2 text-white placeholder-gray-500 focus:outline-hidden focus:border-blue-500/50 focus:bg-[#1a1a1a] font-mono"
-                    id="input-driver-phone"
-                  />
                 </div>
 
                 <div className="space-y-3 pt-1">
                   <div className="space-y-1">
-                    <label className="font-semibold text-gray-400 text-xs flex items-center gap-1.5">
+                    <label className="font-semibold text-gray-400 text-xs flex items-center gap-1.5 min-h-[20px]">
                       <Calendar className="w-3.5 h-3.5 text-blue-400" /> Vencimento da CNH
                     </label>
                     <input 
                       type="date" 
                       value={driverCnhExpiration} 
                       onChange={e => setDriverCnhExpiration(e.target.value)}
-                      className="w-full text-xs bg-black/40 border border-white/10 rounded-xl px-3 py-2 text-white focus:outline-hidden focus:border-blue-500/50 focus:bg-[#1a1a1a] scheme-dark"
+                      className="w-full h-10 text-xs bg-black/40 border border-white/10 rounded-xl px-3 py-2 text-white focus:outline-hidden focus:border-blue-500/50 focus:bg-[#1a1a1a] scheme-dark"
                     />
                   </div>
 
@@ -2428,26 +2445,28 @@ export function LogForms({
               {/* Caução fields */}
               <div className="bg-emerald-950/10 border border-emerald-500/10 p-3 rounded-xl space-y-3">
                 <h4 className="text-[10px] uppercase font-bold tracking-wider text-emerald-400">Caução de Garantia</h4>
-                <div className="grid grid-cols-2 gap-3">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <div className="space-y-1">
-                    <label className="font-semibold text-gray-400 text-[11px] flex justify-between items-center">
-                      <span>Valor do Caução (R$)</span>
-                      <span className="text-[9px] text-emerald-400/80 font-normal">(Garantia - Não soma na receita)</span>
-                    </label>
+                    <div className="flex justify-between items-center min-h-[20px]">
+                      <label className="font-semibold text-gray-400 text-xs">Valor do Caução (R$)</label>
+                      <span className="text-[9px] text-emerald-400/80 font-normal">(Garantia)</span>
+                    </div>
                     <CurrencyInput 
                       value={caucaoValor} 
                       onChange={setCaucaoValor}
                       placeholder="0,00"
-                      className="w-full text-xs bg-black/40 border border-white/10 rounded-xl px-3 py-2 text-white focus:outline-hidden focus:border-emerald-500/50 font-mono"
+                      className="w-full h-10 text-xs bg-black/40 border border-white/10 rounded-xl px-3 py-2 text-white focus:outline-hidden focus:border-emerald-500/50 font-mono"
                     />
                   </div>
                   <div className="space-y-1">
-                    <label className="font-semibold text-gray-400 text-[11px]">Data do Caução</label>
+                    <div className="flex items-center min-h-[20px]">
+                      <label className="font-semibold text-gray-400 text-xs">Data do Caução</label>
+                    </div>
                     <input 
                       type="date" 
                       value={caucaoData} 
                       onChange={e => setCaucaoData(e.target.value)}
-                      className="w-full text-xs bg-black/40 border border-white/10 rounded-xl px-3 py-2 text-white focus:outline-hidden focus:border-emerald-500/50 font-mono scheme-dark"
+                      className="w-full h-10 text-xs bg-black/40 border border-white/10 rounded-xl px-3 py-2 text-white focus:outline-hidden focus:border-emerald-500/50 font-mono scheme-dark"
                     />
                   </div>
                 </div>
@@ -2468,7 +2487,7 @@ export function LogForms({
                   type="date" 
                   value={nextVistoriaDate} 
                   onChange={e => setNextVistoriaDate(e.target.value)}
-                  className="w-full text-xs bg-white/[0.03] border border-white/10 rounded-xl px-3 py-2 text-white focus:outline-hidden focus:border-blue-500/50 focus:bg-[#1a1a1a] font-mono scheme-dark"
+                  className="w-full h-10 text-xs bg-white/[0.03] border border-white/10 rounded-xl px-3 py-2 text-white focus:outline-hidden focus:border-blue-500/50 focus:bg-[#1a1a1a] font-mono scheme-dark"
                 />
               </div>
 
@@ -2490,7 +2509,7 @@ export function LogForms({
                   type="date" 
                   value={insuranceExpirationDate} 
                   onChange={e => setInsuranceExpirationDate(e.target.value)}
-                  className="w-full text-xs bg-black/40 border border-white/10 rounded-xl px-3 py-2 text-white focus:outline-hidden focus:border-blue-500/50 font-mono scheme-dark"
+                  className="w-full h-10 text-xs bg-black/40 border border-white/10 rounded-xl px-3 py-2 text-white focus:outline-hidden focus:border-blue-500/50 font-mono scheme-dark"
                 />
                 {insuranceExpirationDate && (
                   <div className="pt-1 text-[11px] font-mono">
@@ -2517,31 +2536,35 @@ export function LogForms({
           {/* ----------------- FUEL FORM ----------------- */}
           {formType === 'fuel' && (
             <div className="space-y-4 text-white text-xs">
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div className="space-y-1">
-                  <label className="font-semibold text-gray-400">Data do Abastecimento</label>
+                  <div className="flex items-center min-h-[20px]">
+                    <label className="font-semibold text-gray-400">Data do Abastecimento</label>
+                  </div>
                   <input 
                     type="date" 
                     value={fuelDate} 
                     onChange={e => setFuelDate(e.target.value)}
-                    className="w-full text-xs bg-white/[0.03] border border-white/10 rounded-xl px-3 py-2 text-white focus:outline-hidden focus:border-blue-500/50 focus:bg-[#1a1a1a] scheme-dark"
+                    className="w-full h-10 text-xs bg-white/[0.03] border border-white/10 rounded-xl px-3 py-2 text-white focus:outline-hidden focus:border-blue-500/50 focus:bg-[#1a1a1a] scheme-dark"
                   />
                 </div>
                 <div className="space-y-1">
-                  <label className="font-semibold text-gray-400 text-[11px]">Quilometragem (Odometer)</label>
+                  <div className="flex items-center min-h-[20px]">
+                    <label className="font-semibold text-gray-400">Quilometragem (Odômetro)</label>
+                  </div>
                   <input 
                     type="number" 
                     inputMode="numeric"
                     value={fuelKm} 
                     onChange={e => setFuelKm(Number(e.target.value))}
-                    className="w-full text-xs bg-white/[0.03] border border-white/10 rounded-xl px-3 py-2 text-white focus:outline-hidden focus:border-blue-500/50 focus:bg-[#1a1a1a] font-mono"
+                    className="w-full h-10 text-xs bg-white/[0.03] border border-white/10 rounded-xl px-3 py-2 text-white focus:outline-hidden focus:border-blue-500/50 focus:bg-[#1a1a1a] font-mono"
                   />
                 </div>
               </div>
 
-              <div className="grid grid-cols-3 gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                 <div className="space-y-1">
-                  <label className="font-semibold text-gray-400 text-[11px]">Litros Abastecidos</label>
+                  <label className="font-semibold text-gray-400">Litros Abastecidos</label>
                   <input 
                     type="number" 
                     inputMode="decimal"
@@ -2549,37 +2572,37 @@ export function LogForms({
                     value={fuelLiters || ''} 
                     onChange={e => updateFuelTotal(Number(e.target.value), fuelPricePerLiter)}
                     placeholder="0,00"
-                    className="w-full text-xs bg-white/[0.03] border border-white/10 rounded-xl px-3 py-2 text-white focus:outline-hidden focus:border-blue-500/50 focus:bg-[#1a1a1a] font-mono"
+                    className="w-full h-10 text-xs bg-white/[0.03] border border-white/10 rounded-xl px-3 py-2 text-white focus:outline-hidden focus:border-blue-500/50 focus:bg-[#1a1a1a] font-mono"
                   />
                 </div>
                 <div className="space-y-1">
-                  <label className="font-semibold text-gray-400 text-[11px]">Preço p/ Litro (R$)</label>
+                  <label className="font-semibold text-gray-400">Preço p/ Litro (R$)</label>
                   <CurrencyInput 
                     value={fuelPricePerLiter} 
                     onChange={val => updateFuelTotal(fuelLiters, val)}
                     placeholder="0,00"
-                    className="w-full text-xs bg-white/[0.03] border border-white/10 rounded-xl px-3 py-2 text-white focus:outline-hidden focus:border-blue-500/50 focus:bg-[#1a1a1a] font-mono"
+                    className="w-full h-10 text-xs bg-white/[0.03] border border-white/10 rounded-xl px-3 py-2 text-white focus:outline-hidden focus:border-blue-500/50 focus:bg-[#1a1a1a] font-mono"
                   />
                 </div>
                 <div className="space-y-1">
-                  <label className="font-semibold text-gray-400 text-[11px]">Custo Total</label>
+                  <label className="font-semibold text-gray-400">Custo Total</label>
                   <CurrencyInput 
                     value={fuelTotalCost} 
                     onChange={setFuelTotalCost}
                     placeholder="0,00"
-                    className="w-full text-xs bg-white/[0.01] border border-white/5 rounded-xl px-3 py-2 text-gray-400 font-mono font-bold"
+                    className="w-full h-10 text-xs bg-white/[0.01] border border-white/5 rounded-xl px-3 py-2 text-gray-400 font-mono font-bold"
                     disabled
                   />
                 </div>
               </div>
 
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div className="space-y-1">
                   <label className="font-semibold text-gray-400">Tipo de Combustível</label>
                   <select
                     value={fuelType}
                     onChange={(e) => setFuelType(e.target.value as FuelLog['fuelType'])}
-                    className="w-full text-xs bg-white/[0.03] border border-white/10 rounded-xl px-3 py-2 text-white focus:outline-hidden focus:border-blue-500/50 focus:bg-[#1a1a1a]"
+                    className="w-full h-10 text-xs bg-white/[0.03] border border-white/10 rounded-xl px-3 py-2 text-white focus:outline-hidden focus:border-blue-500/50 focus:bg-[#1a1a1a]"
                   >
                     <option value="Gasolina" className="bg-[#111111] text-white">Gasolina</option>
                     <option value="Etanol" className="bg-[#111111] text-white">Etanol</option>
@@ -2594,7 +2617,7 @@ export function LogForms({
                     value={fuelStation} 
                     onChange={e => setFuelStation(e.target.value ? e.target.value.charAt(0).toUpperCase() + e.target.value.slice(1) : '')}
                     placeholder="Ex: Posto BR Shell"
-                    className="w-full text-xs bg-white/[0.03] border border-white/10 rounded-xl px-3 py-2 text-white placeholder-gray-500 focus:outline-hidden focus:border-blue-500/50 focus:bg-[#1a1a1a]"
+                    className="w-full h-10 text-xs bg-white/[0.03] border border-white/10 rounded-xl px-3 py-2 text-white placeholder-gray-500 focus:outline-hidden focus:border-blue-500/50 focus:bg-[#1a1a1a]"
                   />
                 </div>
               </div>
@@ -2604,70 +2627,116 @@ export function LogForms({
           {/* ----------------- MAINTENANCE FORM ----------------- */}
           {formType === 'maintenance' && (
             <div className="space-y-4 text-white text-xs">
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div className="space-y-1">
-                  <label className="font-semibold text-gray-400">Data do Serviço</label>
+                  <div className="flex items-center min-h-[22px]">
+                    <label className="font-semibold text-gray-400">Data do Serviço</label>
+                  </div>
                   <input 
                     type="date" 
                     value={maintDate} 
                     onChange={e => setMaintDate(e.target.value)}
-                    className="w-full text-xs bg-white/[0.03] border border-white/10 rounded-xl px-3 py-2 text-white focus:outline-hidden focus:border-blue-500/50 focus:bg-[#1a1a1a] scheme-dark"
+                    className="w-full h-10 text-xs bg-white/[0.03] border border-white/10 rounded-xl px-3 py-2 text-white focus:outline-hidden focus:border-blue-500/50 focus:bg-[#1a1a1a] scheme-dark"
                   />
                 </div>
                 <div className="space-y-1">
-                  <label className="font-semibold text-gray-400">Categoria</label>
+                  <div className="flex items-center min-h-[22px]">
+                    <label className="font-semibold text-gray-400">Quilometragem da Manutenção (KM) *</label>
+                  </div>
+                  <input 
+                    type="number" 
+                    inputMode="numeric"
+                    value={maintCurrentKm !== undefined ? maintCurrentKm : ''} 
+                    onChange={e => {
+                      const val = e.target.value === '' ? undefined : Number(e.target.value);
+                      setMaintCurrentKm(val);
+                      if (val !== undefined && (!maintNextKm || maintNextKm <= val)) {
+                        setMaintNextKm(val + 10000);
+                      }
+                    }}
+                    placeholder="Ex: 105000"
+                    className="w-full h-10 text-xs bg-white/[0.03] border border-blue-500/40 rounded-xl px-3 py-2 text-white placeholder-gray-500 focus:outline-hidden focus:border-blue-500 focus:bg-[#1a1a1a] font-mono font-bold"
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div className="space-y-1">
+                  <div className="flex items-center min-h-[22px]">
+                    <label className="font-semibold text-gray-400">Categoria da Manutenção *</label>
+                  </div>
                   <select
-                    value={maintType}
-                    onChange={e => setMaintType(e.target.value as MaintenanceLog['type'])}
-                    className="w-full text-xs bg-white/[0.03] border border-white/10 rounded-xl px-3 py-2 text-white focus:outline-hidden focus:border-blue-500/50 focus:bg-[#1a1a1a]"
+                    value={maintCategory}
+                    onChange={e => setMaintCategory(e.target.value)}
+                    className="w-full h-10 text-xs bg-white/[0.03] border border-blue-500/30 rounded-xl px-3 py-2 text-white focus:outline-hidden focus:border-blue-500 focus:bg-[#1a1a1a] font-medium"
                   >
-                    <option value="Revisão" className="bg-[#111111] text-white font-sans">Revisão Periódica</option>
-                    <option value="Preventiva" className="bg-[#111111] text-white font-sans">Manutenção Preventiva</option>
-                    <option value="Corretiva" className="bg-[#111111] text-white font-sans">Manutenção Corretiva (Defeito)</option>
-                    <option value="Batida/Acidente" className="bg-[#111111] text-white font-sans">Batida / Acidente / B.O.</option>
-                    <option value="Pneus" className="bg-[#111111] text-white font-sans">Troca de Pneus / Rodízio</option>
-                    <option value="Palhetas" className="bg-[#111111] text-white font-sans">Troca de Palhetas</option>
-                    <option value="Pastilhas" className="bg-[#111111] text-white font-sans">Troca de Pastilhas de Freio</option>
-                    <option value="Outro" className="bg-[#111111] text-white font-sans">Outros Serviços</option>
+                    {MAINTENANCE_CATEGORIES.map(cat => (
+                      <option key={cat} value={cat} className="bg-[#111111] text-white">
+                        {cat}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div className="space-y-1">
+                  <div className="flex items-center min-h-[22px]">
+                    <label className="font-semibold text-gray-400">Escopo da Manutenção *</label>
+                  </div>
+                  <select
+                    value={maintScope}
+                    onChange={e => setMaintScope(e.target.value)}
+                    className="w-full h-10 text-xs bg-white/[0.03] border border-purple-500/30 rounded-xl px-3 py-2 text-white focus:outline-hidden focus:border-purple-500 focus:bg-[#1a1a1a] font-medium"
+                  >
+                    {MAINTENANCE_SCOPES.map(sc => (
+                      <option key={sc} value={sc} className="bg-[#111111] text-white">
+                        {sc}
+                      </option>
+                    ))}
                   </select>
                 </div>
               </div>
 
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div className="space-y-1">
-                  <label className="font-semibold text-gray-400">Nº do B.O. / Sinistro (Opcional)</label>
+                  <div className="flex items-center min-h-[22px]">
+                    <label className="font-semibold text-gray-400">Nº do B.O. / Sinistro (Opcional)</label>
+                  </div>
                   <input 
                     type="text" 
                     value={maintBoNumber} 
                     onChange={e => setMaintBoNumber(e.target.value)}
                     placeholder="Ex: BO 123456/2026"
-                    className="w-full text-xs bg-white/[0.03] border border-white/10 rounded-xl px-3 py-2 text-white placeholder-gray-500 focus:outline-hidden focus:border-blue-500/50 focus:bg-[#1a1a1a]"
+                    className="w-full h-10 text-xs bg-white/[0.03] border border-white/10 rounded-xl px-3 py-2 text-white placeholder-gray-500 focus:outline-hidden focus:border-blue-500/50 focus:bg-[#1a1a1a]"
                   />
                 </div>
                 <div className="space-y-1">
-                  <label className="font-semibold text-gray-400">Peças / Componentes Trocados</label>
+                  <div className="flex items-center min-h-[22px]">
+                    <label className="font-semibold text-gray-400">Peças / Componentes Trocados</label>
+                  </div>
                   <input 
                     type="text" 
                     value={maintPartsReplaced} 
                     onChange={e => setMaintPartsReplaced(e.target.value)}
                     placeholder="Ex: Pneus, Palhetas, Pastilhas..."
-                    className="w-full text-xs bg-white/[0.03] border border-white/10 rounded-xl px-3 py-2 text-white placeholder-gray-500 focus:outline-hidden focus:border-blue-500/50 focus:bg-[#1a1a1a]"
+                    className="w-full h-10 text-xs bg-white/[0.03] border border-white/10 rounded-xl px-3 py-2 text-white placeholder-gray-500 focus:outline-hidden focus:border-blue-500/50 focus:bg-[#1a1a1a]"
                   />
                 </div>
               </div>
 
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div className="space-y-1">
-                  <label className="font-semibold text-gray-400">Custo Total (R$)</label>
+                  <div className="flex items-center min-h-[22px]">
+                    <label className="font-semibold text-gray-400">Custo Total (R$)</label>
+                  </div>
                   <CurrencyInput 
                     value={maintCost} 
                     onChange={setMaintCost}
                     placeholder="0,00"
-                    className="w-full text-xs bg-white/[0.03] border border-white/10 rounded-xl px-3 py-2 text-white focus:outline-hidden focus:border-blue-500/50 focus:bg-[#1a1a1a] font-mono font-semibold"
+                    className="w-full h-10 text-xs bg-white/[0.03] border border-white/10 rounded-xl px-3 py-2 text-white focus:outline-hidden focus:border-blue-500/50 focus:bg-[#1a1a1a] font-mono font-semibold"
                   />
                 </div>
                 <div className="space-y-1">
-                  <div className="flex items-center justify-between">
+                  <div className="flex items-center justify-between min-h-[22px]">
                     <label className="font-semibold text-gray-400">Oficina / Estabelecimento</label>
                     <button
                       type="button"
@@ -2712,7 +2781,7 @@ export function LogForms({
                     value={maintShop} 
                     onChange={e => setMaintShop(e.target.value ? e.target.value.charAt(0).toUpperCase() + e.target.value.slice(1) : '')}
                     placeholder="Ex: Concessionária Fiat"
-                    className="w-full text-xs bg-white/[0.03] border border-white/10 rounded-xl px-3 py-2 text-white placeholder-gray-500 focus:outline-hidden focus:border-blue-500/50 focus:bg-[#1a1a1a]"
+                    className="w-full h-10 text-xs bg-white/[0.03] border border-white/10 rounded-xl px-3 py-2 text-white placeholder-gray-500 focus:outline-hidden focus:border-blue-500/50 focus:bg-[#1a1a1a]"
                   />
                   {maintShopPhone && (
                     <p className="text-[10px] text-emerald-400 flex items-center gap-1 mt-0.5">
@@ -2725,7 +2794,7 @@ export function LogForms({
               {/* Parcelas de Manutenção */}
               <div className="bg-amber-500/5 border border-amber-500/10 p-3 rounded-xl space-y-3">
                 <p className="text-[10px] font-bold text-amber-500 uppercase tracking-wider">O custo foi parcelado?</p>
-                <div className="grid grid-cols-2 gap-4">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <div className="space-y-1">
                     <label className="text-[10px] font-semibold text-gray-400 uppercase">Parcelas Pagas</label>
                     <input 
@@ -2734,7 +2803,7 @@ export function LogForms({
                       value={maintParcelasPagas ?? ''} 
                       onChange={e => setMaintParcelasPagas(e.target.value === '' ? undefined : Number(e.target.value))}
                       placeholder="Ex: 1"
-                      className="w-full text-xs bg-black/40 border border-white/10 rounded-xl px-3 py-2 text-white focus:outline-hidden focus:border-amber-500/50"
+                      className="w-full h-10 text-xs bg-black/40 border border-white/10 rounded-xl px-3 py-2 text-white focus:outline-hidden focus:border-amber-500/50"
                     />
                   </div>
                   <div className="space-y-1">
@@ -2745,7 +2814,7 @@ export function LogForms({
                       value={maintParcelasTotais ?? ''} 
                       onChange={e => setMaintParcelasTotais(e.target.value === '' ? undefined : Number(e.target.value))}
                       placeholder="Ex: 10"
-                      className="w-full text-xs bg-black/40 border border-white/10 rounded-xl px-3 py-2 text-white focus:outline-hidden focus:border-amber-500/50"
+                      className="w-full h-10 text-xs bg-black/40 border border-white/10 rounded-xl px-3 py-2 text-white focus:outline-hidden focus:border-amber-500/50"
                     />
                   </div>
                 </div>
@@ -2842,7 +2911,7 @@ export function LogForms({
                     value={maintNextKm || ''} 
                     onChange={e => setMaintNextKm(Number(e.target.value))}
                     placeholder="Ex: 25000"
-                    className="w-full text-xs bg-white/[0.03] border border-white/10 rounded-xl px-3 py-2 text-white placeholder-gray-500 focus:outline-hidden focus:border-blue-500/50 focus:bg-[#1a1a1a] font-mono"
+                    className="w-full h-10 text-xs bg-white/[0.03] border border-white/10 rounded-xl px-3 py-2 text-white placeholder-gray-500 focus:outline-hidden focus:border-blue-500/50 focus:bg-[#1a1a1a] font-mono"
                   />
                 </div>
               )}
@@ -2852,22 +2921,26 @@ export function LogForms({
           {/* ----------------- EXPENSE FORM ----------------- */}
           {formType === 'expense' && (
             <div className="space-y-4 text-white text-xs">
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div className="space-y-1">
-                  <label className="font-semibold text-gray-400">Data do Gasto</label>
+                  <div className="flex items-center min-h-[20px]">
+                    <label className="font-semibold text-gray-400">Data do Gasto</label>
+                  </div>
                   <input 
                     type="date" 
                     value={expDate} 
                     onChange={e => setExpDate(e.target.value)}
-                    className="w-full text-xs bg-white/[0.03] border border-white/10 rounded-xl px-3 py-2 text-white focus:outline-hidden focus:border-blue-500/50 focus:bg-[#1a1a1a] scheme-dark"
+                    className="w-full h-10 text-xs bg-white/[0.03] border border-white/10 rounded-xl px-3 py-2 text-white focus:outline-hidden focus:border-blue-500/50 focus:bg-[#1a1a1a] scheme-dark"
                   />
                 </div>
                 <div className="space-y-1">
-                  <label className="font-semibold text-gray-400">Categoria da Despesa</label>
+                  <div className="flex items-center min-h-[20px]">
+                    <label className="font-semibold text-gray-400">Categoria da Despesa</label>
+                  </div>
                   <select
                     value={expCategory}
                     onChange={e => setExpCategory(e.target.value as ExpenseLog['category'])}
-                    className="w-full text-xs bg-white/[0.03] border border-white/10 rounded-xl px-3 py-2 text-white focus:outline-hidden focus:border-blue-500/50 focus:bg-[#1a1a1a]"
+                    className="w-full h-10 text-xs bg-white/[0.03] border border-white/10 rounded-xl px-3 py-2 text-white focus:outline-hidden focus:border-blue-500/50 focus:bg-[#1a1a1a]"
                   >
                     <option value="" className="bg-[#111111] text-gray-500">Selecione uma categoria...</option>
                     <option value="Lavagem" className="bg-[#111111] text-white">Lavagem / Limpeza</option>
@@ -2879,25 +2952,30 @@ export function LogForms({
                 </div>
               </div>
 
-              <div className="space-y-1">
-                <label className="font-semibold text-gray-400">Valor Pago (R$)</label>
-                <CurrencyInput 
-                  value={expCost} 
-                  onChange={setExpCost}
-                  placeholder="0,00"
-                  className="w-full text-xs bg-white/[0.03] border border-white/10 rounded-xl px-3 py-2 text-white focus:outline-hidden focus:border-blue-500/50 focus:bg-[#1a1a1a] font-mono font-bold"
-                />
-              </div>
-
-              <div className="space-y-1">
-                <label className="font-semibold text-gray-400">Detalhes / Justificativa</label>
-                <input 
-                  type="text" 
-                  value={expDescription} 
-                  onChange={e => setExpDescription(e.target.value ? e.target.value.charAt(0).toUpperCase() + e.target.value.slice(1) : '')}
-                  placeholder="Ex: Lavagem completa com higienização de ar"
-                  className="w-full text-xs bg-white/[0.03] border border-white/10 rounded-xl px-3 py-2 text-white placeholder-gray-500 focus:outline-hidden focus:border-blue-500/50 focus:bg-[#1a1a1a]"
-                />
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div className="space-y-1">
+                  <div className="flex items-center min-h-[20px]">
+                    <label className="font-semibold text-gray-400">Valor Pago (R$)</label>
+                  </div>
+                  <CurrencyInput 
+                    value={expCost} 
+                    onChange={setExpCost}
+                    placeholder="0,00"
+                    className="w-full h-10 text-xs bg-white/[0.03] border border-white/10 rounded-xl px-3 py-2 text-white focus:outline-hidden focus:border-blue-500/50 focus:bg-[#1a1a1a] font-mono font-bold"
+                  />
+                </div>
+                <div className="space-y-1">
+                  <div className="flex items-center min-h-[20px]">
+                    <label className="font-semibold text-gray-400">Detalhes / Justificativa</label>
+                  </div>
+                  <input 
+                    type="text" 
+                    value={expDescription} 
+                    onChange={e => setExpDescription(e.target.value ? e.target.value.charAt(0).toUpperCase() + e.target.value.slice(1) : '')}
+                    placeholder="Ex: Lavagem completa com higienização de ar"
+                    className="w-full h-10 text-xs bg-white/[0.03] border border-white/10 rounded-xl px-3 py-2 text-white placeholder-gray-500 focus:outline-hidden focus:border-blue-500/50 focus:bg-[#1a1a1a]"
+                  />
+                </div>
               </div>
             </div>
           )}
@@ -2905,24 +2983,28 @@ export function LogForms({
           {/* ----------------- SINISTRO FORM ----------------- */}
           {formType === 'sinistro' && (
             <div className="space-y-4 text-white text-xs">
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div className="space-y-1">
-                  <label className="font-semibold text-gray-400">Data do Ocorrido</label>
+                  <div className="flex items-center min-h-[20px]">
+                    <label className="font-semibold text-gray-400">Data do Ocorrido</label>
+                  </div>
                   <input 
                     type="date" 
                     value={sinistroDate} 
                     onChange={e => setSinistroDate(e.target.value)}
-                    className="w-full text-xs bg-white/[0.03] border border-white/10 rounded-xl px-3 py-2 text-white focus:outline-hidden focus:border-blue-500/50 focus:bg-[#1a1a1a] scheme-dark"
+                    className="w-full h-10 text-xs bg-white/[0.03] border border-white/10 rounded-xl px-3 py-2 text-white focus:outline-hidden focus:border-blue-500/50 focus:bg-[#1a1a1a] scheme-dark"
                   />
                 </div>
                 <div className="space-y-1">
-                  <label className="font-semibold text-gray-400">Local (Opcional)</label>
+                  <div className="flex items-center min-h-[20px]">
+                    <label className="font-semibold text-gray-400">Local (Opcional)</label>
+                  </div>
                   <input 
                     type="text" 
                     value={sinistroLocation} 
                     onChange={e => setSinistroLocation(e.target.value)}
                     placeholder="Ex: Av. Paulista, 1000"
-                    className="w-full text-xs bg-white/[0.03] border border-white/10 rounded-xl px-3 py-2 text-white placeholder-gray-500 focus:outline-hidden focus:border-blue-500/50 focus:bg-[#1a1a1a]"
+                    className="w-full h-10 text-xs bg-white/[0.03] border border-white/10 rounded-xl px-3 py-2 text-white placeholder-gray-500 focus:outline-hidden focus:border-blue-500/50 focus:bg-[#1a1a1a]"
                   />
                 </div>
               </div>
@@ -2939,22 +3021,26 @@ export function LogForms({
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div className="space-y-1">
-                  <label className="font-semibold text-gray-400">Custo do Reparo (R$)</label>
+                  <div className="flex items-center min-h-[20px]">
+                    <label className="font-semibold text-gray-400">Custo do Reparo (R$)</label>
+                  </div>
                   <CurrencyInput 
                     value={sinistroRepairCost} 
                     onChange={setSinistroRepairCost}
                     placeholder="0,00"
-                    className="w-full text-xs bg-white/[0.03] border border-white/10 rounded-xl px-3 py-2 text-white focus:outline-hidden focus:border-blue-500/50 focus:bg-[#1a1a1a] font-mono font-bold"
+                    className="w-full h-10 text-xs bg-white/[0.03] border border-white/10 rounded-xl px-3 py-2 text-white focus:outline-hidden focus:border-blue-500/50 focus:bg-[#1a1a1a] font-mono font-bold"
                   />
                 </div>
                 <div className="space-y-1">
-                  <label className="font-semibold text-gray-400">Link BO (Opcional)</label>
+                  <div className="flex items-center min-h-[20px]">
+                    <label className="font-semibold text-gray-400">Link BO (Opcional)</label>
+                  </div>
                   <input 
                     type="text" 
                     value={sinistroBoUrl} 
                     onChange={e => setSinistroBoUrl(e.target.value)}
                     placeholder="https://..."
-                    className="w-full text-xs bg-white/[0.03] border border-white/10 rounded-xl px-3 py-2 text-white placeholder-gray-500 focus:outline-hidden focus:border-blue-500/50 focus:bg-[#1a1a1a]"
+                    className="w-full h-10 text-xs bg-white/[0.03] border border-white/10 rounded-xl px-3 py-2 text-white placeholder-gray-500 focus:outline-hidden focus:border-blue-500/50 focus:bg-[#1a1a1a]"
                   />
                 </div>
               </div>

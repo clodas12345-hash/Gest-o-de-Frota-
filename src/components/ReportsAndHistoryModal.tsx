@@ -8,6 +8,7 @@ import { generateExecutiveMonthlyPDF } from '../utils/pdfGenerator';
 interface ReportsAndHistoryModalProps {
   isOpen: boolean;
   onClose: () => void;
+  initialTab?: 'charts' | 'history';
   vehicles: Vehicle[];
   fuelLogs: FuelLog[];
   maintenanceLogs: MaintenanceLog[];
@@ -30,6 +31,7 @@ interface ReportsAndHistoryModalProps {
 export function ReportsAndHistoryModal({
   isOpen,
   onClose,
+  initialTab = 'charts',
   vehicles,
   fuelLogs,
   maintenanceLogs,
@@ -48,7 +50,13 @@ export function ReportsAndHistoryModal({
   onClearAllVistorias,
   onOpenBatchOdometer,
 }: ReportsAndHistoryModalProps) {
-  const [activeTab, setActiveTab] = useState<'charts' | 'history'>('charts');
+  const [activeTab, setActiveTab] = useState<'charts' | 'history'>(initialTab);
+
+  React.useEffect(() => {
+    if (isOpen) {
+      setActiveTab(initialTab);
+    }
+  }, [isOpen, initialTab]);
   const [isExportingExecPdf, setIsExportingExecPdf] = useState(false);
 
   if (!isOpen) return null;

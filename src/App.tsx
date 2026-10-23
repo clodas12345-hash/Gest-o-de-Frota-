@@ -305,6 +305,7 @@ export default function App() {
   const [isChecklistConfigOpen, setIsChecklistConfigOpen] = useState<boolean>(false);
   const [isRentalContractOpen, setIsRentalContractOpen] = useState<boolean>(false);
   const [isReportsModalOpen, setIsReportsModalOpen] = useState<boolean>(false);
+  const [reportsModalTab, setReportsModalTab] = useState<'charts' | 'history'>('history');
   const [isBatchOdometerOpen, setIsBatchOdometerOpen] = useState<boolean>(false);
   const [isAboutModalOpen, setIsAboutModalOpen] = useState<boolean>(false);
   const [isLogoViewerOpen, setIsLogoViewerOpen] = useState<boolean>(false);
@@ -389,18 +390,25 @@ export default function App() {
           const cur = v.preventiveMaintCurrentKm || v.currentKm || 0;
           const next = v.preventiveMaintNextKm || 0;
 
-          // #1 Overdue Maintenance
-          if (next > 0 && cur >= next) {
-            sendAppNotification(`🚨 MANUTENÇÃO VENCIDA: ${v.brand} (${v.plate})`, {
-              body: `O veículo atingiu ${cur.toLocaleString('pt-BR')} KM (limite era ${next.toLocaleString('pt-BR')} KM). Providencie a revisão!`,
-              eventKey: 'maint_overdue',
-            });
-          } else if (next > 0 && cur >= next - 500) {
-            // #2 Near Maintenance
-            sendAppNotification(`⚠️ Revisão Próxima: ${v.brand} (${v.plate})`, {
-              body: `Faltam ${(next - cur).toLocaleString('pt-BR')} KM para a revisão preventiva (${next.toLocaleString('pt-BR')} KM).`,
-              eventKey: 'maint_near',
-            });
+          // #1 & #2 Maintenance KM Alerts (3 mil, 1 mil e Vencida)
+          if (next > 0) {
+            const diff = next - cur;
+            if (diff <= 0) {
+              sendAppNotification(`🚨 MANUTENÇÃO VENCIDA: ${v.brand} (${v.plate})`, {
+                body: `O veículo atingiu ${cur.toLocaleString('pt-BR')} KM (limite era ${next.toLocaleString('pt-BR')} KM). Providencie a revisão!`,
+                eventKey: 'maint_overdue',
+              });
+            } else if (diff <= 1000) {
+              sendAppNotification(`⚠️ ATENÇÃO: Revisão em 1.000 KM - ${v.brand} (${v.plate})`, {
+                body: `Faltam apenas ${diff.toLocaleString('pt-BR')} KM para a revisão preventiva (${next.toLocaleString('pt-BR')} KM)!`,
+                eventKey: 'maint_near',
+              });
+            } else if (diff <= 3000) {
+              sendAppNotification(`🔔 LEMBRETE: Revisão em 3.000 KM - ${v.brand} (${v.plate})`, {
+                body: `Faltam ${diff.toLocaleString('pt-BR')} KM para a próxima manutenção preventiva (${next.toLocaleString('pt-BR')} KM).`,
+                eventKey: 'maint_near',
+              });
+            }
           }
 
           // #3 Scheduled Maintenance Date
@@ -538,27 +546,30 @@ export default function App() {
     const needyVehicles = vehicles.filter((v) => {
       const cur = v.preventiveMaintCurrentKm || v.currentKm || 0;
       const next = v.preventiveMaintNextKm || 0;
-      return next > 0 && cur >= (next - 500);
+      return next > 0 && (next - cur) <= 3000;
     });
 
     if (needyVehicles.length === 0) {
       await sendAppNotification('🚗 Frota em Dia com Manutenção', {
-        body: 'Nenhum veículo atingiu o limite de quilometragem para revisão preventiva no momento.',
+        body: 'Nenhum veículo está a menos de 3.000 KM de atingir o limite de revisão preventiva no momento.',
         force: true,
       });
     } else {
       for (const v of needyVehicles) {
         const cur = v.preventiveMaintCurrentKm || v.currentKm || 0;
         const next = v.preventiveMaintNextKm || 0;
-        const isOverdue = cur >= next;
+        const diff = next - cur;
+        const isOverdue = diff <= 0;
         await sendAppNotification(
           isOverdue
             ? `🚨 ALERTA: MANUTENÇÃO VENCIDA - ${v.brand} (${v.plate})`
-            : `⚠️ ATENÇÃO: Revisão Próxima - ${v.brand} (${v.plate})`,
+            : diff <= 1000
+            ? `⚠️ ATENÇÃO: Revisão em 1.000 KM - ${v.brand} (${v.plate})`
+            : `🔔 LEMBRETE: Revisão em 3.000 KM - ${v.brand} (${v.plate})`,
           {
             body: isOverdue
               ? `O veículo atingiu ${cur.toLocaleString('pt-BR')} KM (limite era ${next.toLocaleString('pt-BR')} KM). Providencie a revisão!`
-              : `Atual: ${cur.toLocaleString('pt-BR')} KM. Próxima revisão: ${next.toLocaleString('pt-BR')} KM (faltam ${ (next - cur).toLocaleString('pt-BR') } KM).`,
+              : `Atual: ${cur.toLocaleString('pt-BR')} KM. Próxima revisão: ${next.toLocaleString('pt-BR')} KM (faltam ${ diff.toLocaleString('pt-BR') } KM).`,
             eventKey: isOverdue ? 'maint_overdue' : 'maint_near',
           }
         );
@@ -1258,6 +1269,24 @@ export default function App() {
     const newLog: MaintenanceLog = { ...log, id: newId };
     setMaintenanceLogs((prev) => [newLog, ...prev]);
     if (log.date) autoSwitchMonthToDate(log.date);
+
+    if (log.currentKm && log.currentKm > 0) {
+      setVehicles((prev) =>
+        prev.map((v) => {
+          if (v.id === log.vehicleId) {
+            const newKm = Math.max(v.currentKm || 0, log.currentKm || 0);
+            const interval = v.preventiveMaintIntervalKm || 10000;
+            return {
+              ...v,
+              currentKm: newKm,
+              preventiveMaintCurrentKm: newKm,
+              preventiveMaintNextKm: log.nextKm ? log.nextKm : (newKm + interval),
+            };
+          }
+          return v;
+        })
+      );
+    }
 
     const targetV = vehicles.find((v) => v.id === log.vehicleId);
     sendAppNotification(`🛠️ Manutenção Registrada: ${targetV ? `${targetV.brand} (${targetV.plate})` : log.type}`, {
@@ -2332,6 +2361,17 @@ export default function App() {
               onOpenHelp={() => setIsHelpOpen(true)}
               onOpenAgenda={() => setIsAgendaOpen(true)}
               onOpenLogForm={(type) => handleOpenForm(type)}
+              onOpenMaintenanceHistory={() => {
+                setReportsModalTab('history');
+                setIsReportsModalOpen(true);
+                window.dispatchEvent(new CustomEvent('open-maintenance-history'));
+                setTimeout(() => {
+                  const el = document.getElementById('history-section');
+                  if (el) {
+                    el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                  }
+                }, 150);
+              }}
               onOpenDocumentUpload={() => setIsUploadDocOpen(true)}
               onOpenSettings={() => setIsSettingsOpen(true)}
               onOpenNotificationCenter={() => setIsNotificationCenterOpen(true)}
@@ -2519,6 +2559,27 @@ export default function App() {
           )}
         </div>
 
+        {/* 3. Main History Logs Section (Histórico Geral & Manutenções por Carro) */}
+        <div id="history-section" className="space-y-4 pt-4 border-t border-white/5">
+          <HistoryLogs
+            vehicles={sortedVehicles}
+            fuelLogs={fuelLogs}
+            maintenanceLogs={maintenanceLogs}
+            expenseLogs={expenseLogs}
+            vistorias={vistorias}
+            onDeleteFuel={handleDeleteFuel}
+            onDeleteMaintenance={handleDeleteMaintenance}
+            onDeleteExpense={handleDeleteExpense}
+            onDeleteVistoria={handleDeleteVistoria}
+            onUpdateFuel={handleUpdateFuel}
+            onUpdateMaintenance={handleUpdateMaintenance}
+            onUpdateExpense={handleUpdateExpense}
+            onUpdateVistoria={handleUpdateVistoria}
+            onClearAllVistorias={handleClearAllVistorias}
+            defaultExpanded={true}
+          />
+        </div>
+
         {/* Quick Launch Actions (Abaixo dos Carros - Lado a Lado) */}
         <div className="grid grid-cols-2 gap-3 max-w-xl mx-auto w-full">
           <button
@@ -2682,6 +2743,7 @@ export default function App() {
       <ReportsAndHistoryModal
         isOpen={isReportsModalOpen}
         onClose={() => setIsReportsModalOpen(false)}
+        initialTab={reportsModalTab}
         vehicles={sortedVehicles}
         fuelLogs={fuelLogs}
         maintenanceLogs={maintenanceLogs}
