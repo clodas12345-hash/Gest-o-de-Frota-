@@ -1,6 +1,6 @@
-import React, { useState } from 'react';
-import { Vehicle, MaintenanceLog, ExpenseLog, Vistoria, FuelLog, MAINTENANCE_CATEGORIES, MAINTENANCE_SCOPES } from '../types';
-import { Search, Wrench, Landmark, Trash2, Calendar, User, Gauge, Edit2, Check, X, ChevronDown, ChevronUp, History, ClipboardCheck, Droplets, MapPin, Coins } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { Vehicle, MaintenanceLog, ExpenseLog, Vistoria, FuelLog, MAINTENANCE_CATEGORIES, MAINTENANCE_SCOPES, getScopesForCategory } from '../types';
+import { Search, Wrench, Landmark, Trash2, Calendar, User, Gauge, Edit2, Check, X, ChevronDown, ChevronUp, History, ClipboardCheck, Droplets, MapPin, Coins, Car } from 'lucide-react';
 import CurrencyInput from './CurrencyInput';
 
 interface HistoryLogsProps {
@@ -75,6 +75,15 @@ export function HistoryLogs({
   const [editMaintType, setEditMaintType] = useState<MaintenanceLog['type']>('Outro');
   const [editMaintCategory, setEditMaintCategory] = useState<string>('');
   const [editMaintScope, setEditMaintScope] = useState<string>('');
+
+  useEffect(() => {
+    if (editingMaintId) {
+      const scopes = getScopesForCategory(editMaintCategory);
+      if (!scopes.includes(editMaintScope)) {
+        setEditMaintScope(scopes[0] || '');
+      }
+    }
+  }, [editMaintCategory]);
   const [editMaintDesc, setEditMaintDesc] = useState('');
   const [editMaintShop, setEditMaintShop] = useState('');
   const [editMaintCurrentKm, setEditMaintCurrentKm] = useState<number | undefined>(undefined);
@@ -167,10 +176,6 @@ export function HistoryLogs({
   };
 
   const handleSaveMaintEdit = (log: MaintenanceLog) => {
-    if (!editMaintDesc.trim() || editMaintCost < 0) {
-      alert('Por favor, preencha a descrição e um custo válido.');
-      return;
-    }
     if (onUpdateMaintenance) {
       onUpdateMaintenance({
         ...log,
@@ -368,6 +373,20 @@ export function HistoryLogs({
   }, [filteredMaint, filteredExpenses]);
 
   const groupedMaint = React.useMemo(() => groupLogsByMonth(filteredMaint), [filteredMaint]);
+  const groupLogsByVehicle = <T extends { vehicleId: string }>(logs: T[]): [string, T[]][] => {
+    const groups: { [vehicleId: string]: T[] } = {};
+    logs.forEach((log) => {
+      const vId = log.vehicleId || 'unknown';
+      if (!groups[vId]) groups[vId] = [];
+      groups[vId].push(log);
+    });
+    return Object.entries(groups).sort(([aId], [bId]) => {
+      const nameA = getVehicleName(aId);
+      const nameB = getVehicleName(bId);
+      return nameA.localeCompare(nameB);
+    });
+  };
+  const groupedMaintByVehicle = React.useMemo(() => groupLogsByVehicle(filteredMaint), [filteredMaint]);
   const groupedExpenses = React.useMemo(() => groupLogsByMonth(filteredExpenses), [filteredExpenses]);
   const groupedVistorias = React.useMemo(() => groupLogsByMonth(filteredVistorias), [filteredVistorias]);
   const groupedUnifiedCosts = React.useMemo(() => groupLogsByMonth(unifiedCosts), [unifiedCosts]);
@@ -495,7 +514,7 @@ export function HistoryLogs({
             onChange={(e) => setEditMaintScope(e.target.value)}
             className="w-full h-9 bg-black/60 border border-purple-500/40 text-purple-300 rounded-lg px-2.5 py-1.5 text-xs focus:outline-hidden focus:border-purple-400 font-medium"
           >
-            {MAINTENANCE_SCOPES.map((sc) => (
+            {getScopesForCategory(editMaintCategory).map((sc) => (
               <option key={sc} value={sc} className="bg-[#111111] text-white">
                 {sc}
               </option>
@@ -1284,29 +1303,29 @@ export function HistoryLogs({
               <>
                 {/* Mobile View: Responsive Cards (No overflow, fits phone screens) */}
                 <div className="md:hidden space-y-4">
-                  {groupedMaint.map(([monthKey, monthItems]) => {
-                    const monthTotal = monthItems.reduce((acc, it) => acc + (it.cost || 0), 0);
+                  {groupedMaintByVehicle.map(([vehicleId, vehicleItems]) => {
+                    const vehicleTotal = vehicleItems.reduce((acc, it) => acc + (it.cost || 0), 0);
                     return (
-                      <div key={monthKey} className="space-y-2.5">
-                        {/* Month Header Banner */}
-                        <div className="flex items-center justify-between bg-emerald-500/10 border border-emerald-500/25 rounded-xl px-3.5 py-2">
+                      <div key={vehicleId} className="space-y-2.5">
+                        {/* Vehicle Header Banner */}
+                        <div className="flex items-center justify-between bg-blue-500/10 border border-blue-500/25 rounded-xl px-3.5 py-2.5">
                           <div className="flex items-center gap-2 min-w-0">
-                            <Calendar className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
+                            <Car className="w-4 h-4 text-blue-400 shrink-0" />
                             <span className="text-xs font-bold text-white uppercase tracking-wider truncate">
-                              {formatMonthYear(monthKey)}
+                              {getVehicleName(vehicleId)}
                             </span>
-                            <span className="text-[10px] font-semibold text-emerald-300 bg-emerald-500/20 px-1.5 py-0.5 rounded shrink-0">
-                              {monthItems.length} {monthItems.length === 1 ? 'item' : 'itens'}
+                            <span className="text-[10px] font-semibold text-blue-300 bg-blue-500/20 px-1.5 py-0.5 rounded shrink-0">
+                              {vehicleItems.length} {vehicleItems.length === 1 ? 'item' : 'itens'}
                             </span>
                           </div>
                           <span className="text-xs font-bold font-mono text-emerald-400 shrink-0 ml-2">
-                            {formatBRL(monthTotal)}
+                            {formatBRL(vehicleTotal)}
                           </span>
                         </div>
 
-                        {/* Cards for this month */}
+                        {/* Cards for this vehicle */}
                         <div className="space-y-2.5">
-                          {monthItems.map((log) => {
+                          {vehicleItems.map((log) => {
                     const isEditing = editingMaintId === log.id;
                     if (isEditing) {
                       return (
@@ -1433,32 +1452,32 @@ export function HistoryLogs({
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-white/[0.03]">
-                      {groupedMaint.map(([monthKey, monthItems]) => {
-                        const monthTotal = monthItems.reduce((acc, it) => acc + (it.cost || 0), 0);
+                      {groupedMaintByVehicle.map(([vehicleId, vehicleItems]) => {
+                        const vehicleTotal = vehicleItems.reduce((acc, it) => acc + (it.cost || 0), 0);
                         return (
-                          <React.Fragment key={monthKey}>
-                            <tr className="bg-emerald-950/30 border-y border-emerald-500/25">
-                              <td colSpan={7} className="py-2.5 px-3">
+                          <React.Fragment key={vehicleId}>
+                            <tr className="bg-blue-950/35 border-y border-blue-500/25">
+                              <td colSpan={7} className="py-3 px-3">
                                 <div className="flex items-center justify-between">
-                                  <div className="flex items-center gap-2">
-                                    <Calendar className="w-3.5 h-3.5 text-emerald-400" />
+                                  <div className="flex items-center gap-2.5">
+                                    <Car className="w-4 h-4 text-blue-400" />
                                     <span className="font-bold text-xs text-white uppercase tracking-wider">
-                                      {formatMonthYear(monthKey)}
+                                      {getVehicleName(vehicleId)}
                                     </span>
-                                    <span className="text-[10px] font-semibold text-emerald-300 bg-emerald-500/20 px-2 py-0.5 rounded-full">
-                                      {monthItems.length} {monthItems.length === 1 ? 'manutenção' : 'manutenções'}
+                                    <span className="text-[10px] font-semibold text-blue-300 bg-blue-500/20 px-2.5 py-0.5 rounded-full">
+                                      {vehicleItems.length} {vehicleItems.length === 1 ? 'manutenção' : 'manutenções'}
                                     </span>
                                   </div>
                                   <div className="flex items-center gap-1.5 text-right">
-                                    <span className="text-[11px] text-gray-400">Total no mês:</span>
+                                    <span className="text-[11px] text-gray-400">Total do veículo:</span>
                                     <span className="font-bold font-mono text-xs text-emerald-400">
-                                      {formatBRL(monthTotal)}
+                                      {formatBRL(vehicleTotal)}
                                     </span>
                                   </div>
                                 </div>
                               </td>
                             </tr>
-                            {monthItems.map((log) => {
+                            {vehicleItems.map((log) => {
                               const isEditing = editingMaintId === log.id;
                         if (isEditing) {
                           return (

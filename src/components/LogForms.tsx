@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Vehicle, VehicleDocument, FuelLog, MaintenanceLog, ExpenseLog, AgendaContact, SinistroLog, TireState, MAINTENANCE_CATEGORIES, MAINTENANCE_SCOPES } from '../types';
+import { Vehicle, VehicleDocument, FuelLog, MaintenanceLog, ExpenseLog, AgendaContact, SinistroLog, TireState, MAINTENANCE_CATEGORIES, MAINTENANCE_SCOPES, getScopesForCategory } from '../types';
 import { X, Save, AlertCircle, Users, BookOpen, Sparkles, Mic, MicOff, Calculator, Plus, Trash2, User, Phone, Search, Smartphone, Check, Upload, ExternalLink, AlertTriangle, Car, Calendar, Camera, Shield, Bell, Paperclip, Eye, FileText, Building2, FilePlus, Layers, FileCheck, Loader2 } from 'lucide-react';
 import { Contacts } from '@capacitor-community/contacts';
 import { Capacitor } from '@capacitor/core';
@@ -255,6 +255,13 @@ export function LogForms({
   const [maintType, setMaintType] = useState<MaintenanceLog['type']>('Revisão');
   const [maintCategory, setMaintCategory] = useState<string>('Revisão Periódica / Concessionária');
   const [maintScope, setMaintScope] = useState<string>('Troca de Óleo, Filtros e Lubrificantes');
+
+  useEffect(() => {
+    const scopes = getScopesForCategory(maintCategory);
+    if (!scopes.includes(maintScope)) {
+      setMaintScope(scopes[0] || '');
+    }
+  }, [maintCategory]);
   const [maintDescription, setMaintDescription] = useState('');
   const [maintCost, setMaintCost] = useState(0);
   const [maintCurrentKm, setMaintCurrentKm] = useState<number | undefined>(undefined);
@@ -1241,10 +1248,6 @@ export function LogForms({
     }
 
     else if (formType === 'maintenance') {
-      if (maintCost < 0) {
-        setError('Informe o custo correspondente.');
-        return;
-      }
       onSaveMaintenance({
         vehicleId,
         date: maintDate,
@@ -2687,7 +2690,7 @@ export function LogForms({
                     onChange={e => setMaintScope(e.target.value)}
                     className="w-full h-10 text-xs bg-white/[0.03] border border-purple-500/30 rounded-xl px-3 py-2 text-white focus:outline-hidden focus:border-purple-500 focus:bg-[#1a1a1a] font-medium"
                   >
-                    {MAINTENANCE_SCOPES.map(sc => (
+                    {getScopesForCategory(maintCategory).map(sc => (
                       <option key={sc} value={sc} className="bg-[#111111] text-white">
                         {sc}
                       </option>

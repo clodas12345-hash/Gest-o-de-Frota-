@@ -193,6 +193,63 @@ export const MAINTENANCE_SCOPES = [
   'Higienização Interna, Polimento e Detalhamento'
 ] as const;
 
+export const CATEGORY_TO_SCOPES_MAP: Record<string, string[]> = {
+  'Revisão Periódica / Concessionária': [
+    'Troca de Óleo, Filtros e Lubrificantes',
+    'Correia Dentada, Tensores e Correias Auxiliares',
+    'Sistema de Freios (Pastilhas, Discos e Fluido)',
+    'Sistema de Arrefecimento (Radiador, Aditivo e Bomba d\'Água)'
+  ],
+  'Manutenção Preventiva': [
+    'Troca de Óleo, Filtros e Lubrificantes',
+    'Correia Dentada, Tensores e Correias Auxiliares',
+    'Sistema de Arrefecimento (Radiador, Aditivo e Bomba d\'Água)',
+    'Ar Condicionado (Higienização, Filtro de Cabine e Gás)',
+    'Pneus (Troca, Rodízio, Alinhamento e Balanceamento)'
+  ],
+  'Manutenção Corretiva (Defeito)': MAINTENANCE_SCOPES as unknown as string[],
+  'Motor & Injeção Eletrônica': [
+    'Injeção Eletrônica, Velas, Cabos e Bobinas',
+    'Correia Dentada, Tensores e Correias Auxiliares',
+    'Troca de Óleo, Filtros e Lubrificantes',
+    'Escapamento, Catalisador e Sensores'
+  ],
+  'Freios, Suspensão & Direção': [
+    'Sistema de Freios (Pastilhas, Discos e Fluido)',
+    'Suspensão e Direção (Amortecedores, Buchas e Pivôs)'
+  ],
+  'Transmissão, Embreagem & Câmbio': [
+    'Embreagem, Câmbio e Troca de Fluido da Transmissão'
+  ],
+  'Pneus, Rodas & Geometria': [
+    'Pneus (Troca, Rodízio, Alinhamento e Balanceamento)'
+  ],
+  'Elétrica, Bateria & Iluminação': [
+    'Sistema Elétrico (Bateria, Alternador e Iluminação)',
+    'Injeção Eletrônica, Velas, Cabos e Bobinas'
+  ],
+  'Ar Condicionado & Arrefecimento': [
+    'Sistema de Arrefecimento (Radiador, Aditivo e Bomba d\'Água)',
+    'Ar Condicionado (Higienização, Filtro de Cabine e Gás)'
+  ],
+  'Funilaria, Pintura & Estética': [
+    'Funilaria, Martelinho de Ouro e Pintura',
+    'Higienização Interna, Polimento e Detalhamento'
+  ],
+  'Vidros, Palhetas & Acessórios': [
+    'Troca de Palhetas, Vidros e Retrovisores'
+  ],
+  'Batida, Acidente & B.O.': [
+    'Funilaria, Martelinho de Ouro e Pintura',
+    'Troca de Palhetas, Vidros e Retrovisores',
+    'Sistema Elétrico (Bateria, Alternador e Iluminação)'
+  ]
+};
+
+export function getScopesForCategory(category: string): string[] {
+  return CATEGORY_TO_SCOPES_MAP[category] || MAINTENANCE_SCOPES as unknown as string[];
+}
+
 export interface MaintenanceLog {
   id: string;
   vehicleId: string;
