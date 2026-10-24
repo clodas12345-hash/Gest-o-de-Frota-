@@ -280,9 +280,19 @@ export interface ExpenseLog {
   id: string;
   vehicleId: string;
   date: string;
-  category: 'IPVA' | 'Seguro' | 'Licenciamento' | 'Multa' | 'Lavagem' | 'Estacionamento' | 'Financiamento' | 'Rastreador' | 'Outros';
+  type?: 'Preventiva' | 'Corretiva' | 'Revisão' | 'Pneus' | 'Batida/Acidente' | 'Palhetas' | 'Pastilhas' | 'Fixa' | 'Variável' | 'Outro';
+  category: 'IPVA' | 'Seguro' | 'Licenciamento' | 'Multa' | 'Lavagem' | 'Estacionamento' | 'Financiamento' | 'Rastreador' | 'Outros' | string;
+  scope?: string;
   description: string;
   cost: number;
+  currentKm?: number;
+  nextKm?: number;
+  shopName?: string;
+  shopPhone?: string;
+  boNumber?: string;
+  partsReplaced?: string;
+  parcelasPagas?: number;
+  parcelasTotais?: number;
   receiptUrl?: string;
   invoiceFileName?: string;
 }

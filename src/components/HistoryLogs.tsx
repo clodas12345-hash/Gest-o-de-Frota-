@@ -71,8 +71,26 @@ export function HistoryLogs({
   const [editExpenseVehicleId, setEditExpenseVehicleId] = useState<string>('');
   const [editDesc, setEditDesc] = useState('');
   const [editCost, setEditCost] = useState(0);
-  const [editCategory, setEditCategory] = useState<ExpenseLog['category']>('Outros');
+  const [editCategory, setEditCategory] = useState<string>('Outros');
   const [editDate, setEditDate] = useState('');
+  const [editExpType, setEditExpType] = useState<ExpenseLog['type']>('Outro');
+  const [editExpScope, setEditExpScope] = useState<string>('');
+  const [editExpShop, setEditExpShop] = useState('');
+  const [editExpCurrentKm, setEditExpCurrentKm] = useState<number | undefined>(undefined);
+  const [editExpNextKm, setEditExpNextKm] = useState(0);
+  const [editExpBoNumber, setEditExpBoNumber] = useState('');
+  const [editExpPartsReplaced, setEditExpPartsReplaced] = useState('');
+  const [editExpParcelasPagas, setEditExpParcelasPagas] = useState<number | undefined>(undefined);
+  const [editExpParcelasTotais, setEditExpParcelasTotais] = useState<number | undefined>(undefined);
+
+  useEffect(() => {
+    if (editingExpenseId) {
+      const scopes = getScopesForCategory(editCategory);
+      if (!scopes.includes(editExpScope)) {
+        setEditExpScope(scopes[0] || '');
+      }
+    }
+  }, [editCategory, editingExpenseId]);
 
   // Inline editing states for maintenance
   const [editingMaintId, setEditingMaintId] = useState<string | null>(null);
@@ -124,6 +142,15 @@ export function HistoryLogs({
     setEditCost(log.cost);
     setEditCategory(log.category);
     setEditDate(log.date);
+    setEditExpType(log.type || 'Outro');
+    setEditExpScope(log.scope || MAINTENANCE_SCOPES[0]);
+    setEditExpShop(log.shopName || '');
+    setEditExpCurrentKm(log.currentKm);
+    setEditExpNextKm(log.nextKm || 0);
+    setEditExpBoNumber(log.boNumber || '');
+    setEditExpPartsReplaced(log.partsReplaced || '');
+    setEditExpParcelasPagas(log.parcelasPagas);
+    setEditExpParcelasTotais(log.parcelasTotais);
   };
 
   const handleStartEditMaint = (log: MaintenanceLog) => {
@@ -164,18 +191,23 @@ export function HistoryLogs({
 
   // Save editing handlers
   const handleSaveExpenseEdit = (log: ExpenseLog) => {
-    if (!editDesc.trim() || editCost <= 0) {
-      alert('Por favor, preencha a descrição e o valor.');
-      return;
-    }
     if (onUpdateExpense) {
       onUpdateExpense({
         ...log,
         vehicleId: editExpenseVehicleId || log.vehicleId,
-        description: editDesc.trim(),
-        cost: editCost,
-        category: editCategory,
         date: editDate,
+        type: editExpType,
+        category: editCategory || undefined,
+        scope: editExpScope || undefined,
+        description: editDesc.trim(),
+        shopName: editExpShop.trim() || undefined,
+        currentKm: editExpCurrentKm,
+        nextKm: editExpNextKm > 0 ? editExpNextKm : undefined,
+        cost: editCost,
+        boNumber: editExpBoNumber.trim() || undefined,
+        partsReplaced: editExpPartsReplaced.trim() || undefined,
+        parcelasPagas: editExpParcelasPagas,
+        parcelasTotais: editExpParcelasTotais,
       }, log);
     }
     setEditingExpenseId(null);
@@ -677,16 +709,31 @@ export function HistoryLogs({
   );
 
   const renderExpenseEditForm = (log: ExpenseLog) => (
-    <div className="p-4 bg-[#121620] border-2 border-purple-500/50 rounded-2xl shadow-xl space-y-3">
-      <div className="flex items-center justify-between border-b border-white/10 pb-2">
-        <span className="text-xs font-bold text-white">Editar Despesa ({getVehiclePlate(editExpenseVehicleId || log.vehicleId)})</span>
-        <div className="flex items-center gap-1.5">
+    <div className="space-y-4">
+      {/* Top Header & Buttons */}
+      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-white/10 pb-3">
+        <div className="flex items-center gap-2.5 min-w-0">
+          <div className="p-2 bg-purple-500/20 text-purple-400 rounded-xl shrink-0">
+            <Landmark className="w-4 h-4" />
+          </div>
+          <div className="min-w-0">
+            <p className="text-xs font-bold text-white flex items-center gap-2 flex-wrap">
+              <span>Editar Despesa</span>
+              <span className="text-purple-400 font-mono bg-purple-500/10 px-2 py-0.5 rounded border border-purple-500/20">
+                {getVehiclePlate(editExpenseVehicleId || log.vehicleId)}
+              </span>
+            </p>
+            <p className="text-[10px] text-gray-400">Preencha os campos e salve as alterações.</p>
+          </div>
+        </div>
+        <div className="flex items-center gap-2 w-full sm:w-auto justify-end">
           <button
             type="button"
             onClick={() => setEditingExpenseId(null)}
-            className="px-2.5 py-1 text-xs text-gray-300 hover:text-white bg-white/5 rounded-lg border border-white/10 cursor-pointer"
+            className="flex-1 sm:flex-initial px-3 py-1.5 text-xs text-gray-300 hover:text-white bg-white/5 hover:bg-white/10 rounded-lg transition-colors cursor-pointer flex items-center justify-center gap-1 border border-white/10"
           >
-            Cancelar
+            <X className="w-3.5 h-3.5" />
+            <span>Cancelar</span>
           </button>
           {onSwitchExpenseToMaint && (
             <button
@@ -696,28 +743,41 @@ export function HistoryLogs({
                   ...log,
                   vehicleId: editExpenseVehicleId || log.vehicleId,
                   date: editDate || log.date,
-                  category: editCategory || log.category,
                   description: editDesc || log.description,
-                  cost: editCost || log.cost
+                  cost: editCost || log.cost,
+                  type: editExpType,
+                  category: editCategory,
+                  scope: editExpScope,
+                  shopName: editExpShop,
+                  boNumber: editExpBoNumber,
+                  partsReplaced: editExpPartsReplaced,
+                  currentKm: editExpCurrentKm,
+                  nextKm: editExpNextKm,
+                  parcelasPagas: editExpParcelasPagas,
+                  parcelasTotais: editExpParcelasTotais
                 }, log);
                 setEditingExpenseId(null);
               }}
-              className="px-2.5 py-1 text-xs text-amber-400 hover:text-white bg-amber-500/10 rounded-lg border border-amber-500/20 cursor-pointer flex items-center gap-1"
+              className="flex-1 sm:flex-initial px-3 py-1.5 text-xs text-blue-400 hover:text-white bg-blue-500/10 hover:bg-blue-500/20 rounded-lg border border-blue-500/20 transition-all cursor-pointer flex items-center justify-center gap-1"
             >
-              <RefreshCw className="w-3 h-3" />
+              <RefreshCw className="w-3.5 h-3.5" />
               <span>Mudar p/ Manutenção</span>
             </button>
           )}
           <button
             type="button"
             onClick={() => handleSaveExpenseEdit(log)}
-            className="px-3 py-1 text-xs font-bold text-white bg-purple-600 hover:bg-purple-500 rounded-lg shadow-md shadow-purple-500/20 cursor-pointer"
+            className="flex-1 sm:flex-initial px-3.5 py-1.5 text-xs font-bold text-white bg-purple-600 hover:bg-purple-500 rounded-lg transition-all cursor-pointer flex items-center justify-center gap-1 shadow-md shadow-purple-500/20"
           >
-            Salvar
+            <Check className="w-3.5 h-3.5" />
+            <span>Salvar Alterações</span>
           </button>
         </div>
       </div>
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 text-xs">
+
+      {/* Grid of Inputs */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3 text-xs">
+        {/* Veículo Selector */}
         <div className="space-y-1 sm:col-span-2">
           <label className="text-[11px] font-semibold text-gray-400 flex items-center justify-between">
             <span>Veículo / Carro</span>
@@ -735,8 +795,9 @@ export function HistoryLogs({
             ))}
           </select>
         </div>
+
         <div className="space-y-1">
-          <label className="text-[11px] font-semibold text-gray-400">Data</label>
+          <label className="text-[11px] font-semibold text-gray-400">Data do Serviço</label>
           <input
             type="date"
             value={editDate}
@@ -744,41 +805,186 @@ export function HistoryLogs({
             className="w-full h-9 bg-black/60 border border-white/15 text-white rounded-lg px-2.5 py-1.5 text-xs focus:outline-hidden focus:border-purple-500 scheme-dark font-mono"
           />
         </div>
+
+        <div className="space-y-1">
+          <label className="text-[11px] font-semibold text-gray-400">Tipo de Manutenção</label>
+          <select
+            value={editExpType || 'Outro'}
+            onChange={(e) => setEditExpType(e.target.value as any)}
+            className="w-full h-9 bg-black/60 border border-white/15 text-white rounded-lg px-2.5 py-1.5 text-xs focus:outline-hidden focus:border-purple-500 font-medium"
+          >
+            <option value="Revisão">Revisão</option>
+            <option value="Preventiva">Preventiva</option>
+            <option value="Corretiva">Corretiva</option>
+            <option value="Batida/Acidente">Batida/Acidente</option>
+            <option value="Pneus">Pneus</option>
+            <option value="Palhetas">Palhetas</option>
+            <option value="Pastilhas">Pastilhas</option>
+            <option value="Fixa">Fixa</option>
+            <option value="Variável">Variável</option>
+            <option value="Outro">Outro</option>
+          </select>
+        </div>
+
         <div className="space-y-1">
           <label className="text-[11px] font-semibold text-gray-400">Categoria</label>
           <select
             value={editCategory}
-            onChange={(e) => setEditCategory(e.target.value as any)}
-            className="w-full h-9 bg-black/60 border border-white/15 text-white rounded-lg px-2.5 py-1.5 text-xs focus:outline-hidden focus:border-purple-500"
+            onChange={(e) => setEditCategory(e.target.value)}
+            className="w-full h-9 bg-black/60 border border-purple-500/40 text-purple-300 rounded-lg px-2.5 py-1.5 text-xs focus:outline-hidden focus:border-purple-400 font-medium"
           >
-            <option value="IPVA">IPVA</option>
-            <option value="Seguro">Seguro</option>
-            <option value="Licenciamento">Licenciamento</option>
-            <option value="Multa">Multa</option>
-            <option value="Lavagem">Lavagem</option>
-            <option value="Estacionamento">Estacionamento</option>
-            <option value="Financiamento">Financiamento</option>
-            <option value="Rastreador">Rastreador</option>
-            <option value="Outros">Outros</option>
+            {Array.from(new Set([
+              editCategory,
+              ...MAINTENANCE_CATEGORIES,
+              'IPVA',
+              'Seguro',
+              'Licenciamento',
+              'Multa',
+              'Lavagem',
+              'Estacionamento',
+              'Financiamento',
+              'Rastreador',
+              'Outros'
+            ])).filter(Boolean).map((cat) => (
+              <option key={cat} value={cat} className="bg-[#111111] text-white">
+                {cat}
+              </option>
+            ))}
           </select>
         </div>
-        <div className="space-y-1 sm:col-span-2">
-          <label className="text-[11px] font-semibold text-gray-400">Descrição</label>
+
+        <div className="space-y-1">
+          <label className="text-[11px] font-semibold text-gray-400">Escopo</label>
+          <select
+            value={editExpScope}
+            onChange={(e) => setEditExpScope(e.target.value)}
+            className="w-full h-9 bg-black/60 border border-purple-500/40 text-purple-300 rounded-lg px-2.5 py-1.5 text-xs focus:outline-hidden focus:border-purple-400 font-medium"
+          >
+            {Array.from(new Set([editExpScope, ...getScopesForCategory(editCategory), ...MAINTENANCE_SCOPES])).filter(Boolean).map((sc) => (
+              <option key={sc} value={sc} className="bg-[#111111] text-white">
+                {sc}
+              </option>
+            ))}
+          </select>
+        </div>
+
+        <div className="space-y-1">
+          <label className="text-[11px] font-semibold text-gray-400">KM no Serviço</label>
           <input
-            type="text"
-            value={editDesc}
-            onChange={(e) => setEditDesc(e.target.value)}
-            className="w-full h-9 bg-black/60 border border-white/15 text-white rounded-lg px-2.5 py-1.5 text-xs focus:outline-hidden focus:border-purple-500"
+            type="number"
+            value={editExpCurrentKm ?? ''}
+            onChange={(e) => setEditExpCurrentKm(e.target.value === '' ? undefined : Number(e.target.value))}
+            placeholder="Ex: 45000"
+            className="w-full h-9 bg-black/60 border border-cyan-500/40 text-cyan-300 font-mono font-bold rounded-lg px-2.5 py-1.5 text-xs focus:outline-hidden focus:border-cyan-400"
           />
         </div>
-        <div className="space-y-1 sm:col-span-2">
-          <label className="text-[11px] font-semibold text-gray-400">Valor Total (R$)</label>
+
+        <div className="space-y-1">
+          <label className="text-[11px] font-semibold text-gray-400">Próxima Revisão (KM)</label>
+          <input
+            type="number"
+            value={editExpNextKm || ''}
+            onChange={(e) => setEditExpNextKm(Number(e.target.value))}
+            placeholder="Ex: 55000"
+            className="w-full h-9 bg-black/60 border border-white/15 text-white font-mono rounded-lg px-2.5 py-1.5 text-xs focus:outline-hidden focus:border-purple-500"
+          />
+        </div>
+
+        <div className="space-y-1">
+          <label className="text-[11px] font-semibold text-gray-400">Custo Total (R$)</label>
           <CurrencyInput
             value={editCost}
             onChange={setEditCost}
+            placeholder="0,00"
             className="w-full h-9 bg-black/60 border border-white/15 text-emerald-400 font-mono font-bold rounded-lg px-2.5 py-1.5 text-xs focus:outline-hidden focus:border-emerald-500"
           />
         </div>
+
+        <div className="space-y-1">
+          <label className="text-[11px] font-semibold text-gray-400">Oficina / Estabelecimento</label>
+          <input
+            type="text"
+            value={editExpShop}
+            onChange={(e) => setEditExpShop(e.target.value)}
+            placeholder="Ex: Concessionária Fiat"
+            className="w-full h-9 bg-black/60 border border-white/15 text-white rounded-lg px-2.5 py-1.5 text-xs focus:outline-hidden focus:border-purple-500"
+          />
+        </div>
+
+        <div className="space-y-1">
+          <label className="text-[11px] font-semibold text-gray-400">Nº do B.O. (Opcional)</label>
+          <input
+            type="text"
+            value={editExpBoNumber}
+            onChange={(e) => setEditExpBoNumber(e.target.value)}
+            placeholder="Ex: BO 12345/2026"
+            className="w-full h-9 bg-black/60 border border-white/15 text-white rounded-lg px-2.5 py-1.5 text-xs focus:outline-hidden focus:border-purple-500"
+          />
+        </div>
+
+        <div className="space-y-1">
+          <label className="text-[11px] font-semibold text-gray-400">Peças Trocadas</label>
+          <input
+            type="text"
+            value={editExpPartsReplaced}
+            onChange={(e) => setEditExpPartsReplaced(e.target.value)}
+            placeholder="Ex: Óleo, Filtros, Pastilhas..."
+            className="w-full h-9 bg-black/60 border border-white/15 text-white rounded-lg px-2.5 py-1.5 text-xs focus:outline-hidden focus:border-purple-500"
+          />
+        </div>
+
+        <div className="space-y-1">
+          <label className="text-[11px] font-semibold text-gray-400">Parcelas Pagas</label>
+          <input
+            type="number"
+            value={editExpParcelasPagas ?? ''}
+            onChange={(e) => setEditExpParcelasPagas(e.target.value === '' ? undefined : Number(e.target.value))}
+            placeholder="Ex: 1"
+            className="w-full h-9 bg-black/60 border border-white/15 text-white rounded-lg px-2.5 py-1.5 text-xs focus:outline-hidden focus:border-amber-500"
+          />
+        </div>
+
+        <div className="space-y-1">
+          <label className="text-[11px] font-semibold text-gray-400">Total de Parcelas</label>
+          <input
+            type="number"
+            value={editExpParcelasTotais ?? ''}
+            onChange={(e) => setEditExpParcelasTotais(e.target.value === '' ? undefined : Number(e.target.value))}
+            placeholder="Ex: 10"
+            className="w-full h-9 bg-black/60 border border-white/15 text-white rounded-lg px-2.5 py-1.5 text-xs focus:outline-hidden focus:border-amber-500"
+          />
+        </div>
+      </div>
+
+      <div className="space-y-1">
+        <label className="text-[11px] font-semibold text-gray-400">Descrição Detalhada do Serviço</label>
+        <input
+          type="text"
+          value={editDesc}
+          onChange={(e) => setEditDesc(e.target.value)}
+          placeholder="Descreva o serviço realizado..."
+          className="w-full h-9 bg-black/60 border border-white/15 text-white rounded-lg px-2.5 py-1.5 text-xs focus:outline-hidden focus:border-purple-500"
+        />
+      </div>
+
+      {/* Bottom Action Bar */}
+      <div className="flex flex-col-reverse sm:flex-row items-center justify-end gap-2 pt-3 border-t border-white/10">
+        <button
+          type="button"
+          onClick={() => setEditingExpenseId(null)}
+          className="w-full sm:w-auto px-4 py-2 text-xs font-semibold text-gray-300 hover:text-white bg-white/5 hover:bg-white/10 rounded-xl transition-colors cursor-pointer flex items-center justify-center gap-1.5 border border-white/10"
+        >
+          <X className="w-3.5 h-3.5" />
+          <span>Cancelar</span>
+        </button>
+        <button
+          type="button"
+          onClick={() => handleSaveExpenseEdit(log)}
+          className="w-full sm:w-auto px-5 py-2 text-xs font-bold text-white bg-purple-600 hover:bg-purple-500 rounded-xl transition-all cursor-pointer flex items-center justify-center gap-1.5 shadow-md shadow-purple-500/25"
+        >
+          <Check className="w-3.5 h-3.5" />
+          <span>Salvar Alterações</span>
+        </button>
       </div>
     </div>
   );
@@ -1078,7 +1284,7 @@ export function HistoryLogs({
                               const isEditing = editingExpenseId === log.id;
                               if (isEditing) {
                                 return (
-                                  <div key={'mob-' + item.id + '-' + index}>
+                                  <div key={'mob-' + item.id + '-' + index} className="p-4 bg-[#121620] border-2 border-purple-500/50 rounded-2xl shadow-xl">
                                     {renderExpenseEditForm(log)}
                                   </div>
                                 );
@@ -1859,7 +2065,7 @@ export function HistoryLogs({
                     const isEditing = editingExpenseId === log.id;
                     if (isEditing) {
                       return (
-                        <div key={'mob-' + log.id + '-' + index}>
+                        <div key={'mob-' + log.id + '-' + index} className="p-4 bg-[#121620] border-2 border-purple-500/50 rounded-2xl shadow-xl">
                           {renderExpenseEditForm(log)}
                         </div>
                       );
