@@ -1524,10 +1524,16 @@ export default function App() {
 
   const handleSaveVistoria = async (vistoria: Vistoria, pdfDataUrl?: string, pdfFileName?: string) => {
     knownVistoriaIdsRef.current.add(vistoria.id);
-    const targetVehicle = vehicles.find(v => v.id === vistoria.vehicleId);
+    const plateNormalized = (vistoria.vehiclePlate || '').replace(/[^A-Z0-9]/gi, '').toUpperCase();
+    const targetVehicle = vehicles.find(v => 
+      v.id === vistoria.vehicleId || 
+      (plateNormalized && v.plate.replace(/[^A-Z0-9]/gi, '').toUpperCase() === plateNormalized)
+    ) || vehicles[0];
+
     const enrichedVistoria: Vistoria = {
       ...vistoria,
-      vehiclePlate: vistoria.vehiclePlate || targetVehicle?.plate
+      vehicleId: targetVehicle ? targetVehicle.id : vistoria.vehicleId,
+      vehiclePlate: targetVehicle ? targetVehicle.plate : vistoria.vehiclePlate
     };
 
     setVistorias((prev) => {
@@ -2194,17 +2200,19 @@ export default function App() {
         }}
         onSaveVistoria={(newVistoria, pdfDataUrl, pdfFileName) => {
           knownVistoriaIdsRef.current.add(newVistoria.id);
-          const targetPlateSanitized = targetVehicle.plate.replace(/[^A-Z0-9]/gi, '').toUpperCase();
+          const plateSanitized = (newVistoria.vehiclePlate || targetVehicle?.plate || '').replace(/[^A-Z0-9]/gi, '').toUpperCase();
           const matchedRealVehicle = vehicles.find(
-            v => v.id === targetVehicle.id || v.plate.replace(/[^A-Z0-9]/gi, '').toUpperCase() === targetPlateSanitized
-          );
+            v => v.id === newVistoria.vehicleId || v.id === targetVehicle?.id || (plateSanitized && v.plate.replace(/[^A-Z0-9]/gi, '').toUpperCase() === plateSanitized)
+          ) || targetVehicle || vehicles[0];
+
           const finalVistoria: Vistoria = {
             ...newVistoria,
             vehicleId: matchedRealVehicle ? matchedRealVehicle.id : newVistoria.vehicleId,
-            vehiclePlate: targetVehicle.plate
+            vehiclePlate: matchedRealVehicle ? matchedRealVehicle.plate : (targetVehicle?.plate || newVistoria.vehiclePlate)
           };
+          const activeVehicle = matchedRealVehicle || targetVehicle || vehicles[0];
 
-          sendAppNotification(`📋 Vistoria Concluída: ${targetVehicle.brand} (${targetVehicle.plate})`, {
+          sendAppNotification(`📋 Vistoria Concluída: ${activeVehicle.brand} (${activeVehicle.plate})`, {
             body: `Vistoria (${finalVistoria.type || 'periódica'}) registrada com ${finalVistoria.photos?.length || 0} foto(s).`,
             eventKey: 'vistoria_completed',
           });
@@ -2236,11 +2244,12 @@ export default function App() {
             } : {};
 
             setVehicles(prev => {
-              const found = prev.some(v => v.id === targetVehicle.id || v.plate.replace(/[^A-Z0-9]/gi, '').toUpperCase() === targetPlateSanitized);
+              const targetPlateSanitized = activeVehicle.plate.replace(/[^A-Z0-9]/gi, '').toUpperCase();
+              const found = prev.some(v => v.id === activeVehicle.id || v.plate.replace(/[^A-Z0-9]/gi, '').toUpperCase() === targetPlateSanitized);
               const nextVehicles = !found
-                ? [{ ...targetVehicle, ...kmUpdate, documents: [vistoriaDoc, ...(targetVehicle.documents || [])] }, ...prev]
+                ? [{ ...activeVehicle, ...kmUpdate, documents: [vistoriaDoc, ...(activeVehicle.documents || [])] }, ...prev]
                 : prev.map(v => {
-                    if (v.id === targetVehicle.id || v.plate.replace(/[^A-Z0-9]/gi, '').toUpperCase() === targetPlateSanitized) {
+                    if (v.id === activeVehicle.id || v.plate.replace(/[^A-Z0-9]/gi, '').toUpperCase() === targetPlateSanitized) {
                       return {
                         ...v,
                         ...kmUpdate,
@@ -2263,7 +2272,7 @@ export default function App() {
           if (pdfDataUrl) {
             attachDoc(pdfDataUrl, 'Documento PDF', 'pdf');
           } else {
-            generateVistoriaPDF(targetVehicle, finalVistoria).then(({ pdfDataUrl: generatedUrl }) => {
+            generateVistoriaPDF(activeVehicle, finalVistoria).then(({ pdfDataUrl: generatedUrl }) => {
               attachDoc(generatedUrl, 'Documento PDF', 'pdf');
             }).catch(err => {
               console.error("Erro ao gerar PDF da Vistoria", err);
