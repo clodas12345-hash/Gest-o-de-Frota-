@@ -867,16 +867,19 @@ export const VehicleCard: React.FC<VehicleCardProps> = ({
   const [customVistoriaMsgText, setCustomVistoriaMsgText] = useState<string>('');
   const [vistoriaReturnLink, setVistoriaReturnLink] = useState<string>(() => {
     const validUrl = getPublicWebBaseUrl();
-    const saved = localStorage.getItem('fleet_vistoria_return_link');
+    let saved = localStorage.getItem('fleet_vistoria_return_link');
     
-    // Se o salvo for 'ais-pre', forçar o novo 'ais-dev'
-    if (saved && saved.includes('ais-pre')) {
+    // Se o salvo contiver 'ais-pre' ou '/upload-receipt', limpar e usar validUrl limpa
+    if (saved && (saved.includes('ais-pre') || saved.includes('/upload-receipt'))) {
       localStorage.setItem('fleet_vistoria_return_link', validUrl);
       return validUrl;
     }
     
-    if (!saved) localStorage.setItem('fleet_vistoria_return_link', validUrl);
-    return saved || validUrl;
+    if (!saved) {
+      localStorage.setItem('fleet_vistoria_return_link', validUrl);
+      return validUrl;
+    }
+    return saved.replace(/\/upload-receipt\/?$/, '').replace(/\/+$/, '');
   });
 
   const availableChecklistItems = getChecklistForVistoriaType(newVistoriaType, checklistConfig);
@@ -914,10 +917,11 @@ export const VehicleCard: React.FC<VehicleCardProps> = ({
       : '';
 
     const safeBaseLink = (() => {
-      const base = (vistoriaReturnLink && !vistoriaReturnLink.includes('localhost') && !vistoriaReturnLink.includes('127.0.0.1'))
+      let base = (vistoriaReturnLink && !vistoriaReturnLink.includes('localhost') && !vistoriaReturnLink.includes('127.0.0.1'))
         ? vistoriaReturnLink
         : getPublicWebBaseUrl();
-      return base.replace(/\/+$/, '');
+      base = base.replace(/\/upload-receipt\/?$/, '').replace(/\/+$/, '');
+      return base;
     })();
     const returnUrlWithPlaca = (() => {
       const baseWithSlash = safeBaseLink.replace(/\/+$/, '') + '/';
