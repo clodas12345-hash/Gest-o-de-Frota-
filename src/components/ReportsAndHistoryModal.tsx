@@ -21,11 +21,14 @@ interface ReportsAndHistoryModalProps {
   onDeleteExpense: (id: string) => void;
   onDeleteVistoria: (id: string) => void;
   onUpdateFuel: (log: FuelLog) => void;
-  onUpdateMaintenance: (log: MaintenanceLog) => void;
-  onUpdateExpense: (log: ExpenseLog) => void;
+  onUpdateMaintenance: (log: MaintenanceLog, originalLog?: MaintenanceLog) => void;
+  onUpdateExpense: (log: ExpenseLog, originalLog?: ExpenseLog) => void;
   onUpdateVistoria: (log: Vistoria) => void;
   onClearAllVistorias: () => void;
   onOpenBatchOdometer?: () => void;
+  onSwitchMaintToExpense?: (log: MaintenanceLog, originalLog?: MaintenanceLog) => void;
+  onSwitchExpenseToMaint?: (log: ExpenseLog, originalLog?: ExpenseLog) => void;
+  onShowDeleteConfirm?: (title: string, description: string, onConfirm: () => void) => void;
 }
 
 export function ReportsAndHistoryModal({
@@ -49,6 +52,9 @@ export function ReportsAndHistoryModal({
   onUpdateVistoria,
   onClearAllVistorias,
   onOpenBatchOdometer,
+  onSwitchMaintToExpense,
+  onSwitchExpenseToMaint,
+  onShowDeleteConfirm,
 }: ReportsAndHistoryModalProps) {
   const [activeTab, setActiveTab] = useState<'charts' | 'history'>(initialTab);
 
@@ -199,6 +205,9 @@ export function ReportsAndHistoryModal({
                 onUpdateExpense={onUpdateExpense}
                 onUpdateVistoria={onUpdateVistoria}
                 onClearAllVistorias={onClearAllVistorias}
+                onSwitchMaintToExpense={onSwitchMaintToExpense}
+                onSwitchExpenseToMaint={onSwitchExpenseToMaint}
+                onShowDeleteConfirm={onShowDeleteConfirm}
                 defaultExpanded={true}
               />
             </div>

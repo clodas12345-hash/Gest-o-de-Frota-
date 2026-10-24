@@ -463,7 +463,11 @@ export const AgendaModal: React.FC<AgendaModalProps> = ({
                       </button>
                       
                       <button
-                        onClick={() => onDeleteContact(contact.id)}
+                        onClick={() => {
+                          if (window.confirm(`Deseja realmente excluir o contato "${contact.name}"?`)) {
+                            onDeleteContact(contact.id);
+                          }
+                        }}
                         className="p-1.5 text-gray-500 hover:text-rose-400 bg-white/5 hover:bg-rose-500/10 border border-white/5 rounded-lg transition-colors"
                         title="Excluir Contato"
                       >

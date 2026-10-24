@@ -66,6 +66,9 @@ interface SettingsModalProps {
   onUpdateVistoria?: (log: Vistoria) => void;
   onClearAllVistorias?: () => void;
   onOpenBatchOdometer?: () => void;
+  onSwitchMaintToExpense?: (log: MaintenanceLog, originalLog?: MaintenanceLog) => void;
+  onSwitchExpenseToMaint?: (log: ExpenseLog, originalLog?: ExpenseLog) => void;
+  onShowDeleteConfirm?: (title: string, description: string, onConfirm: () => void) => void;
   initialTab?: 'settings' | 'calendar' | 'charts' | 'history';
 }
 
@@ -95,6 +98,9 @@ export function SettingsModal({
   onUpdateVistoria,
   onClearAllVistorias,
   onOpenBatchOdometer,
+  onSwitchMaintToExpense,
+  onSwitchExpenseToMaint,
+  onShowDeleteConfirm,
   initialTab = 'settings'
 }: SettingsModalProps) {
   const [permissionState, setPermissionState] = useState<'granted' | 'denied' | 'default'>('default');
@@ -896,6 +902,9 @@ export function SettingsModal({
                 onUpdateExpense={onUpdateExpense}
                 onUpdateVistoria={onUpdateVistoria}
                 onClearAllVistorias={onClearAllVistorias}
+                onSwitchMaintToExpense={onSwitchMaintToExpense}
+                onSwitchExpenseToMaint={onSwitchExpenseToMaint}
+                onShowDeleteConfirm={onShowDeleteConfirm}
                 defaultExpanded={true}
               />
             </div>

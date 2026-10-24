@@ -488,6 +488,7 @@ interface VehicleCardProps {
   onDeleteSinistro?: (id: string) => void;
   onOpenLogForm?: (type: 'vehicle' | 'fuel' | 'maintenance' | 'expense' | 'sinistro', vehicleId?: string) => void;
   onOpenInterestCalculator?: (vehicle: Vehicle) => void;
+  onShowDeleteConfirm?: (title: string, description: string, onConfirm: () => void) => void;
 }
 
 
@@ -526,6 +527,7 @@ export const VehicleCard: React.FC<VehicleCardProps> = ({
   onDeleteSinistro,
   onOpenLogForm,
   onOpenInterestCalculator,
+  onShowDeleteConfirm,
 }) => {
   const [isExpanded, setIsExpanded] = useState(false); // Default to collapsed/closed as requested by user
 
@@ -601,6 +603,11 @@ export const VehicleCard: React.FC<VehicleCardProps> = ({
   const [paymentWhatsAppDueDate, setPaymentWhatsAppDueDate] = useState<string>(() => {
     return vehicle.startDate ? getNextWeekDate(vehicle.startDate) : new Date().toISOString().split('T')[0];
   });
+
+  // State for Promise Payment Form
+  const [showAddPromise, setShowAddPromise] = useState(false);
+  const [newPromiseDate, setNewPromiseDate] = useState(() => new Date().toISOString().split('T')[0]);
+  const [newPromiseAmount, setNewPromiseAmount] = useState<number>(0);
   const [customPaymentMsgText, setCustomPaymentMsgText] = useState('');
   const [paymentTemplateSavedStatus, setPaymentTemplateSavedStatus] = useState<string | null>(null);
 
@@ -2020,11 +2027,18 @@ _Enviado via sistema de gestão de frota._`;
   return (
     <div 
       id={`vehicle-card-container-${vehicle.id}`} 
-      className="bg-[#111111] border border-white/10 rounded-2xl shadow-md hover:border-white/20 transition-all flex flex-col h-full relative"
+      className="bg-gray-800 rounded-2xl shadow-md hover:border-white/20 transition-all flex flex-col h-full relative"
+      style={{ 
+        border: `1px solid ${vehicle.themeColor || 'rgba(255, 255, 255, 0.1)'}`,
+        boxShadow: vehicle.themeColor ? `0 0 15px ${vehicle.themeColor}15` : undefined
+      }}
     >
       {/* Header Panel - Brand, Model, Plate and Collapse Status */}
       <div 
-        className="p-5 border-b border-white/5 bg-white/[0.01] cursor-pointer select-none hover:bg-white/[0.03] transition-colors"
+        className="p-5 border-b border-white/5 cursor-pointer select-none hover:bg-white/[0.03] transition-colors"
+        style={{ 
+          backgroundColor: vehicle.themeColor ? `${vehicle.themeColor}05` : 'rgba(255, 255, 255, 0.01)'
+        }}
         onClick={() => setIsExpanded(!isExpanded)}
         id={`vehicle-card-header-${vehicle.id}`}
       >
@@ -2357,7 +2371,11 @@ _Enviado via sistema de gestão de frota._`;
             <button
               onClick={(e) => {
                 e.stopPropagation();
-                onDeleteVehicle(vehicle.id);
+                if (onShowDeleteConfirm) {
+                  onShowDeleteConfirm("Excluir Veículo?", `Deseja realmente excluir o veículo ${vehicle.brand} ${vehicle.model} (${vehicle.plate})? Todos os dados vinculados serão perdidos.`, () => onDeleteVehicle(vehicle.id));
+                } else if (window.confirm(`Deseja realmente excluir o veículo ${vehicle.brand} ${vehicle.model} (${vehicle.plate})?`)) {
+                  onDeleteVehicle(vehicle.id);
+                }
               }}
               className="p-2 text-gray-400 hover:text-rose-400 hover:bg-rose-500/10 rounded-xl transition-colors cursor-pointer"
               title="Excluir veículo"
@@ -2611,7 +2629,13 @@ _Enviado via sistema de gestão de frota._`;
                         />
                         {financiamento > 0 && (
                           <button
-                            onClick={() => handleUpdateField('financiamento', 0)}
+                            onClick={() => {
+                              if (onShowDeleteConfirm) {
+                                onShowDeleteConfirm("Zerar Financiamento?", "Deseja realmente zerar o valor do financiamento deste veículo?", () => handleUpdateField('financiamento', 0));
+                              } else if (window.confirm("Deseja zerar o financiamento?")) {
+                                handleUpdateField('financiamento', 0);
+                              }
+                            }}
                             className="text-gray-500 hover:text-rose-400 transition-colors p-0.5 rounded cursor-pointer"
                             title="Zerar Financiamento"
                           >
@@ -2661,7 +2685,13 @@ _Enviado via sistema de gestão de frota._`;
                         />
                         {seguro > 0 && (
                           <button
-                            onClick={() => handleUpdateField('seguro', 0)}
+                            onClick={() => {
+                              if (onShowDeleteConfirm) {
+                                onShowDeleteConfirm("Zerar Seguro?", "Deseja realmente zerar o valor do seguro deste veículo?", () => handleUpdateField('seguro', 0));
+                              } else if (window.confirm("Deseja zerar o seguro?")) {
+                                handleUpdateField('seguro', 0);
+                              }
+                            }}
                             className="text-gray-500 hover:text-rose-400 transition-colors p-0.5 rounded cursor-pointer"
                             title="Zerar Seguro"
                           >
@@ -2711,7 +2741,13 @@ _Enviado via sistema de gestão de frota._`;
                         />
                         {ipva > 0 && (
                           <button
-                            onClick={() => handleUpdateField('ipva', 0)}
+                            onClick={() => {
+                              if (onShowDeleteConfirm) {
+                                onShowDeleteConfirm("Zerar IPVA?", "Deseja realmente zerar o valor do IPVA deste veículo?", () => handleUpdateField('ipva', 0));
+                              } else if (window.confirm("Deseja zerar o IPVA?")) {
+                                handleUpdateField('ipva', 0);
+                              }
+                            }}
                             className="text-gray-500 hover:text-rose-400 transition-colors p-0.5 rounded cursor-pointer"
                             title="Zerar IPVA"
                           >
@@ -2761,7 +2797,13 @@ _Enviado via sistema de gestão de frota._`;
                         />
                         {manutencaoPreventiva > 0 && (
                           <button
-                            onClick={() => handleUpdateField('manutencaoPreventiva', 0)}
+                            onClick={() => {
+                              if (onShowDeleteConfirm) {
+                                onShowDeleteConfirm("Zerar Manutenção?", "Deseja realmente zerar o valor da manutenção preventiva deste veículo?", () => handleUpdateField('manutencaoPreventiva', 0));
+                              } else if (window.confirm("Deseja zerar a manutenção preventiva?")) {
+                                handleUpdateField('manutencaoPreventiva', 0);
+                              }
+                            }}
                             className="text-gray-500 hover:text-rose-400 transition-colors p-0.5 rounded cursor-pointer"
                             title="Zerar Manutenção Preventiva"
                           >
@@ -2839,12 +2881,19 @@ _Enviado via sistema de gestão de frota._`;
                             <button
                               type="button"
                               onClick={() => {
-                                const updated = (vehicle.extraExpenses || []).filter((e) => e.id !== exp.id);
-                                onUpdateVehicle({
-                                  ...vehicle,
-                                  extraExpenses: updated,
-                                  custoExtra: updated.reduce((s, e) => s + (e.value || 0), 0),
-                                });
+                                const confirmAction = () => {
+                                  const updated = (vehicle.extraExpenses || []).filter((e) => e.id !== exp.id);
+                                  onUpdateVehicle({
+                                    ...vehicle,
+                                    extraExpenses: updated,
+                                    custoExtra: updated.reduce((s, e) => s + (e.value || 0), 0),
+                                  });
+                                };
+                                if (onShowDeleteConfirm) {
+                                  onShowDeleteConfirm("Excluir Despesa Fixa?", `Deseja realmente excluir a despesa "${exp.label}"?`, confirmAction);
+                                } else if (window.confirm("Deseja excluir esta despesa fixa?")) {
+                                  confirmAction();
+                                }
                               }}
                               className="text-gray-500 hover:text-rose-400 transition-colors p-0.5 rounded cursor-pointer"
                               title="Excluir esta despesa"
@@ -2869,7 +2918,13 @@ _Enviado via sistema de gestão de frota._`;
                             onSave={(val) => handleUpdateField('custoExtra', val)}
                           />
                           <button
-                            onClick={() => handleUpdateField('custoExtra', 0)}
+                            onClick={() => {
+                              if (onShowDeleteConfirm) {
+                                onShowDeleteConfirm("Zerar Custo Extra?", "Deseja realmente zerar o valor do custo extra deste veículo?", () => handleUpdateField('custoExtra', 0));
+                              } else if (window.confirm("Deseja zerar o custo extra?")) {
+                                handleUpdateField('custoExtra', 0);
+                              }
+                            }}
                             className="text-gray-500 hover:text-rose-400 transition-colors p-0.5 rounded cursor-pointer"
                             title="Zerar Custo Extra"
                           >
@@ -2918,12 +2973,12 @@ _Enviado via sistema de gestão de frota._`;
                 {/* Despesas Eventuais do Veículo */}
                 <div className="pt-2 border-t border-white/5 space-y-1.5">
                   <div className="flex justify-between items-center text-[10px] font-bold text-gray-400 uppercase tracking-wider">
-                    <span>Despesas Eventuais ({vehicleExpenses.filter((exp) => isCurrentMonth(exp.date)).length})</span>
+                    <span>Despesas Eventuais ({vehicleExpenses.length})</span>
                   </div>
 
-                  {vehicleExpenses.filter((exp) => isCurrentMonth(exp.date)).length > 0 ? (
-                    <div className="space-y-1 max-h-28 overflow-y-auto pr-0.5">
-                      {vehicleExpenses.filter((exp) => isCurrentMonth(exp.date)).map((expense) => {
+                  {vehicleExpenses.length > 0 ? (
+                    <div className="space-y-1 pr-0.5">
+                      {vehicleExpenses.map((expense) => {
                         const inst = parseInstallmentInfo(expense.description);
                         return (
                           <div key={expense.id} className="flex justify-between items-center text-xs bg-white/[0.02] p-1.5 px-2 rounded-md group hover:bg-white/[0.04]">
@@ -2943,7 +2998,13 @@ _Enviado via sistema de gestão de frota._`;
                             <div className="flex items-center gap-2 shrink-0 font-mono">
                               <span className="text-rose-400 font-semibold text-xs">-{formatBRL(expense.cost)}</span>
                               <button
-                                onClick={() => onDeleteExpense(expense.id)}
+                                onClick={() => {
+                                  if (onShowDeleteConfirm) {
+                                    onShowDeleteConfirm("Excluir Despesa?", `Deseja realmente excluir a despesa "${expense.description}" no valor de ${formatBRL(expense.cost)}?`, () => onDeleteExpense(expense.id));
+                                  } else if (window.confirm("Deseja realmente excluir esta despesa?")) {
+                                    onDeleteExpense(expense.id);
+                                  }
+                                }}
                                 className="text-gray-500 hover:text-rose-400 transition-colors p-0.5 rounded cursor-pointer"
                                 title="Excluir despesa"
                               >
@@ -3275,6 +3336,95 @@ _Enviado via sistema de gestão de frota._`;
                         />
                       </div>
                     </div>
+                    {/* Botão de Promessa de Pagamento */}
+                    <div className="bg-white/[0.01] p-3 rounded-xl border border-white/5">
+                      <span className="text-[10px] text-gray-400 font-semibold mb-2 block">Promessas de Pagamento (Caução)</span>
+                      <div className="space-y-2">
+                        {vehicle.promisePayments?.map((p) => (
+                          <div key={p.id} className="flex justify-between items-center text-xs bg-white/[0.03] p-1.5 rounded">
+                            <span className={p.isPaid ? 'line-through text-gray-500' : 'text-gray-200'}>
+                              {new Date(p.date).toLocaleDateString('pt-BR')} - R$ {p.amount.toFixed(2)}
+                            </span>
+                            {!p.isPaid && (
+                              <button
+                                onClick={() => {
+                                  onUpdateVehicle({
+                                    ...vehicle,
+                                    promisePayments: vehicle.promisePayments?.map(prev => prev.id === p.id ? {...prev, isPaid: true} : prev)
+                                  })
+                                }}
+                                className="text-[9px] bg-emerald-600 px-1.5 py-0.5 rounded text-white"
+                              >
+                                Pago
+                              </button>
+                            )}
+                          </div>
+                        ))}
+                        {showAddPromise && (
+                          <div className="p-3 bg-neutral-900 rounded-lg border border-blue-500/30 space-y-2 mb-2 animate-in slide-in-from-top-1 duration-150">
+                            <div className="grid grid-cols-2 gap-2">
+                              <div>
+                                <label className="text-[9px] text-gray-400 block mb-0.5">Data</label>
+                                <input
+                                  type="date"
+                                  value={newPromiseDate}
+                                  onChange={(e) => setNewPromiseDate(e.target.value)}
+                                  className="w-full text-xs bg-black border border-white/10 rounded-md px-2 py-1 text-white focus:outline-hidden font-mono"
+                                />
+                              </div>
+                              <div>
+                                <label className="text-[9px] text-gray-400 block mb-0.5">Valor (R$)</label>
+                                <CurrencyInput
+                                  value={newPromiseAmount}
+                                  onChange={setNewPromiseAmount}
+                                  placeholder="0,00"
+                                  className="w-full text-xs bg-black border border-white/10 rounded-md px-2 py-1 text-white focus:outline-hidden font-mono"
+                                  autoFocus
+                                />
+                              </div>
+                            </div>
+                            <div className="flex justify-end gap-1.5 text-[10px] pt-1">
+                              <button
+                                onClick={() => {
+                                  setShowAddPromise(false);
+                                  setNewPromiseAmount(0);
+                                }}
+                                className="px-2 py-1 text-gray-400 hover:text-white"
+                              >
+                                Cancelar
+                              </button>
+                              <button
+                                onClick={() => {
+                                  if (newPromiseAmount > 0) {
+                                    onUpdateVehicle({
+                                      ...vehicle,
+                                      promisePayments: [...(vehicle.promisePayments || []), { 
+                                        id: Date.now().toString(), 
+                                        date: newPromiseDate, 
+                                        amount: newPromiseAmount, 
+                                        isPaid: false 
+                                      }]
+                                    });
+                                    setShowAddPromise(false);
+                                    setNewPromiseAmount(0);
+                                  }
+                                }}
+                                className="px-3 py-1 bg-blue-600 hover:bg-blue-500 text-white rounded font-bold"
+                              >
+                                Adicionar
+                              </button>
+                            </div>
+                          </div>
+                        )}
+                        <button
+                          onClick={() => setShowAddPromise(!showAddPromise)}
+                          className="w-full text-xs text-blue-400 border border-blue-400/30 rounded py-1 hover:bg-blue-400/10"
+                        >
+                          {showAddPromise ? 'Fechar' : '+ Adicionar Promessa'}
+                        </button>
+                      </div>
+                    </div>
+                  </div>
 
                     {/* Data do Caução */}
                     <div className="bg-white/[0.01] p-3 rounded-xl border border-white/5 flex flex-col justify-between hover:border-white/10 transition-colors">
@@ -3293,8 +3443,8 @@ _Enviado via sistema de gestão de frota._`;
                       </div>
                     </div>
                   </div>
-
-                  {/* Observações com Balão */}
+                )}
+                {/* Observações com Balão */}
                   <div className="bg-white/[0.01] p-3 rounded-xl border border-white/5 space-y-1.5 hover:border-white/10 transition-all">
                     <div className="flex justify-between items-center">
                       <span className="text-[10px] text-gray-400 font-semibold flex items-center gap-1">
@@ -3304,7 +3454,7 @@ _Enviado via sistema de gestão de frota._`;
                     
                     {/* Visual "balloon"/bubble for notes */}
                     <div className="relative mt-1">
-                      <div className="bg-emerald-500/5 text-emerald-100 rounded-xl p-3 border border-emerald-500/10 text-xs leading-relaxed italic relative before:content-[''] before:absolute before:top-[-6px] before:left-4 before:w-3 before:h-3 before:bg-[#15231c] before:border-t before:border-l before:border-emerald-500/10 before:rotate-45">
+                      <div className="bg-emerald-500/5 text-emerald-100 rounded-xl p-3 border border-emerald-500/10 text-xs leading-relaxed italic relative before:content-[''] before:absolute before:top-[-6px] before:left-4 before:w-3 before:h-3 before:bg-emerald-900/10 before:border-t before:border-l before:border-emerald-500/10 before:rotate-45">
                         <textarea
                           value={vehicle.caucaoObservacoes || ''}
                           onChange={(e) => {
@@ -3316,14 +3466,13 @@ _Enviado via sistema de gestão de frota._`;
                           placeholder="Sem observações registradas. Digite aqui para adicionar notas sobre o caução..."
                           className="w-full bg-transparent focus:outline-hidden text-emerald-200 placeholder-emerald-700/60 resize-none h-16 text-xs scrollbar-thin scrollbar-thumb-white/10 scrollbar-track-transparent"
                         />
-                      </div>
-                    </div>
                   </div>
                 </div>
-              )}
+              </div>
             </div>
             </div>
           )}
+
 
           {/* TAB 2: Pagamentos Semanais */}
           {activeTab === 'pagamentos' && (
@@ -3791,7 +3940,7 @@ _Enviado via sistema de gestão de frota._`;
                 </div>
               )}
 
-              <div className="space-y-1.5 max-h-36 overflow-y-auto pr-1">
+              <div className="space-y-1.5 pr-1">
                 {(!vehicle.weeklyPayments || vehicle.weeklyPayments.filter((wp) => isCurrentMonth(wp.date)).length === 0) ? (
                   <p className="text-[10px] text-gray-500 italic text-center py-2">Nenhum pagamento registrado neste mês.</p>
                 ) : (
@@ -3833,7 +3982,13 @@ _Enviado via sistema de gestão de frota._`;
                             <span>Recibo</span>
                           </button>
                           <button
-                            onClick={() => handleDeletePayment(p.id)}
+                            onClick={() => {
+                              if (onShowDeleteConfirm) {
+                                onShowDeleteConfirm("Excluir Pagamento?", `Deseja realmente excluir este registro de pagamento de ${formatBRL(p.amount)}?`, () => handleDeletePayment(p.id));
+                              } else if (window.confirm("Deseja realmente excluir este pagamento?")) {
+                                handleDeletePayment(p.id);
+                              }
+                            }}
                             className="text-gray-500 hover:text-rose-400 transition-colors p-0.5 rounded"
                             title="Excluir pagamento"
                           >
@@ -4774,10 +4929,17 @@ _Enviado via sistema de gestão de frota._`;
                   <button
                     type="button"
                     onClick={() => {
-                      if (onDeleteAllVistorias) {
-                        onDeleteAllVistorias(vehicle.id);
-                      } else if (onDeleteVistoria) {
-                        vistorias.forEach((v) => onDeleteVistoria(v.id));
+                      const confirmAction = () => {
+                        if (onDeleteAllVistorias) {
+                          onDeleteAllVistorias(vehicle.id);
+                        } else if (onDeleteVistoria) {
+                          vistorias.forEach((v) => onDeleteVistoria(v.id));
+                        }
+                      };
+                      if (onShowDeleteConfirm) {
+                        onShowDeleteConfirm("Excluir Todas as Vistorias?", `Tem certeza que deseja apagar permanentemente todas as ${vistorias.length} vistorias deste veículo?`, confirmAction);
+                      } else if (window.confirm("Deseja realmente excluir todas as vistorias?")) {
+                        confirmAction();
                       }
                     }}
                     className="text-[10px] text-rose-400 hover:text-white font-bold flex items-center gap-1 px-2.5 py-1 bg-rose-500/15 hover:bg-rose-500/30 border border-rose-500/30 rounded-md transition-all cursor-pointer shadow-sm"
@@ -4789,7 +4951,7 @@ _Enviado via sistema de gestão de frota._`;
                 </div>
               )}
 
-              <div className="space-y-2 max-h-64 overflow-y-auto pr-1">
+              <div className="space-y-2 pr-1">
                 {(!vistorias || vistorias.length === 0) ? (
                   <div className="text-center py-6 border border-dashed border-white/5 rounded-lg bg-black/10">
                     <ClipboardCheck className="w-5 h-5 mx-auto text-gray-600 mb-1" />
@@ -4928,7 +5090,11 @@ _Enviado via sistema de gestão de frota._`;
                                   type="button"
                                   onClick={(e) => {
                                     e.stopPropagation();
-                                    onDeleteVistoria(v.id);
+                                    if (onShowDeleteConfirm) {
+                                      onShowDeleteConfirm("Excluir Vistoria?", `Deseja realmente excluir esta vistoria do dia ${new Date(v.date + 'T12:00:00').toLocaleDateString('pt-BR')}?`, () => onDeleteVistoria(v.id));
+                                    } else if (window.confirm("Deseja realmente excluir esta vistoria?")) {
+                                      onDeleteVistoria(v.id);
+                                    }
                                   }}
                                   className="px-2 py-0.5 text-rose-400 hover:text-white bg-rose-500/10 hover:bg-rose-500/30 border border-rose-500/20 rounded text-[10px] font-bold transition-all flex items-center gap-1 cursor-pointer"
                                   title="Excluir Vistoria"
@@ -5062,7 +5228,11 @@ _Enviado via sistema de gestão de frota._`;
                                     type="button"
                                     onClick={(e) => {
                                       e.stopPropagation();
-                                      onDeleteVistoria(v.id);
+                                      if (onShowDeleteConfirm) {
+                                        onShowDeleteConfirm("Excluir Vistoria?", `Deseja realmente excluir esta vistoria?`, () => onDeleteVistoria(v.id));
+                                      } else if (window.confirm("Deseja realmente excluir esta vistoria?")) {
+                                        onDeleteVistoria(v.id);
+                                      }
                                     }}
                                     className="px-3 py-1 bg-rose-500/15 hover:bg-rose-500/30 border border-rose-500/30 text-rose-300 rounded-lg text-[11px] font-bold flex items-center gap-1.5 transition-all cursor-pointer shadow-xs"
                                   >
@@ -5161,7 +5331,7 @@ _Enviado via sistema de gestão de frota._`;
                             </div>
                           </div>
 
-                          <div className="grid grid-cols-2 sm:grid-cols-3 gap-1.5 max-h-48 overflow-y-auto pr-1">
+                          <div className="grid grid-cols-2 sm:grid-cols-3 gap-1.5 pr-1">
                             {availableChecklistItems.map((item) => {
                               const isSelected = selectedRequestItems.includes(item);
                               return (
@@ -5790,7 +5960,7 @@ _Enviado via sistema de gestão de frota._`;
                 })}
               </div>
 
-              <div className="space-y-1.5 max-h-48 overflow-y-auto pr-1">
+              <div className="space-y-1.5 pr-1">
                 {(!vehicle.documents || vehicle.documents.length === 0) ? (
                   <div className="text-center py-6 border border-dashed border-white/5 rounded-lg bg-black/10">
                     <FileText className="w-5 h-5 mx-auto text-gray-600 mb-1" />
@@ -6070,7 +6240,13 @@ _Enviado via sistema de gestão de frota._`;
                           <div className="flex items-center gap-2">
                             <span className="text-xs font-bold text-rose-400 font-mono">{formatBRL(log.repairCost)}</span>
                             <button 
-                              onClick={() => onDeleteSinistro?.(log.id)}
+                              onClick={() => {
+                                if (onShowDeleteConfirm) {
+                                  onShowDeleteConfirm("Excluir Sinistro?", `Deseja realmente excluir este registro de sinistro?`, () => onDeleteSinistro?.(log.id));
+                                } else if (window.confirm("Deseja realmente excluir este sinistro?")) {
+                                  onDeleteSinistro?.(log.id);
+                                }
+                              }}
                               className="p-1.5 text-gray-600 hover:text-rose-400 opacity-0 group-hover:opacity-100 transition-all"
                             >
                               <Trash2 className="w-3.5 h-3.5" />

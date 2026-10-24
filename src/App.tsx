@@ -603,6 +603,12 @@ export default function App() {
 
   // Deletion & Reset Confirmation Modals
   const [vehiclePendingDelete, setVehiclePendingDelete] = useState<Vehicle | null>(null);
+  const [deleteConfirm, setDeleteConfirm] = useState<{
+    isOpen: boolean;
+    title: string;
+    description: string;
+    onConfirm: () => void;
+  } | null>(null);
   const [isResetConfirmOpen, setIsResetConfirmOpen] = useState<boolean>(false);
   const [deleteToastMsg, setDeleteToastMsg] = useState<string | null>(null);
 
@@ -1303,18 +1309,446 @@ export default function App() {
     if (log.date) autoSwitchMonthToDate(log.date);
   };
 
-  const handleUpdateExpense = (updatedLog: ExpenseLog) => {
-    setExpenseLogs((prev) =>
-      prev.map((log) => (log.id === updatedLog.id ? updatedLog : log))
+  const extractInstallmentInfo = (
+    desc?: string,
+    pagas?: number,
+    totais?: number
+  ): { current: number; total: number } | null => {
+    if (desc) {
+      // 1. (X/Y) or (X / Y) or (X de Y)
+      const mParen = desc.match(/\(\s*(\d+)\s*(?:[\/]|de)\s*(\d+)\s*\)/i);
+      if (mParen) {
+        const cur = parseInt(mParen[1], 10);
+        const tot = parseInt(mParen[2], 10);
+        if (!isNaN(cur) && !isNaN(tot) && tot > 0) return { current: cur, total: tot };
+      }
+      // 2. parc 1/3 or parcela 1 de 3
+      const mParc = desc.match(/\bparc(?:ela)?\.?\s*(\d+)\s*(?:[\/]|de)\s*(\d+)\b/i);
+      if (mParc) {
+        const cur = parseInt(mParc[1], 10);
+        const tot = parseInt(mParc[2], 10);
+        if (!isNaN(cur) && !isNaN(tot) && tot > 0) return { current: cur, total: tot };
+      }
+      // 3. X/Y (isolated number slash number)
+      const mSlash = desc.match(/\b(\d+)\s*[\/]\s*(\d+)\b/);
+      if (mSlash) {
+        const cur = parseInt(mSlash[1], 10);
+        const tot = parseInt(mSlash[2], 10);
+        if (!isNaN(cur) && !isNaN(tot) && tot > 0) return { current: cur, total: tot };
+      }
+      // 4. X de Y
+      const mDe = desc.match(/\b(\d+)\s+de\s+(\d+)\b/i);
+      if (mDe) {
+        const cur = parseInt(mDe[1], 10);
+        const tot = parseInt(mDe[2], 10);
+        if (!isNaN(cur) && !isNaN(tot) && tot > 0) return { current: cur, total: tot };
+      }
+    }
+
+    if (totais && totais > 1) {
+      return { current: pagas || 1, total: totais };
+    }
+
+    return null;
+  };
+
+  const normalizeSeriesText = (str?: string): string => {
+    if (!str) return '';
+    return str
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .toLowerCase()
+      .trim();
+  };
+
+  const cleanBaseDescription = (desc?: string): string => {
+    if (!desc) return '';
+    const cleaned = desc
+      .replace(/\(\s*\d+\s*(?:[\/]|de)\s*\d+\s*\)/gi, '')
+      .replace(/\bparc(?:ela)?\.?\s*\d+\s*(?:[\/]|de)\s*\d+\b/gi, '')
+      .replace(/\b\d+\s*[\/]\s*\d+\b/g, '')
+      .replace(/\b\d+\s+de\s+\d+\b/gi, '')
+      .replace(/\b\d+ª?\s*parcela\b/gi, '')
+      .replace(/[-–—:]+$/, '')
+      .replace(/^[-–—:]+/, '')
+      .trim();
+    return normalizeSeriesText(cleaned);
+  };
+
+  const STOPWORDS_SET = new Set([
+    'para', 'com', 'sem', 'troca', 'trocar', 'substituicao', 'servico', 'servicos',
+    'jogo', 'kit', 'peça', 'pecas', 'novo', 'nova', 'novos', 'novas', 'valor', 'pago',
+    'pagamento', 'auto', 'carro', 'veiculo', 'geral', 'revisao', 'manutencao', 'despesa', 'outros'
+  ]);
+
+  const getSignificantKeywords = (text: string): string[] => {
+    const norm = normalizeSeriesText(text);
+    const words = norm.split(/[^a-z0-9]+/);
+    return words.filter((w) => w.length >= 4 && !STOPWORDS_SET.has(w));
+  };
+
+  const hasSharedSignificantKeyword = (textA: string, textB: string): boolean => {
+    const kwA = getSignificantKeywords(textA);
+    const kwB = getSignificantKeywords(textB);
+    if (kwA.length === 0 || kwB.length === 0) return false;
+    return kwA.some((w) => kwB.includes(w) || kwB.some((wb) => wb.includes(w) || w.includes(wb)));
+  };
+
+  const isSameInstallmentSeries = (
+    candidate: { vehicleId: string; description?: string; parcelasTotais?: number; parcelasPagas?: number; category?: string },
+    target: { vehicleId: string; description?: string; parcelasTotais?: number; parcelasPagas?: number; category?: string },
+    original?: { vehicleId: string; description?: string; parcelasTotais?: number; parcelasPagas?: number; category?: string }
+  ): boolean => {
+    if (candidate.vehicleId !== target.vehicleId) return false;
+
+    const candInst = extractInstallmentInfo(candidate.description, candidate.parcelasPagas, candidate.parcelasTotais);
+    const targInst = extractInstallmentInfo(target.description, target.parcelasPagas, target.parcelasTotais);
+    const origInst = original ? extractInstallmentInfo(original.description, original.parcelasPagas, original.parcelasTotais) : null;
+
+    const hasSeriesIndicator = Boolean(
+      candInst ||
+      targInst ||
+      origInst ||
+      (candidate.parcelasTotais && candidate.parcelasTotais > 1) ||
+      (target.parcelasTotais && target.parcelasTotais > 1)
     );
+
+    if (!hasSeriesIndicator) return false;
+
+    const candBase = cleanBaseDescription(candidate.description);
+    const targBase = cleanBaseDescription(target.description);
+    const origBase = original ? cleanBaseDescription(original.description) : '';
+
+    const baseMatches =
+      (candBase && origBase && candBase === origBase) ||
+      (candBase && targBase && candBase === targBase) ||
+      (candBase && origBase && (candBase.includes(origBase) || origBase.includes(candBase))) ||
+      (candBase && targBase && (candBase.includes(targBase) || targBase.includes(candBase))) ||
+      (origBase && hasSharedSignificantKeyword(candBase, origBase)) ||
+      (targBase && hasSharedSignificantKeyword(candBase, targBase));
+
+    const totalCountMatches = Boolean(
+      (candInst && targInst && candInst.total === targInst.total) ||
+      (candInst && origInst && candInst.total === origInst.total) ||
+      (candidate.parcelasTotais && target.parcelasTotais && candidate.parcelasTotais === target.parcelasTotais) ||
+      (candidate.parcelasTotais && original?.parcelasTotais && candidate.parcelasTotais === original.parcelasTotais)
+    );
+
+    if (baseMatches && totalCountMatches) return true;
+    if (baseMatches && (candInst || (candidate.parcelasTotais && candidate.parcelasTotais > 1))) return true;
+    if (totalCountMatches && hasSharedSignificantKeyword(candBase, origBase || targBase)) return true;
+
+    if (
+      candidate.category &&
+      target.category &&
+      candidate.category === target.category &&
+      totalCountMatches &&
+      (candBase === targBase || candBase === origBase || hasSharedSignificantKeyword(candBase, origBase || targBase))
+    ) {
+      return true;
+    }
+
+    return false;
+  };
+
+  const inferMaintenanceCategoryAndScope = (desc: string): { type: MaintenanceLog['type']; category: string; scope: string } => {
+    const lower = (desc || '').toLowerCase();
+    if (lower.includes('embreagem') || lower.includes('cambio') || lower.includes('transmissao')) {
+      return {
+        type: 'Preventiva',
+        category: 'Transmissão, Embreagem & Câmbio',
+        scope: 'Embreagem, Câmbio e Troca de Fluido da Transmissão'
+      };
+    }
+    if (lower.includes('freio') || lower.includes('pastilha') || lower.includes('disco')) {
+      return {
+        type: 'Preventiva',
+        category: 'Freios, Suspensão & Direção',
+        scope: 'Sistema de Freios (Pastilhas, Discos e Fluido)'
+      };
+    }
+    if (lower.includes('amortecedor') || lower.includes('suspensao') || lower.includes('pivo') || lower.includes('bucha')) {
+      return {
+        type: 'Preventiva',
+        category: 'Freios, Suspensão & Direção',
+        scope: 'Suspensão e Direção (Amortecedores, Buchas e Pivôs)'
+      };
+    }
+    if (lower.includes('oleo') || lower.includes('filtro') || lower.includes('lubrificante')) {
+      return {
+        type: 'Preventiva',
+        category: 'Manutenção Preventiva',
+        scope: 'Troca de Óleo, Filtros e Lubrificantes'
+      };
+    }
+    if (lower.includes('pneu') || lower.includes('alinhamento') || lower.includes('balanceamento')) {
+      return {
+        type: 'Preventiva',
+        category: 'Pneus, Rodas & Geometria',
+        scope: 'Pneus (Troca, Rodízio, Alinhamento e Balanceamento)'
+      };
+    }
+    if (lower.includes('bateria') || lower.includes('alternador') || lower.includes('eletric')) {
+      return {
+        type: 'Preventiva',
+        category: 'Elétrica, Bateria & Iluminação',
+        scope: 'Sistema Elétrico (Bateria, Alternador e Iluminação)'
+      };
+    }
+    return {
+      type: 'Preventiva',
+      category: 'Manutenção Preventiva',
+      scope: 'Troca de Óleo, Filtros e Lubrificantes'
+    };
+  };
+
+  const handleUpdateExpense = (updatedLog: ExpenseLog, originalLog?: ExpenseLog) => {
+    const rawUpdatedDesc = updatedLog.description || '';
+    const newDescBase = rawUpdatedDesc
+      .replace(/\(\s*\d+\s*(?:[\/]|de)\s*\d+\s*\)/gi, '')
+      .replace(/\bparc(?:ela)?\.?\s*\d+\s*(?:[\/]|de)\s*\d+\b/gi, '')
+      .replace(/\b\d+\s*[\/]\s*\d+\b/g, '')
+      .replace(/\b\d+\s+de\s+\d+\b/gi, '')
+      .trim();
+
+    const targetTotal = extractInstallmentInfo(updatedLog.description)?.total;
+
+    // 1. Atualizar registros em expenseLogs em massa
+    setExpenseLogs((prev) =>
+      prev.map((log) => {
+        if (log.id === updatedLog.id) {
+          return updatedLog;
+        }
+
+        const isCompanion = isSameInstallmentSeries(log, updatedLog, originalLog);
+        if (isCompanion) {
+          const candInst = extractInstallmentInfo(log.description);
+          const companionCur = candInst?.current ?? 1;
+          const companionTotal = targetTotal || candInst?.total || 1;
+          const companionTag = companionTotal > 1 ? `(${companionCur}/${companionTotal})` : '';
+          const finalDesc = newDescBase ? (companionTag ? `${newDescBase} ${companionTag}` : newDescBase) : log.description;
+
+          return {
+            ...log,
+            category: updatedLog.category,
+            description: finalDesc,
+          };
+        }
+
+        return log;
+      })
+    );
+
+    // 2. Se houver parcelas dessa mesma série que estavam em maintenanceLogs, migra para expenseLogs
+    setMaintenanceLogs((prevMaint) => {
+      const companionsInMaint = prevMaint.filter((m) =>
+        isSameInstallmentSeries(m, updatedLog, originalLog)
+      );
+
+      if (companionsInMaint.length > 0) {
+        const migratedToExpense: ExpenseLog[] = companionsInMaint.map((m, idx) => {
+          const mInst = extractInstallmentInfo(m.description, m.parcelasPagas, m.parcelasTotais);
+          const companionCur = mInst?.current ?? m.parcelasPagas ?? (idx + 2);
+          const companionTotal = targetTotal || mInst?.total || m.parcelasTotais || 1;
+          const companionTag = companionTotal > 1 ? `(${companionCur}/${companionTotal})` : '';
+          const finalDesc = newDescBase ? (companionTag ? `${newDescBase} ${companionTag}` : newDescBase) : m.description;
+
+          return {
+            id: `exp-migrated-${Date.now()}-${idx}`,
+            vehicleId: m.vehicleId,
+            date: m.date,
+            category: updatedLog.category,
+            description: finalDesc,
+            cost: m.cost,
+          };
+        });
+
+        setExpenseLogs((prevExp) => [...prevExp, ...migratedToExpense]);
+        return prevMaint.filter((m) => !companionsInMaint.some((c) => c.id === m.id));
+      }
+
+      return prevMaint;
+    });
   };
 
   const handleUpdateFuel = (updatedLog: FuelLog) => {
     setFuelLogs((prev) => prev.map((log) => (log.id === updatedLog.id ? updatedLog : log)));
   };
 
-  const handleUpdateMaintenance = (updatedLog: MaintenanceLog) => {
-    setMaintenanceLogs((prev) => prev.map((log) => (log.id === updatedLog.id ? updatedLog : log)));
+  const handleSwitchMaintToExpense = (maintLog: MaintenanceLog, originalLog?: MaintenanceLog) => {
+    // Localizar TODAS as parcelas semelhantes da mesma série/veículo
+    const matchingMaint = maintenanceLogs.filter((m) =>
+      m.id === maintLog.id || isSameInstallmentSeries(m, maintLog, originalLog)
+    );
+
+    const rawDesc = maintLog.description || '';
+    const newDescBase = rawDesc
+      .replace(/\(\s*\d+\s*(?:[\/]|de)\s*\d+\s*\)/gi, '')
+      .replace(/\bparc(?:ela)?\.?\s*\d+\s*(?:[\/]|de)\s*\d+\b/gi, '')
+      .replace(/\b\d+\s*[\/]\s*\d+\b/g, '')
+      .replace(/\b\d+\s+de\s+\d+\b/gi, '')
+      .trim();
+
+    const targetTotal = maintLog.parcelasTotais || extractInstallmentInfo(maintLog.description)?.total;
+
+    const convertedExpenses: ExpenseLog[] = matchingMaint.map((m, idx) => {
+      const isTarget = m.id === maintLog.id;
+      const mInst = extractInstallmentInfo(m.description, m.parcelasPagas, m.parcelasTotais);
+      const cur = mInst?.current ?? m.parcelasPagas ?? (idx + 1);
+      const tot = targetTotal || mInst?.total || m.parcelasTotais || matchingMaint.length;
+      const tag = tot > 1 ? `(${cur}/${tot})` : '';
+      const finalDesc = newDescBase ? (tag ? `${newDescBase} ${tag}` : newDescBase) : m.description;
+
+      return {
+        id: `exp-${Date.now()}-${idx}`,
+        vehicleId: isTarget ? (maintLog.vehicleId || m.vehicleId) : m.vehicleId,
+        date: isTarget ? (maintLog.date || m.date) : m.date,
+        category: 'Outros',
+        description: isTarget ? (maintLog.description || finalDesc) : finalDesc,
+        cost: isTarget ? (maintLog.cost ?? m.cost) : m.cost,
+      };
+    });
+
+    setExpenseLogs((prev) => [...convertedExpenses, ...prev]);
+    const matchingIds = new Set(matchingMaint.map((m) => m.id));
+    setMaintenanceLogs((prev) => prev.filter((m) => !matchingIds.has(m.id)));
+
+    if (maintLog.date) autoSwitchMonthToDate(maintLog.date);
+  };
+
+  const handleSwitchExpenseToMaint = (expenseLog: ExpenseLog, originalLog?: ExpenseLog) => {
+    // Localizar TODAS as despesas semelhantes parceladas da mesma série/veículo
+    const matchingExpenses = expenseLogs.filter((e) =>
+      e.id === expenseLog.id || isSameInstallmentSeries(e, expenseLog, originalLog)
+    );
+
+    const rawDesc = expenseLog.description || '';
+    const newDescBase = rawDesc
+      .replace(/\(\s*\d+\s*(?:[\/]|de)\s*\d+\s*\)/gi, '')
+      .replace(/\bparc(?:ela)?\.?\s*\d+\s*(?:[\/]|de)\s*\d+\b/gi, '')
+      .replace(/\b\d+\s*[\/]\s*\d+\b/g, '')
+      .replace(/\b\d+\s+de\s+\d+\b/gi, '')
+      .trim();
+
+    const targetTotal = extractInstallmentInfo(expenseLog.description)?.total || matchingExpenses.length;
+    const inferred = inferMaintenanceCategoryAndScope(newDescBase || expenseLog.description);
+
+    const convertedMaintLogs: MaintenanceLog[] = matchingExpenses.map((exp, idx) => {
+      const isTarget = exp.id === expenseLog.id;
+      const expInst = extractInstallmentInfo(exp.description);
+      const cur = expInst?.current ?? (idx + 1);
+      const tot = targetTotal || expInst?.total || matchingExpenses.length;
+      const tag = tot > 1 ? `(${cur}/${tot})` : '';
+      const finalDesc = newDescBase ? (tag ? `${newDescBase} ${tag}` : newDescBase) : exp.description;
+
+      return {
+        id: `maint-${Date.now()}-${idx}`,
+        vehicleId: isTarget ? (expenseLog.vehicleId || exp.vehicleId) : exp.vehicleId,
+        date: isTarget ? (expenseLog.date || exp.date) : exp.date,
+        type: inferred.type,
+        category: inferred.category,
+        scope: inferred.scope,
+        description: isTarget ? (expenseLog.description || finalDesc) : finalDesc,
+        cost: isTarget ? (expenseLog.cost ?? exp.cost) : exp.cost,
+        parcelasPagas: cur,
+        parcelasTotais: tot,
+      };
+    });
+
+    setMaintenanceLogs((prev) => [...convertedMaintLogs, ...prev]);
+    const matchingIds = new Set(matchingExpenses.map((e) => e.id));
+    setExpenseLogs((prev) => prev.filter((e) => !matchingIds.has(e.id)));
+
+    if (expenseLog.date) autoSwitchMonthToDate(expenseLog.date);
+  };
+
+  const handleShowDeleteConfirm = (title: string, description: string, onConfirm: () => void) => {
+    setDeleteConfirm({ isOpen: true, title, description, onConfirm });
+  };
+
+  const handleUpdateMaintenance = (updatedLog: MaintenanceLog, originalLog?: MaintenanceLog) => {
+    const rawUpdatedDesc = updatedLog.description || '';
+    const newDescBase = rawUpdatedDesc
+      .replace(/\(\s*\d+\s*(?:[\/]|de)\s*\d+\s*\)/gi, '')
+      .replace(/\bparc(?:ela)?\.?\s*\d+\s*(?:[\/]|de)\s*\d+\b/gi, '')
+      .replace(/\b\d+\s*[\/]\s*\d+\b/g, '')
+      .replace(/\b\d+\s+de\s+\d+\b/gi, '')
+      .trim();
+
+    const targetTotal = updatedLog.parcelasTotais || extractInstallmentInfo(updatedLog.description)?.total;
+
+    // 1. Atualizar registros em maintenanceLogs em massa
+    setMaintenanceLogs((prev) =>
+      prev.map((log) => {
+        if (log.id === updatedLog.id) {
+          return updatedLog;
+        }
+
+        const isCompanion = isSameInstallmentSeries(log, updatedLog, originalLog);
+        if (isCompanion) {
+          const candInst = extractInstallmentInfo(log.description, log.parcelasPagas, log.parcelasTotais);
+          const companionCur = candInst?.current ?? log.parcelasPagas ?? 1;
+          const companionTotal = targetTotal || candInst?.total || log.parcelasTotais || 1;
+          const companionTag = companionTotal > 1 ? `(${companionCur}/${companionTotal})` : '';
+          const finalDesc = newDescBase ? (companionTag ? `${newDescBase} ${companionTag}` : newDescBase) : log.description;
+
+          return {
+            ...log,
+            type: updatedLog.type,
+            category: updatedLog.category,
+            scope: updatedLog.scope,
+            shopName: updatedLog.shopName,
+            shopPhone: updatedLog.shopPhone,
+            boNumber: updatedLog.boNumber,
+            partsReplaced: updatedLog.partsReplaced,
+            parcelasTotais: companionTotal,
+            parcelasPagas: companionCur,
+            description: finalDesc,
+          };
+        }
+
+        return log;
+      })
+    );
+
+    // 2. Se houver parcelas dessa mesma série que estavam em expenseLogs, migra para maintenanceLogs
+    setExpenseLogs((prevExpenses) => {
+      const companionsInExpenses = prevExpenses.filter((e) =>
+        isSameInstallmentSeries(e, updatedLog, originalLog)
+      );
+
+      if (companionsInExpenses.length > 0) {
+        const migratedToMaint: MaintenanceLog[] = companionsInExpenses.map((exp, idx) => {
+          const expInst = extractInstallmentInfo(exp.description);
+          const companionCur = expInst?.current ?? (idx + 2);
+          const companionTotal = targetTotal || expInst?.total || 1;
+          const companionTag = companionTotal > 1 ? `(${companionCur}/${companionTotal})` : '';
+          const finalDesc = newDescBase ? (companionTag ? `${newDescBase} ${companionTag}` : newDescBase) : exp.description;
+
+          return {
+            id: `maint-migrated-${Date.now()}-${idx}`,
+            vehicleId: exp.vehicleId,
+            date: exp.date,
+            type: updatedLog.type,
+            category: updatedLog.category,
+            scope: updatedLog.scope,
+            shopName: updatedLog.shopName,
+            shopPhone: updatedLog.shopPhone,
+            boNumber: updatedLog.boNumber,
+            partsReplaced: updatedLog.partsReplaced,
+            parcelasPagas: companionCur,
+            parcelasTotais: companionTotal,
+            description: finalDesc,
+            cost: exp.cost,
+          };
+        });
+
+        setMaintenanceLogs((prevMaint) => [...prevMaint, ...migratedToMaint]);
+        return prevExpenses.filter((e) => !companionsInExpenses.some((c) => c.id === e.id));
+      }
+
+      return prevExpenses;
+    });
   };
 
   const handleUpdateVistoria = (updatedLog: Vistoria) => {
@@ -2562,6 +2996,7 @@ export default function App() {
                     setInterestCalcVehicle(v);
                     setIsInterestCalcOpen(true);
                   }}
+                  onShowDeleteConfirm={handleShowDeleteConfirm}
                 />
               ))}
             </div>
@@ -2585,6 +3020,9 @@ export default function App() {
             onUpdateExpense={handleUpdateExpense}
             onUpdateVistoria={handleUpdateVistoria}
             onClearAllVistorias={handleClearAllVistorias}
+            onSwitchMaintToExpense={handleSwitchMaintToExpense}
+            onSwitchExpenseToMaint={handleSwitchExpenseToMaint}
+            onShowDeleteConfirm={handleShowDeleteConfirm}
             defaultExpanded={false}
           />
         </div>
@@ -2633,6 +3071,7 @@ export default function App() {
         onSaveExpense={handleSaveExpense}
         onSaveSinistro={(s) => setSinistroLogs(prev => [s, ...prev])}
         onSaveContact={handleSaveContact}
+        onTypeChange={(type) => setActiveFormType(type as any)}
       />
 
       {/* Agenda Modal */}
@@ -2718,6 +3157,9 @@ export default function App() {
         onUpdateExpense={handleUpdateExpense}
         onUpdateVistoria={handleUpdateVistoria}
         onClearAllVistorias={handleClearAllVistorias}
+        onSwitchMaintToExpense={handleSwitchMaintToExpense}
+        onSwitchExpenseToMaint={handleSwitchExpenseToMaint}
+        onShowDeleteConfirm={handleShowDeleteConfirm}
         onOpenBatchOdometer={() => setIsBatchOdometerOpen(true)}
       />
 
@@ -2769,6 +3211,9 @@ export default function App() {
         onUpdateExpense={handleUpdateExpense}
         onUpdateVistoria={handleUpdateVistoria}
         onClearAllVistorias={handleClearAllVistorias}
+        onSwitchMaintToExpense={handleSwitchMaintToExpense}
+        onSwitchExpenseToMaint={handleSwitchExpenseToMaint}
+        onShowDeleteConfirm={handleShowDeleteConfirm}
       />
 
       {/* Confirmation Modal: Finalize Contract (Vehicle Preserved) */}

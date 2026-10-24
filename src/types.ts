@@ -58,6 +58,7 @@ export interface Vehicle {
   caucaoData?: string;
   caucaoObservacoes?: string;
   nextVistoriaDate?: string;
+  themeColor?: string; // Cor temática para o carro
   tenantCpfCnpj?: string;
   tenantRg?: string;
   tenantCnh?: string;
@@ -81,6 +82,7 @@ export interface Vehicle {
   fineRate?: number;
   dailyInterestRate?: number;
   dueDay?: string;
+  promisePayments?: PromisePayment[];
 }
 
 export interface TireState {
@@ -278,7 +280,7 @@ export interface ExpenseLog {
   id: string;
   vehicleId: string;
   date: string;
-  category: 'Seguro' | 'Multa' | 'Lavagem' | 'Estacionamento' | 'Outros';
+  category: 'IPVA' | 'Seguro' | 'Licenciamento' | 'Multa' | 'Lavagem' | 'Estacionamento' | 'Financiamento' | 'Rastreador' | 'Outros';
   description: string;
   cost: number;
   receiptUrl?: string;
@@ -334,6 +336,13 @@ export interface FinalizedContract {
   documentsCount: number;
   maintenanceCount: number;
   viewed?: boolean;
+}
+
+export interface PromisePayment {
+  id: string;
+  date: string;
+  amount: number;
+  isPaid: boolean;
 }
 
 

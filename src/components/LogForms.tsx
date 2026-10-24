@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Vehicle, VehicleDocument, FuelLog, MaintenanceLog, ExpenseLog, AgendaContact, SinistroLog, TireState, MAINTENANCE_CATEGORIES, MAINTENANCE_SCOPES, getScopesForCategory } from '../types';
-import { X, Save, AlertCircle, Users, BookOpen, Sparkles, Mic, MicOff, Calculator, Plus, Trash2, User, Phone, Search, Smartphone, Check, Upload, ExternalLink, AlertTriangle, Car, Calendar, Camera, Shield, Bell, Paperclip, Eye, FileText, Building2, FilePlus, Layers, FileCheck, Loader2 } from 'lucide-react';
+import { X, Save, AlertCircle, Users, BookOpen, Sparkles, Mic, MicOff, Calculator, Plus, Trash2, User, Phone, Search, Smartphone, Check, Upload, ExternalLink, AlertTriangle, Car, Calendar, Camera, Shield, Bell, Paperclip, Eye, FileText, Building2, FilePlus, Layers, FileCheck, Loader2, Wrench, Coins } from 'lucide-react';
 import { Contacts } from '@capacitor-community/contacts';
 import { Capacitor } from '@capacitor/core';
 import { generateNextContractNumber } from '../utils/contractHelper';
@@ -149,6 +149,7 @@ interface LogFormsProps {
   onSaveExpense: (log: Omit<ExpenseLog, 'id'>) => void;
   onSaveSinistro?: (sinistro: SinistroLog) => void;
   onSaveContact?: (contact: AgendaContact) => void;
+  onTypeChange?: (type: 'vehicle' | 'fuel' | 'maintenance' | 'expense' | 'sinistro') => void;
 }
 
 const VEHICLE_DRAFT_KEY = 'fleet_add_vehicle_draft';
@@ -168,6 +169,7 @@ export function LogForms({
   onSaveExpense,
   onSaveSinistro,
   onSaveContact,
+  onTypeChange,
 }: LogFormsProps) {
   // Selected vehicle id state
   const [vehicleId, setVehicleId] = useState(selectedVehicleId || (vehicles[0]?.id || ''));
@@ -1187,7 +1189,8 @@ export function LogForms({
             ...vehicleToEdit.fipeHistory.filter(h => h.month !== `${new Date().getFullYear()}-${String(new Date().getMonth() + 1).padStart(2, '0')}`),
             { month: `${new Date().getFullYear()}-${String(new Date().getMonth() + 1).padStart(2, '0')}`, value: Number(fipeValue) }
           ] : [{ month: `${new Date().getFullYear()}-${String(new Date().getMonth() + 1).padStart(2, '0')}`, value: Number(fipeValue) }]
-        ) : vehicleToEdit?.fipeHistory
+        ) : vehicleToEdit?.fipeHistory,
+        themeColor: vehicleToEdit?.themeColor || `hsl(${Math.floor(Math.random() * 360)}, 70%, 50%)`
       };
 
       onSaveVehicle(vehicleData);
@@ -1379,6 +1382,46 @@ export function LogForms({
           </div>
 
 
+
+          {/* Toggle between Maintenance and Expense */}
+          {(formType === 'maintenance' || formType === 'expense') && (
+            <div className="flex p-1 bg-white/5 border border-white/10 rounded-xl">
+              <button
+                type="button"
+                onClick={() => {
+                  setExpDescription(maintDescription);
+                  setExpCost(maintCost);
+                  setExpDate(maintDate);
+                  onTypeChange?.('maintenance');
+                }}
+                className={`flex-1 flex items-center justify-center gap-2 py-2 text-xs font-bold rounded-lg transition-all ${
+                  formType === 'maintenance'
+                    ? 'bg-amber-500/20 text-amber-400 border border-amber-500/30 shadow-lg shadow-amber-500/10'
+                    : 'text-gray-500 hover:text-gray-300'
+                }`}
+              >
+                <Wrench className="w-3.5 h-3.5" />
+                Manutenção
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setMaintDescription(expDescription);
+                  setMaintCost(expCost);
+                  setMaintDate(expDate);
+                  onTypeChange?.('expense');
+                }}
+                className={`flex-1 flex items-center justify-center gap-2 py-2 text-xs font-bold rounded-lg transition-all ${
+                  formType === 'expense'
+                    ? 'bg-blue-500/20 text-blue-400 border border-blue-500/30 shadow-lg shadow-blue-500/10'
+                    : 'text-gray-500 hover:text-gray-300'
+                }`}
+              >
+                <Coins className="w-3.5 h-3.5" />
+                Despesa
+              </button>
+            </div>
+          )}
 
           {/* Vehicle Select for log entries */}
           {formType !== 'vehicle' && vehicles.length > 0 && (
@@ -1901,7 +1944,9 @@ export function LogForms({
                               <button
                                 type="button"
                                 onClick={() => {
-                                  setExtraExpenses(extraExpenses.filter((_, i) => i !== index));
+                                  if (window.confirm('Deseja remover este custo extra?')) {
+                                    setExtraExpenses(extraExpenses.filter((_, i) => i !== index));
+                                  }
                                 }}
                                 className="text-gray-500 hover:text-rose-400 transition-colors p-1"
                                 title="Remover despesa"
@@ -2200,8 +2245,10 @@ export function LogForms({
                             <button
                               type="button"
                               onClick={() => {
-                                setDriverCnhPhotoUrl('');
-                                setDriverCnhFileName('');
+                                if (window.confirm('Deseja remover o arquivo da CNH?')) {
+                                  setDriverCnhPhotoUrl('');
+                                  setDriverCnhFileName('');
+                                }
                               }}
                               className="p-2.5 bg-rose-500/15 hover:bg-rose-500/25 text-rose-400 border border-rose-500/30 rounded-xl transition-colors cursor-pointer shrink-0"
                               title="Remover arquivo da CNH"
@@ -2297,8 +2344,10 @@ export function LogForms({
                             <button
                               type="button"
                               onClick={() => {
-                                setDriverAddressProofUrl('');
-                                setDriverAddressFileName('');
+                                if (window.confirm('Deseja remover o comprovante de endereço?')) {
+                                  setDriverAddressProofUrl('');
+                                  setDriverAddressFileName('');
+                                }
                               }}
                               className="p-2.5 bg-rose-500/15 hover:bg-rose-500/25 text-rose-400 border border-rose-500/30 rounded-xl transition-colors cursor-pointer shrink-0"
                               title="Remover comprovante de endereço"
@@ -2417,7 +2466,9 @@ export function LogForms({
                                 <button
                                   type="button"
                                   onClick={() => {
-                                    setAttachedDocs((prev) => prev.filter((_, i) => i !== idx));
+                                    if (window.confirm('Deseja remover este documento?')) {
+                                      setAttachedDocs((prev) => prev.filter((_, i) => i !== idx));
+                                    }
                                   }}
                                   className="p-1.5 text-rose-400 hover:text-rose-300 bg-rose-500/10 hover:bg-rose-500/20 rounded-lg transition-colors cursor-pointer"
                                   title="Remover este documento"
@@ -2883,8 +2934,10 @@ export function LogForms({
                       <button
                         type="button"
                         onClick={() => {
-                          setMaintReceiptUrl('');
-                          setMaintInvoiceFileName('');
+                          if (window.confirm('Deseja realmente remover o anexo da nota fiscal?')) {
+                            setMaintReceiptUrl('');
+                            setMaintInvoiceFileName('');
+                          }
                         }}
                         className="p-1 hover:bg-red-500/20 rounded-lg text-red-400 transition-colors"
                         title="Remover anexo"
