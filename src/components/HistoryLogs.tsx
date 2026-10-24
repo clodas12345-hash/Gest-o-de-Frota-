@@ -387,7 +387,7 @@ export function HistoryLogs({
     });
   };
   const groupedMaintByVehicle = React.useMemo(() => groupLogsByVehicle(filteredMaint), [filteredMaint]);
-  const groupedExpenses = React.useMemo(() => groupLogsByMonth(filteredExpenses), [filteredExpenses]);
+  const groupedExpensesByVehicle = React.useMemo(() => groupLogsByVehicle(filteredExpenses), [filteredExpenses]);
   const groupedVistorias = React.useMemo(() => groupLogsByMonth(filteredVistorias), [filteredVistorias]);
   const groupedUnifiedCosts = React.useMemo(() => groupLogsByMonth(unifiedCosts), [unifiedCosts]);
 
@@ -1337,18 +1337,12 @@ export function HistoryLogs({
 
                     return (
                       <div key={log.id} className="p-3.5 bg-white/[0.02] hover:bg-white/[0.04] border border-white/10 rounded-2xl space-y-2.5 transition-all">
-                        {/* Header: Plate, Date, Cost */}
-                        <div className="flex items-center justify-between gap-2">
+                        {/* Integrated Header: Vehicle, Date, Cost */}
+                        <div className="flex items-center justify-between gap-2 pb-2 border-b border-white/5">
                           <div className="flex items-center gap-2">
-                            <button
-                              onClick={() => {
-                                window.dispatchEvent(new CustomEvent('focus-vehicle', { detail: { vehicleId: log.vehicleId } }));
-                              }}
-                              className="font-bold text-xs font-mono text-blue-400 bg-blue-500/10 px-2 py-0.5 rounded-md border border-blue-500/20 hover:text-blue-300 cursor-pointer"
-                              title="Clique para ir direto para este carro"
-                            >
+                            <span className="font-bold text-[10px] text-blue-400 bg-blue-500/10 px-2 py-0.5 rounded-md border border-blue-500/20">
                               {getVehiclePlate(log.vehicleId)}
-                            </button>
+                            </span>
                             <span className="flex items-center gap-1 text-[11px] text-gray-400 font-mono">
                               <Calendar className="w-3 h-3 text-gray-500" />
                               {formatDate(log.date)}
@@ -1381,32 +1375,6 @@ export function HistoryLogs({
                           {log.scope && (
                             <span className="px-2 py-0.5 bg-purple-500/10 text-purple-300 border border-purple-500/20 text-[10px] font-semibold rounded-md">
                               {log.scope}
-                            </span>
-                          )}
-                          {log.currentKm && (
-                            <span className="px-2 py-0.5 bg-cyan-500/10 text-cyan-300 border border-cyan-500/20 text-[10px] font-mono font-bold rounded-md flex items-center gap-1">
-                              <Gauge className="w-3 h-3 text-cyan-400" />
-                              {log.currentKm.toLocaleString('pt-BR')} km
-                            </span>
-                          )}
-                          {log.nextKm ? (
-                            <span className="px-2 py-0.5 bg-blue-500/10 text-blue-300 border border-blue-500/20 text-[10px] font-mono rounded-md">
-                              Próx: {log.nextKm.toLocaleString('pt-BR')} km
-                            </span>
-                          ) : null}
-                          {log.boNumber && (
-                            <span className="px-2 py-0.5 bg-rose-500/10 text-rose-400 border border-rose-500/20 text-[10px] font-mono rounded-md">
-                              B.O.: {log.boNumber}
-                            </span>
-                          )}
-                          {log.partsReplaced && (
-                            <span className="px-2 py-0.5 bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 text-[10px] rounded-md">
-                              Peças: {log.partsReplaced}
-                            </span>
-                          )}
-                          {log.parcelasTotais && log.parcelasTotais > 1 && (
-                            <span className="px-2 py-0.5 bg-amber-500/10 text-amber-400 border border-amber-500/20 text-[10px] font-bold rounded-md">
-                              Parc: {log.parcelasPagas || 1}/{log.parcelasTotais}
                             </span>
                           )}
                         </div>
@@ -1770,29 +1738,29 @@ export function HistoryLogs({
               <>
                 {/* Mobile View: Cards */}
                 <div className="md:hidden space-y-4">
-                  {groupedExpenses.map(([monthKey, monthItems]) => {
-                    const monthTotal = monthItems.reduce((acc, it) => acc + (it.cost || 0), 0);
+                  {groupedExpensesByVehicle.map(([vehicleId, vehicleItems]) => {
+                    const vehicleTotal = vehicleItems.reduce((acc, it) => acc + (it.cost || 0), 0);
                     return (
-                      <div key={monthKey} className="space-y-2.5">
-                        {/* Month Header Banner */}
-                        <div className="flex items-center justify-between bg-purple-500/10 border border-purple-500/25 rounded-xl px-3.5 py-2">
+                      <div key={vehicleId} className="space-y-2.5">
+                        {/* Vehicle Header Banner */}
+                        <div className="flex items-center justify-between bg-blue-500/10 border border-blue-500/25 rounded-xl px-3.5 py-2.5">
                           <div className="flex items-center gap-2 min-w-0">
-                            <Calendar className="w-3.5 h-3.5 text-purple-400 shrink-0" />
+                            <Car className="w-4 h-4 text-blue-400 shrink-0" />
                             <span className="text-xs font-bold text-white uppercase tracking-wider truncate">
-                              {formatMonthYear(monthKey)}
+                              {getVehicleName(vehicleId)}
                             </span>
-                            <span className="text-[10px] font-semibold text-purple-300 bg-purple-500/20 px-1.5 py-0.5 rounded shrink-0">
-                              {monthItems.length} {monthItems.length === 1 ? 'item' : 'itens'}
+                            <span className="text-[10px] font-semibold text-blue-300 bg-blue-500/20 px-1.5 py-0.5 rounded shrink-0">
+                              {vehicleItems.length} {vehicleItems.length === 1 ? 'item' : 'itens'}
                             </span>
                           </div>
                           <span className="text-xs font-bold font-mono text-emerald-400 shrink-0 ml-2">
-                            {formatBRL(monthTotal)}
+                            {formatBRL(vehicleTotal)}
                           </span>
                         </div>
 
-                        {/* Cards for this month */}
+                        {/* Cards for this vehicle */}
                         <div className="space-y-2.5">
-                          {monthItems.map((log) => {
+                          {vehicleItems.map((log) => {
                     const isEditing = editingExpenseId === log.id;
                     if (isEditing) {
                       return (

@@ -2585,7 +2585,7 @@ export default function App() {
             onUpdateExpense={handleUpdateExpense}
             onUpdateVistoria={handleUpdateVistoria}
             onClearAllVistorias={handleClearAllVistorias}
-            defaultExpanded={true}
+            defaultExpanded={false}
           />
         </div>
 
