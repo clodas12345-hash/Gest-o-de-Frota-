@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { Vehicle, MaintenanceLog, ExpenseLog, Vistoria, FuelLog, MAINTENANCE_CATEGORIES, MAINTENANCE_SCOPES } from '../types';
-import { Search, Wrench, Landmark, Trash2, Calendar, User, Gauge, Edit2, Check, X, ChevronDown, ChevronUp, History, ClipboardCheck, Droplets, MapPin } from 'lucide-react';
+import { Search, Wrench, Landmark, Trash2, Calendar, User, Gauge, Edit2, Check, X, ChevronDown, ChevronUp, History, ClipboardCheck, Droplets, MapPin, Coins } from 'lucide-react';
 import CurrencyInput from './CurrencyInput';
 
 interface HistoryLogsProps {
@@ -24,7 +24,7 @@ interface HistoryLogsProps {
   defaultExpanded?: boolean;
 }
 
-type LogCategory = 'maintenance' | 'expense' | 'vistoria' | 'fuel';
+type LogCategory = 'all_costs' | 'maintenance' | 'expense' | 'vistoria' | 'fuel';
 
 export function HistoryLogs({
   vehicles,
@@ -44,7 +44,7 @@ export function HistoryLogs({
   defaultExpanded = false,
 }: HistoryLogsProps) {
   const [isExpanded, setIsExpanded] = useState(defaultExpanded);
-  const [activeCategory, setActiveCategory] = useState<LogCategory>('maintenance');
+  const [activeCategory, setActiveCategory] = useState<LogCategory>('all_costs');
   const [filterVehicleId, setFilterVehicleId] = useState<string>('all');
   const [filterMonth, setFilterMonth] = useState<string>('all');
   const [filterMaintCategory, setFilterMaintCategory] = useState<string>('all');
@@ -285,7 +285,9 @@ export function HistoryLogs({
 
   const availableMonths = React.useMemo(() => {
     const currentList =
-      activeCategory === 'maintenance'
+      activeCategory === 'all_costs'
+        ? [...maintenanceLogs, ...expenseLogs]
+        : activeCategory === 'maintenance'
         ? maintenanceLogs
         : activeCategory === 'expense'
         ? expenseLogs
@@ -332,9 +334,43 @@ export function HistoryLogs({
     getVehicleName(item.vehicleId).toLowerCase().includes(searchQuery.toLowerCase())
   );
 
+  type UnifiedCostItem =
+    | { kind: 'maintenance'; data: MaintenanceLog; id: string; date: string; vehicleId: string; cost: number; description: string; category?: string }
+    | { kind: 'expense'; data: ExpenseLog; id: string; date: string; vehicleId: string; cost: number; description: string; category: string };
+
+  const unifiedCosts = React.useMemo<UnifiedCostItem[]>(() => {
+    const list: UnifiedCostItem[] = [];
+    filteredMaint.forEach((m) => {
+      list.push({
+        kind: 'maintenance',
+        data: m,
+        id: m.id,
+        date: m.date,
+        vehicleId: m.vehicleId,
+        cost: m.cost,
+        description: m.description,
+        category: m.category || m.type,
+      });
+    });
+    filteredExpenses.forEach((e) => {
+      list.push({
+        kind: 'expense',
+        data: e,
+        id: e.id,
+        date: e.date,
+        vehicleId: e.vehicleId,
+        cost: e.cost,
+        description: e.description,
+        category: e.category,
+      });
+    });
+    return list.sort((a, b) => b.date.localeCompare(a.date));
+  }, [filteredMaint, filteredExpenses]);
+
   const groupedMaint = React.useMemo(() => groupLogsByMonth(filteredMaint), [filteredMaint]);
   const groupedExpenses = React.useMemo(() => groupLogsByMonth(filteredExpenses), [filteredExpenses]);
   const groupedVistorias = React.useMemo(() => groupLogsByMonth(filteredVistorias), [filteredVistorias]);
+  const groupedUnifiedCosts = React.useMemo(() => groupLogsByMonth(unifiedCosts), [unifiedCosts]);
 
   const parseInstallmentInfo = (description: string) => {
     if (!description) return null;
@@ -588,6 +624,93 @@ export function HistoryLogs({
     </div>
   );
 
+  const renderExpenseEditForm = (log: ExpenseLog) => (
+    <div className="p-4 bg-[#121620] border-2 border-purple-500/50 rounded-2xl shadow-xl space-y-3">
+      <div className="flex items-center justify-between border-b border-white/10 pb-2">
+        <span className="text-xs font-bold text-white">Editar Despesa ({getVehiclePlate(editExpenseVehicleId || log.vehicleId)})</span>
+        <div className="flex items-center gap-1.5">
+          <button
+            type="button"
+            onClick={() => setEditingExpenseId(null)}
+            className="px-2.5 py-1 text-xs text-gray-300 hover:text-white bg-white/5 rounded-lg border border-white/10 cursor-pointer"
+          >
+            Cancelar
+          </button>
+          <button
+            type="button"
+            onClick={() => handleSaveExpenseEdit(log)}
+            className="px-3 py-1 text-xs font-bold text-white bg-purple-600 hover:bg-purple-500 rounded-lg shadow-md shadow-purple-500/20 cursor-pointer"
+          >
+            Salvar
+          </button>
+        </div>
+      </div>
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 text-xs">
+        <div className="space-y-1 sm:col-span-2">
+          <label className="text-[11px] font-semibold text-gray-400 flex items-center justify-between">
+            <span>Veículo / Carro</span>
+            <span className="text-[10px] text-purple-400 font-medium">Trocar carro</span>
+          </label>
+          <select
+            value={editExpenseVehicleId}
+            onChange={(e) => setEditExpenseVehicleId(e.target.value)}
+            className="w-full h-9 bg-black/60 border border-purple-500/40 text-purple-200 font-medium rounded-lg px-2.5 py-1.5 text-xs focus:outline-hidden focus:border-purple-400"
+          >
+            {vehicles.map((v) => (
+              <option key={v.id} value={v.id} className="bg-[#111111] text-white">
+                {v.brand} {v.model} ({v.plate})
+              </option>
+            ))}
+          </select>
+        </div>
+        <div className="space-y-1">
+          <label className="text-[11px] font-semibold text-gray-400">Data</label>
+          <input
+            type="date"
+            value={editDate}
+            onChange={(e) => setEditDate(e.target.value)}
+            className="w-full h-9 bg-black/60 border border-white/15 text-white rounded-lg px-2.5 py-1.5 text-xs focus:outline-hidden focus:border-purple-500 scheme-dark font-mono"
+          />
+        </div>
+        <div className="space-y-1">
+          <label className="text-[11px] font-semibold text-gray-400">Categoria</label>
+          <select
+            value={editCategory}
+            onChange={(e) => setEditCategory(e.target.value as any)}
+            className="w-full h-9 bg-black/60 border border-white/15 text-white rounded-lg px-2.5 py-1.5 text-xs focus:outline-hidden focus:border-purple-500"
+          >
+            <option value="IPVA">IPVA</option>
+            <option value="Seguro">Seguro</option>
+            <option value="Licenciamento">Licenciamento</option>
+            <option value="Multa">Multa</option>
+            <option value="Lavagem">Lavagem</option>
+            <option value="Estacionamento">Estacionamento</option>
+            <option value="Financiamento">Financiamento</option>
+            <option value="Rastreador">Rastreador</option>
+            <option value="Outros">Outros</option>
+          </select>
+        </div>
+        <div className="space-y-1 sm:col-span-2">
+          <label className="text-[11px] font-semibold text-gray-400">Descrição</label>
+          <input
+            type="text"
+            value={editDesc}
+            onChange={(e) => setEditDesc(e.target.value)}
+            className="w-full h-9 bg-black/60 border border-white/15 text-white rounded-lg px-2.5 py-1.5 text-xs focus:outline-hidden focus:border-purple-500"
+          />
+        </div>
+        <div className="space-y-1 sm:col-span-2">
+          <label className="text-[11px] font-semibold text-gray-400">Valor Total (R$)</label>
+          <CurrencyInput
+            value={editCost}
+            onChange={setEditCost}
+            className="w-full h-9 bg-black/60 border border-white/15 text-emerald-400 font-mono font-bold rounded-lg px-2.5 py-1.5 text-xs focus:outline-hidden focus:border-emerald-500"
+          />
+        </div>
+      </div>
+    </div>
+  );
+
   return (
     <div id="history-section" className="bg-[#111111] border border-white/5 rounded-2xl p-5 sm:p-6 shadow-xl space-y-4">
       {/* Header and Toggle */}
@@ -693,11 +816,24 @@ export function HistoryLogs({
             </div>
           </div>
 
-      {/* Categories Toggle Row (Aba Abastecimentos removida do histórico de manutenção) */}
+      {/* Categories Toggle Row */}
       <div className="flex gap-2 border-b border-white/5 pb-2 overflow-x-auto shrink-0 scrollbar-none">
         <button
+          onClick={() => setActiveCategory('all_costs')}
+          className={`flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs font-semibold transition-all shrink-0 cursor-pointer ${
+            activeCategory === 'all_costs'
+              ? 'bg-blue-500/15 text-blue-400 border border-blue-500/30 shadow-sm shadow-blue-500/10'
+              : 'text-gray-400 hover:bg-white/5 hover:text-white'
+          }`}
+          id="tab-history-all-costs"
+        >
+          <Coins className="w-4 h-4" />
+          Todas (Despesas & Manutenções) ({unifiedCosts.length})
+        </button>
+
+        <button
           onClick={() => setActiveCategory('maintenance')}
-          className={`flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs font-semibold transition-all shrink-0 ${
+          className={`flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs font-semibold transition-all shrink-0 cursor-pointer ${
             activeCategory === 'maintenance'
               ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20'
               : 'text-gray-400 hover:bg-white/5 hover:text-white'
@@ -705,12 +841,12 @@ export function HistoryLogs({
           id="tab-history-maintenance"
         >
           <Wrench className="w-4 h-4" />
-          Manutenções ({filteredMaint.length})
+          Apenas Manutenções ({filteredMaint.length})
         </button>
 
         <button
           onClick={() => setActiveCategory('expense')}
-          className={`flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs font-semibold transition-all shrink-0 ${
+          className={`flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs font-semibold transition-all shrink-0 cursor-pointer ${
             activeCategory === 'expense'
               ? 'bg-purple-500/10 text-purple-400 border border-purple-500/20'
               : 'text-gray-400 hover:bg-white/5 hover:text-white'
@@ -718,12 +854,12 @@ export function HistoryLogs({
           id="tab-history-expense"
         >
           <Landmark className="w-4 h-4" />
-          Outras Despesas ({filteredExpenses.length})
+          Apenas Outras Despesas ({filteredExpenses.length})
         </button>
 
         <button
           onClick={() => setActiveCategory('vistoria')}
-          className={`flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs font-semibold transition-all shrink-0 ${
+          className={`flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs font-semibold transition-all shrink-0 cursor-pointer ${
             activeCategory === 'vistoria'
               ? 'bg-indigo-500/10 text-indigo-400 border border-indigo-500/20'
               : 'text-gray-400 hover:bg-white/5 hover:text-white'
@@ -737,6 +873,408 @@ export function HistoryLogs({
 
       {/* Lists Display Area */}
       <div id="history-logs-display">
+        {/* Tab: All Costs (Expenses + Maintenance Combined) */}
+        {activeCategory === 'all_costs' && (
+          <div>
+            {unifiedCosts.length === 0 ? (
+              <p className="text-center text-gray-500 text-xs py-8">Nenhum custo (despesa ou manutenção) registrado.</p>
+            ) : (
+              <>
+                {/* Mobile View: Cards */}
+                <div className="md:hidden space-y-4">
+                  {groupedUnifiedCosts.map(([monthKey, monthItems]) => {
+                    const monthTotal = monthItems.reduce((acc, it) => acc + (it.cost || 0), 0);
+                    const maintCount = monthItems.filter((i) => i.kind === 'maintenance').length;
+                    const expenseCount = monthItems.filter((i) => i.kind === 'expense').length;
+
+                    return (
+                      <div key={monthKey} className="space-y-2.5">
+                        {/* Month Header Banner */}
+                        <div className="flex items-center justify-between bg-blue-500/10 border border-blue-500/25 rounded-xl px-3.5 py-2.5 sticky top-2 z-10 backdrop-blur-md shadow-sm">
+                          <div className="flex items-center gap-2 min-w-0">
+                            <Calendar className="w-3.5 h-3.5 text-blue-400 shrink-0" />
+                            <span className="text-xs font-bold text-white uppercase tracking-wider truncate">
+                              {formatMonthYear(monthKey)}
+                            </span>
+                            <span className="text-[10px] font-semibold text-blue-300 bg-blue-500/20 px-1.5 py-0.5 rounded shrink-0">
+                              {monthItems.length} {monthItems.length === 1 ? 'item' : 'itens'} ({maintCount} man., {expenseCount} desp.)
+                            </span>
+                          </div>
+                          <span className="text-xs font-bold font-mono text-emerald-400 shrink-0 ml-2">
+                            {formatBRL(monthTotal)}
+                          </span>
+                        </div>
+
+                        {/* Cards for this month */}
+                        <div className="space-y-2.5">
+                          {monthItems.map((item) => {
+                            if (item.kind === 'maintenance') {
+                              const log = item.data;
+                              const isEditing = editingMaintId === log.id;
+                              if (isEditing) {
+                                return (
+                                  <div key={log.id} className="p-4 bg-[#121620] border-2 border-blue-500/50 rounded-2xl shadow-xl">
+                                    {renderMaintEditForm(log)}
+                                  </div>
+                                );
+                              }
+
+                              return (
+                                <div key={log.id} className="p-3.5 bg-white/[0.02] hover:bg-white/[0.04] border border-white/10 rounded-2xl space-y-2.5 transition-all">
+                                  <div className="flex items-center justify-between gap-2">
+                                    <div className="flex items-center gap-2">
+                                      <button
+                                        onClick={() => {
+                                          window.dispatchEvent(new CustomEvent('focus-vehicle', { detail: { vehicleId: log.vehicleId } }));
+                                        }}
+                                        className="font-bold text-xs font-mono text-blue-400 bg-blue-500/10 px-2 py-0.5 rounded-md border border-blue-500/20 hover:text-blue-300 cursor-pointer"
+                                        title="Clique para ir direto para este carro"
+                                      >
+                                        {getVehiclePlate(log.vehicleId)}
+                                      </button>
+                                      <span className="flex items-center gap-1 text-[11px] text-gray-400 font-mono">
+                                        <Calendar className="w-3 h-3 text-gray-500" />
+                                        {formatDate(log.date)}
+                                      </span>
+                                    </div>
+                                    <span className="font-bold font-mono text-sm text-emerald-400">
+                                      {formatBRL(log.cost)}
+                                    </span>
+                                  </div>
+
+                                  <div>
+                                    <p className="text-xs font-semibold text-white line-clamp-2">{log.description || 'Sem descrição'}</p>
+                                    <p className="text-[11px] text-gray-400 flex items-center gap-1 mt-0.5">
+                                      <MapPin className="w-3 h-3 text-gray-500 shrink-0" />
+                                      <span className="truncate">{log.shopName || 'Oficina não especificada'}</span>
+                                    </p>
+                                  </div>
+
+                                  <div className="flex flex-wrap gap-1.5 pt-0.5">
+                                    <span className="px-2 py-0.5 bg-emerald-500/15 text-emerald-300 border border-emerald-500/30 font-bold rounded-md text-[10px] flex items-center gap-1">
+                                      <Wrench className="w-3 h-3" /> Manutenção: {log.type}
+                                    </span>
+                                    {log.category && (
+                                      <span className="px-2 py-0.5 bg-blue-500/10 text-blue-300 border border-blue-500/20 text-[10px] font-semibold rounded-md">
+                                        {log.category}
+                                      </span>
+                                    )}
+                                    {log.scope && (
+                                      <span className="px-2 py-0.5 bg-purple-500/10 text-purple-300 border border-purple-500/20 text-[10px] font-semibold rounded-md">
+                                        {log.scope}
+                                      </span>
+                                    )}
+                                    {log.currentKm && (
+                                      <span className="px-2 py-0.5 bg-cyan-500/10 text-cyan-300 border border-cyan-500/20 text-[10px] font-mono font-bold rounded-md flex items-center gap-1">
+                                        <Gauge className="w-3 h-3 text-cyan-400" />
+                                        {log.currentKm.toLocaleString('pt-BR')} km
+                                      </span>
+                                    )}
+                                    {log.parcelasTotais && log.parcelasTotais > 1 && (
+                                      <span className="px-2 py-0.5 bg-amber-500/10 text-amber-400 border border-amber-500/20 text-[10px] font-bold rounded-md">
+                                        Parc: {log.parcelasPagas || 1}/{log.parcelasTotais}
+                                      </span>
+                                    )}
+                                  </div>
+
+                                  <div className="flex items-center justify-end gap-2 pt-2 border-t border-white/5">
+                                    <button
+                                      onClick={() => handleStartEditMaint(log)}
+                                      className="flex items-center gap-1 px-2.5 py-1 text-xs text-blue-400 bg-blue-500/10 hover:bg-blue-500/20 border border-blue-500/20 rounded-lg transition-colors cursor-pointer"
+                                    >
+                                      <Edit2 className="w-3 h-3" />
+                                      <span>Editar</span>
+                                    </button>
+                                    <button
+                                      onClick={() => onDeleteMaintenance(log.id)}
+                                      className="flex items-center gap-1 px-2.5 py-1 text-xs text-rose-400 bg-rose-500/10 hover:bg-rose-500/20 border border-rose-500/20 rounded-lg transition-colors cursor-pointer"
+                                    >
+                                      <Trash2 className="w-3 h-3" />
+                                      <span>Excluir</span>
+                                    </button>
+                                  </div>
+                                </div>
+                              );
+                            } else {
+                              const log = item.data;
+                              const isEditing = editingExpenseId === log.id;
+                              if (isEditing) {
+                                return (
+                                  <div key={log.id}>
+                                    {renderExpenseEditForm(log)}
+                                  </div>
+                                );
+                              }
+
+                              return (
+                                <div key={log.id} className="p-3.5 bg-white/[0.02] hover:bg-white/[0.04] border border-white/10 rounded-2xl space-y-2.5 transition-all">
+                                  <div className="flex items-center justify-between gap-2">
+                                    <div className="flex items-center gap-2">
+                                      <button
+                                        onClick={() => {
+                                          window.dispatchEvent(new CustomEvent('focus-vehicle', { detail: { vehicleId: log.vehicleId } }));
+                                        }}
+                                        className="font-bold text-xs font-mono text-purple-400 bg-purple-500/10 px-2 py-0.5 rounded-md border border-purple-500/20 hover:text-purple-300 cursor-pointer"
+                                      >
+                                        {getVehiclePlate(log.vehicleId)}
+                                      </button>
+                                      <span className="flex items-center gap-1 text-[11px] text-gray-400 font-mono">
+                                        <Calendar className="w-3 h-3 text-gray-500" />
+                                        {formatDate(log.date)}
+                                      </span>
+                                    </div>
+                                    <span className="font-bold font-mono text-sm text-emerald-400">
+                                      {formatBRL(log.cost)}
+                                    </span>
+                                  </div>
+                                  <div className="flex items-center gap-2">
+                                    <span className="px-2 py-0.5 bg-purple-500/15 text-purple-300 border border-purple-500/30 text-[10px] font-bold rounded-md flex items-center gap-1">
+                                      <Landmark className="w-3 h-3" /> Despesa: {log.category}
+                                    </span>
+                                    <span className="text-xs text-white line-clamp-1">{log.description}</span>
+                                  </div>
+                                  <div className="flex items-center justify-end gap-2 pt-2 border-t border-white/5">
+                                    <button
+                                      onClick={() => handleStartEditExpense(log)}
+                                      className="flex items-center gap-1 px-2.5 py-1 text-xs text-blue-400 bg-blue-500/10 hover:bg-blue-500/20 border border-blue-500/20 rounded-lg transition-colors cursor-pointer"
+                                    >
+                                      <Edit2 className="w-3 h-3" />
+                                      <span>Editar</span>
+                                    </button>
+                                    <button
+                                      onClick={() => onDeleteExpense(log.id)}
+                                      className="flex items-center gap-1 px-2.5 py-1 text-xs text-rose-400 bg-rose-500/10 hover:bg-rose-500/20 border border-rose-500/20 rounded-lg transition-colors cursor-pointer"
+                                    >
+                                      <Trash2 className="w-3 h-3" />
+                                      <span>Excluir</span>
+                                    </button>
+                                  </div>
+                                </div>
+                              );
+                            }
+                          })}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+
+                {/* Desktop View: Table */}
+                <div className="hidden md:block overflow-x-auto text-gray-300">
+                  <table className="w-full text-left text-xs border-collapse">
+                    <thead>
+                      <tr className="border-b border-white/5 text-gray-500 font-semibold uppercase tracking-wider text-[10px]">
+                        <th className="py-3">Data</th>
+                        <th className="py-3">Veículo</th>
+                        <th className="py-3">Origem</th>
+                        <th className="py-3">Categoria / Tipo</th>
+                        <th className="py-3">Descrição detalhada</th>
+                        <th className="py-3 text-right">Valor Total</th>
+                        <th className="py-3 text-center">Ações</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-white/[0.03]">
+                      {groupedUnifiedCosts.map(([monthKey, monthItems]) => {
+                        const monthTotal = monthItems.reduce((acc, it) => acc + (it.cost || 0), 0);
+                        const maintCount = monthItems.filter((i) => i.kind === 'maintenance').length;
+                        const expenseCount = monthItems.filter((i) => i.kind === 'expense').length;
+
+                        return (
+                          <React.Fragment key={monthKey}>
+                            <tr className="bg-blue-950/30 border-y border-blue-500/25">
+                              <td colSpan={7} className="py-2.5 px-3">
+                                <div className="flex items-center justify-between">
+                                  <div className="flex items-center gap-2">
+                                    <Calendar className="w-3.5 h-3.5 text-blue-400" />
+                                    <span className="font-bold text-xs text-white uppercase tracking-wider">
+                                      {formatMonthYear(monthKey)}
+                                    </span>
+                                    <span className="text-[10px] font-semibold text-blue-300 bg-blue-500/20 px-2 py-0.5 rounded-full">
+                                      {monthItems.length} lançamentos ({maintCount} manutenções, {expenseCount} despesas)
+                                    </span>
+                                  </div>
+                                  <div className="flex items-center gap-1.5 text-right">
+                                    <span className="text-[11px] text-gray-400">Total no mês:</span>
+                                    <span className="font-bold font-mono text-xs text-emerald-400">
+                                      {formatBRL(monthTotal)}
+                                    </span>
+                                  </div>
+                                </div>
+                              </td>
+                            </tr>
+                            {monthItems.map((item) => {
+                              if (item.kind === 'maintenance') {
+                                const log = item.data;
+                                const isEditing = editingMaintId === log.id;
+                                if (isEditing) {
+                                  return (
+                                    <tr key={log.id} className="bg-[#121620] border-2 border-blue-500/40">
+                                      <td colSpan={7} className="p-4 sm:p-5">
+                                        {renderMaintEditForm(log)}
+                                      </td>
+                                    </tr>
+                                  );
+                                }
+
+                                return (
+                                  <tr key={log.id} className="transition-colors hover:bg-white/[0.01]">
+                                    <td className="py-3 font-medium text-gray-400 font-mono">
+                                      <span className="flex items-center gap-1.5">
+                                        <Calendar className="w-3.5 h-3.5 text-gray-600" />
+                                        {formatDate(log.date)}
+                                      </span>
+                                    </td>
+                                    <td className="py-3">
+                                      <button
+                                        onClick={() => {
+                                          window.dispatchEvent(new CustomEvent('focus-vehicle', { detail: { vehicleId: log.vehicleId } }));
+                                        }}
+                                        className="font-bold text-blue-400 hover:text-blue-300 hover:underline cursor-pointer text-left focus:outline-hidden"
+                                        title="Clique para ir direto para este carro"
+                                      >
+                                        {getVehiclePlate(log.vehicleId)}
+                                      </button>
+                                    </td>
+                                    <td className="py-3">
+                                      <span className="px-2 py-0.5 bg-emerald-500/15 text-emerald-300 border border-emerald-500/30 font-semibold rounded-md text-[10px] inline-flex items-center gap-1">
+                                        <Wrench className="w-3 h-3" /> Manutenção
+                                      </span>
+                                    </td>
+                                    <td className="py-3">
+                                      <div className="flex flex-wrap gap-1">
+                                        <span className="px-1.5 py-0.5 bg-blue-500/10 text-blue-300 border border-blue-500/20 text-[10px] rounded">
+                                          {log.category || log.type}
+                                        </span>
+                                        {log.scope && (
+                                          <span className="px-1.5 py-0.5 bg-purple-500/10 text-purple-300 border border-purple-500/20 text-[10px] rounded">
+                                            {log.scope}
+                                          </span>
+                                        )}
+                                      </div>
+                                    </td>
+                                    <td className="py-3 max-w-xs">
+                                      <div className="flex flex-col gap-0.5">
+                                        <span className="font-semibold text-white line-clamp-1">{log.description}</span>
+                                        <span className="text-[10px] text-gray-400">{log.shopName || 'Oficina não especificada'}</span>
+                                      </div>
+                                    </td>
+                                    <td className="py-3 text-right font-bold font-mono text-emerald-400">
+                                      {formatBRL(log.cost)}
+                                    </td>
+                                    <td className="py-3 text-center">
+                                      <div className="flex items-center justify-center gap-1">
+                                        <button
+                                          onClick={() => handleStartEditMaint(log)}
+                                          className="p-1 text-gray-500 hover:text-blue-400 hover:bg-blue-500/10 rounded-lg transition-colors cursor-pointer"
+                                          title="Editar manutenção"
+                                        >
+                                          <Edit2 className="w-3.5 h-3.5" />
+                                        </button>
+                                        <button
+                                          onClick={() => onDeleteMaintenance(log.id)}
+                                          className="p-1 text-gray-500 hover:text-rose-400 hover:bg-rose-500/10 rounded-lg transition-colors cursor-pointer"
+                                          title="Excluir manutenção"
+                                        >
+                                          <Trash2 className="w-3.5 h-3.5" />
+                                        </button>
+                                      </div>
+                                    </td>
+                                  </tr>
+                                );
+                              } else {
+                                const log = item.data;
+                                const isEditing = editingExpenseId === log.id;
+                                if (isEditing) {
+                                  return (
+                                    <tr key={log.id} className="bg-[#121620] border-2 border-purple-500/40">
+                                      <td colSpan={7} className="p-4 sm:p-5">
+                                        {renderExpenseEditForm(log)}
+                                      </td>
+                                    </tr>
+                                  );
+                                }
+
+                                return (
+                                  <tr key={log.id} className="transition-colors hover:bg-white/[0.01]">
+                                    <td className="py-3 font-medium text-gray-400 font-mono">
+                                      <span className="flex items-center gap-1.5">
+                                        <Calendar className="w-3.5 h-3.5 text-gray-600" />
+                                        {formatDate(log.date)}
+                                      </span>
+                                    </td>
+                                    <td className="py-3">
+                                      <button
+                                        onClick={() => {
+                                          window.dispatchEvent(new CustomEvent('focus-vehicle', { detail: { vehicleId: log.vehicleId } }));
+                                        }}
+                                        className="font-bold text-blue-400 hover:text-blue-300 hover:underline cursor-pointer text-left focus:outline-hidden"
+                                        title="Clique para ir direto para este carro"
+                                      >
+                                        {getVehiclePlate(log.vehicleId)}
+                                      </button>
+                                    </td>
+                                    <td className="py-3">
+                                      <span className="px-2 py-0.5 bg-purple-500/15 text-purple-300 border border-purple-500/30 font-semibold rounded-md text-[10px] inline-flex items-center gap-1">
+                                        <Landmark className="w-3 h-3" /> Despesa
+                                      </span>
+                                    </td>
+                                    <td className="py-3">
+                                      <span className="px-2 py-0.5 bg-purple-500/10 text-purple-300 border border-purple-500/15 font-semibold rounded-md text-[10px]">
+                                        {log.category}
+                                      </span>
+                                    </td>
+                                    <td className="py-3 text-gray-300 font-semibold">
+                                      <div className="flex items-center gap-1.5 flex-wrap">
+                                        <span>{log.description}</span>
+                                        {(() => {
+                                          const inst = parseInstallmentInfo(log.description);
+                                          if (inst) {
+                                            return (
+                                              <span className="text-[10px] font-mono bg-amber-500/10 text-amber-300 border border-amber-500/20 px-1.5 py-0.5 rounded font-bold shrink-0">
+                                                Pagas: {inst.pagas} | Faltam: {inst.faltam}
+                                              </span>
+                                            );
+                                          }
+                                          return null;
+                                        })()}
+                                      </div>
+                                    </td>
+                                    <td className="py-3 text-right font-bold font-mono text-emerald-400">
+                                      {formatBRL(log.cost)}
+                                    </td>
+                                    <td className="py-3 text-center">
+                                      <div className="flex items-center justify-center gap-1">
+                                        <button
+                                          onClick={() => handleStartEditExpense(log)}
+                                          className="p-1 text-gray-500 hover:text-blue-400 hover:bg-blue-500/10 rounded-lg transition-colors cursor-pointer"
+                                          title="Editar despesa"
+                                        >
+                                          <Edit2 className="w-3.5 h-3.5" />
+                                        </button>
+                                        <button
+                                          onClick={() => onDeleteExpense(log.id)}
+                                          className="p-1 text-gray-500 hover:text-rose-400 hover:bg-rose-500/10 rounded-lg transition-colors cursor-pointer"
+                                          title="Excluir despesa"
+                                        >
+                                          <Trash2 className="w-3.5 h-3.5" />
+                                        </button>
+                                      </div>
+                                    </td>
+                                  </tr>
+                                );
+                              }
+                            })}
+                          </React.Fragment>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              </>
+            )}
+          </div>
+        )}
+
         {/* Tab: Maintenance */}
         {activeCategory === 'maintenance' && (
           <div>

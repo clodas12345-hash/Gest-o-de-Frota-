@@ -419,7 +419,12 @@ export const getPublicWebBaseUrl = (): string => {
     return origin.replace(/\/+$/, '');
   }
 
-  // Para qualquer outro caso (run.app, aistudio-preview, etc), FORÇAR o 'DEV'
+  // Se por acaso o origin contiver 'ais-pre', converter estritamente para 'ais-dev'
+  if (origin && origin.includes('ais-pre')) {
+    return origin.replace('ais-pre', 'ais-dev').replace(/\/+$/, '');
+  }
+
+  // Para qualquer outro caso, usar PUBLIC_WEB_ORIGIN (ais-dev)
   return PUBLIC_WEB_ORIGIN.replace(/\/+$/, '');
 };
 
