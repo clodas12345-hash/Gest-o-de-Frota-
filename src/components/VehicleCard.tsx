@@ -914,6 +914,16 @@ export const VehicleCard: React.FC<VehicleCardProps> = ({
     tokenOverride?: string
   ) => {
     let text = templateText;
+    
+    // Safety check: if templateText doesn't have essential placeholders, fallback to DEFAULT
+    if (!isShare && (!text.includes('{placa}') || !text.includes('{itens_inspecao}'))) {
+      text = DEFAULT_REQUEST_TEMPLATE;
+      try { localStorage.removeItem('fleet_vistoria_request_template'); } catch (e) {}
+    } else if (isShare && (!text.includes('{placa}') || !text.includes('{checklist}'))) {
+      text = DEFAULT_SHARE_TEMPLATE;
+      try { localStorage.removeItem('fleet_vistoria_share_template'); } catch (e) {}
+    }
+
     const typeToUse = reqType || requestVistoriaType || 'periódica';
     const tokenToUse = tokenOverride || vistoriaRequestToken;
     
@@ -922,28 +932,23 @@ export const VehicleCard: React.FC<VehicleCardProps> = ({
     const driverStr = vehicle.driver || (isShare ? 'Não definido' : 'Locatário');
     
     const itemsToUse = itemsParam !== undefined ? itemsParam : selectedRequestItems;
+
+    const safeBaseLink = (vistoriaReturnLink && !vistoriaReturnLink.includes('localhost') && !vistoriaReturnLink.includes('127.0.0.1'))
+      ? vistoriaReturnLink
+      : getPublicWebBaseUrl();
+    const safeBaseClean = safeBaseLink.replace(/\/upload-receipt\/?$/, '').replace(/\/+$/, '');
+    
     const itemsQueryParam = itemsToUse && itemsToUse.length > 0
       ? `&items=${encodeURIComponent(itemsToUse.join(','))}`
       : '';
 
-    const safeBaseLink = (() => {
-      let base = (vistoriaReturnLink && !vistoriaReturnLink.includes('localhost') && !vistoriaReturnLink.includes('127.0.0.1'))
-        ? vistoriaReturnLink
-        : getPublicWebBaseUrl();
-      base = base.replace(/\/upload-receipt\/?$/, '').replace(/\/+$/, '');
-      return base;
-    })();
-    const returnUrlWithPlaca = (() => {
-      const baseWithSlash = safeBaseLink.replace(/\/+$/, '') + '/';
-      const itemsParam = itemsToUse && itemsToUse.length > 0 ? `&items=${encodeURIComponent(itemsToUse.join(','))}` : '';
-      return `${baseWithSlash}?mode=vistoria_retorno&vehicleId=${encodeURIComponent(vehicle.id)}&placa=${encodeURIComponent(vehicle.plate)}&brand=${encodeURIComponent(vehicle.brand)}&model=${encodeURIComponent(vehicle.model)}&driver=${encodeURIComponent(vehicle.driver || '')}&type=${encodeURIComponent(typeToUse)}&deadline=${encodeURIComponent(vehicle.nextVistoriaDate || '')}&reqId=${tokenToUse}${itemsParam}`;
-    })();
+    const returnUrlWithPlaca = `${safeBaseClean}/?mode=vistoria_retorno&vehicleId=${encodeURIComponent(vehicle.id)}&placa=${encodeURIComponent(vehicle.plate)}&brand=${encodeURIComponent(vehicle.brand)}&model=${encodeURIComponent(vehicle.model)}&driver=${encodeURIComponent(vehicle.driver || '')}&type=${encodeURIComponent(typeToUse)}&deadline=${encodeURIComponent(vehicle.nextVistoriaDate || '')}&reqId=${tokenToUse}${itemsQueryParam}`;
 
-    text = text.replace(/{veiculo}/g, veiculoStr);
-    text = text.replace(/{placa}/g, plateStr);
-    text = text.replace(/{locatario}/g, driverStr);
-    text = text.replace(/{tipo}/g, typeToUse);
-    text = text.replace(/{link_retorno}/g, returnUrlWithPlaca);
+    text = text.replace(/\{veiculo\}/g, veiculoStr);
+    text = text.replace(/\{placa\}/g, plateStr);
+    text = text.replace(/\{locatario\}/g, driverStr);
+    text = text.replace(/\{tipo\}/g, typeToUse);
+    text = text.replace(/\{link_retorno\}/g, returnUrlWithPlaca);
     
     if (isShare && v) {
       const checklistText = Object.entries(v.checklist || {})
@@ -954,117 +959,42 @@ export const VehicleCard: React.FC<VehicleCardProps> = ({
       const formattedDate = new Date(v.date + 'T12:00:00').toLocaleDateString('pt-BR');
       const notesText = v.notes || 'Nenhuma';
       
-      text = text.replace(/{checklist}/g, checklistText);
-      text = text.replace(/{data}/g, formattedDate);
-      text = text.replace(/{observacoes}/g, notesText);
+      text = text.replace(/\{checklist\}/g, checklistText);
+      text = text.replace(/\{data\}/g, formattedDate);
+      text = text.replace(/\{observacoes\}/g, notesText);
     }
     
     if (!isShare) {
       const deadlineStr = vehicle.nextVistoriaDate 
         ? `📅 *Realizar até a data:* ${new Date(vehicle.nextVistoriaDate + 'T12:00:00').toLocaleDateString('pt-BR')}`
         : '';
-      text = text.replace(/{prazo}/g, deadlineStr ? `\n⚠️ *Atenção:* ${deadlineStr}\n` : '');
+      text = text.replace(/\{prazo\}/g, deadlineStr ? `\n⚠️ *Atenção:* ${deadlineStr}\n` : '');
 
       const itemsListFormatted = (itemsToUse && itemsToUse.length > 0)
         ? itemsToUse.map(item => `- ${item}`).join('\n')
         : '- (Nenhum item específico marcado)';
 
-      if (text.includes('{itens_inspecao}')) {
-        text = text.replace(/{itens_inspecao}/g, itemsListFormatted);
-      } else if (text.includes('*Itens a serem inspecionados:*')) {
-        text = text.replace(
-          /\*Itens a serem inspecionados:\*[\s\S]*?(?=\n\s*📸|\n\s*---|\n\s*🔗|$)/,
-          `*Itens a serem inspecionados:*\n${itemsListFormatted}\n`
-        );
-      } else if (text.includes('📸 *RETORNO COM FOTOS:*')) {
-        text = text.replace('📸 *RETORNO COM FOTOS:*', `*Itens a serem inspecionados:*\n${itemsListFormatted}\n\n📸 *RETORNO COM FOTOS:*`);
-      }
+      text = text.replace(/\{itens_inspecao\}/g, itemsListFormatted);
     }
 
     if (!text.includes(returnUrlWithPlaca) && !text.includes('placa=')) {
       text += `\n\n🔗 *Link de Acesso / Retorno:*\n${returnUrlWithPlaca}`;
     }
 
-    // Garantia final: remover substituição hardcoded pois a base já está correta
-    
     return text;
   };
 
-  const saveTemplateFromText = (text: string, isShare: boolean, v: Vistoria | null) => {
-    let template = text;
-    
-    const escapeRegExp = (string: string) => {
-      return string.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-    };
-
-    const veiculoStr = `${vehicle.brand} ${vehicle.model}`;
-    const plateStr = vehicle.plate;
-    const driverStr = vehicle.driver || (isShare ? 'Não definido' : 'Locatário');
-    
-    const itemsQueryParam = selectedRequestItems && selectedRequestItems.length > 0
-      ? `&items=${encodeURIComponent(selectedRequestItems.join(','))}`
-      : '';
-
-    const safeBaseLink = (() => {
-      const base = (vistoriaReturnLink && !vistoriaReturnLink.includes('localhost') && !vistoriaReturnLink.includes('127.0.0.1'))
-        ? vistoriaReturnLink
-        : getPublicWebBaseUrl();
-      return base.replace(/\/+$/, '');
-    })();
-    const returnUrlWithPlaca = (() => {
-      const baseWithSlash = safeBaseLink.replace(/\/+$/, '') + '/';
-      return `${baseWithSlash}?mode=vistoria_retorno&vehicleId=${encodeURIComponent(vehicle.id)}&placa=${encodeURIComponent(vehicle.plate)}&brand=${encodeURIComponent(vehicle.brand)}&model=${encodeURIComponent(vehicle.model)}&driver=${encodeURIComponent(vehicle.driver || '')}&type=${encodeURIComponent(requestVistoriaType)}&deadline=${encodeURIComponent(vehicle.nextVistoriaDate || '')}&reqId=${vistoriaRequestToken}`;
-    })();
-
-    // Replace return URL first
-    template = template.replace(new RegExp(escapeRegExp(returnUrlWithPlaca), 'g'), '{link_retorno}');
-    
-    // Replace veiculo
-    template = template.replace(new RegExp(escapeRegExp(veiculoStr), 'g'), '{veiculo}');
-    
-    // Replace plate
-    template = template.replace(new RegExp(escapeRegExp(plateStr), 'g'), '{placa}');
-    
-    // Replace driver
-    template = template.replace(new RegExp(escapeRegExp(driverStr), 'g'), '{locatario}');
-
-    // Replace tipo
-    template = template.replace(new RegExp(escapeRegExp(requestVistoriaType), 'g'), '{tipo}');
-    
-    if (isShare && v) {
-      const formattedDate = new Date(v.date + 'T12:00:00').toLocaleDateString('pt-BR');
-      const notesText = v.notes || 'Nenhuma';
-      
-      template = template.replace(new RegExp(escapeRegExp(formattedDate), 'g'), '{data}');
-      template = template.replace(new RegExp(escapeRegExp(notesText), 'g'), '{observacoes}');
-      
-      const checklistText = Object.entries(v.checklist || {}).map(([key, isOk]) => {
-        return `${isOk ? '✅' : '❌'} ${key}`;
-      }).join('\n');
-      
-      template = template.replace(new RegExp(escapeRegExp(checklistText), 'g'), '{checklist}');
+  const saveTemplateFromText = (text: string, isShare: boolean) => {
+    if (!isShare && (!text.includes('{placa}') || !text.includes('{itens_inspecao}'))) {
+      try { localStorage.removeItem('fleet_vistoria_request_template'); } catch (e) {}
+      return;
     }
-    
-    if (!isShare) {
-      const deadlineStr = vehicle.nextVistoriaDate 
-        ? `📅 *Realizar até a data:* ${new Date(vehicle.nextVistoriaDate + 'T12:00:00').toLocaleDateString('pt-BR')}`
-        : '';
-      if (deadlineStr) {
-        template = template.replace(new RegExp(escapeRegExp(`\n⚠️ *Atenção:* ${deadlineStr}\n`), 'g'), '{prazo}');
-        template = template.replace(new RegExp(escapeRegExp(deadlineStr), 'g'), '{prazo}');
-      }
-
-      const itemsFormatted = (selectedRequestItems && selectedRequestItems.length > 0)
-        ? selectedRequestItems.map(i => `- ${i}`).join('\n')
-        : '';
-      if (itemsFormatted && template.includes(itemsFormatted)) {
-        template = template.replace(new RegExp(escapeRegExp(itemsFormatted), 'g'), '{itens_inspecao}');
-      }
+    if (isShare && (!text.includes('{placa}') || !text.includes('{checklist}'))) {
+      try { localStorage.removeItem('fleet_vistoria_share_template'); } catch (e) {}
+      return;
     }
-    
     const key = isShare ? 'fleet_vistoria_share_template' : 'fleet_vistoria_request_template';
-    localStorage.setItem(key, template);
-    
+    try { localStorage.setItem(key, text); } catch (e) {}
     setTemplateSavedStatus('Modelo salvo como padrão!');
     setTimeout(() => setTemplateSavedStatus(null), 3000);
   };
@@ -1660,7 +1590,7 @@ export const VehicleCard: React.FC<VehicleCardProps> = ({
     }
     
     // Auto-save customized template
-    saveTemplateFromText(customVistoriaMsgText, !!sharingVistoria, sharingVistoria);
+    saveTemplateFromText(customVistoriaMsgText, !!sharingVistoria);
 
     let finalMsg = customVistoriaMsgText;
     const itemsToUse = selectedRequestItems.length > 0 ? selectedRequestItems : availableChecklistItems;
@@ -5428,7 +5358,7 @@ _Enviado via sistema de gestão de frota._`;
                         <label className="text-[9px] text-gray-400 font-semibold uppercase tracking-wider">Mensagem pré-preenchida</label>
                         <button
                           type="button"
-                          onClick={() => saveTemplateFromText(customVistoriaMsgText, !!sharingVistoria, sharingVistoria)}
+                          onClick={() => saveTemplateFromText(customVistoriaMsgText, !!sharingVistoria)}
                           className="text-[9px] bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-400 px-2 py-0.5 rounded border border-emerald-500/20 font-bold transition-all"
                           title="Salva as alterações feitas nesta mensagem para ser o novo padrão nos próximos envios"
                         >
