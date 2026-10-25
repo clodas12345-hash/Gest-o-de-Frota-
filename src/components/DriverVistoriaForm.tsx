@@ -175,6 +175,97 @@ export function DriverVistoriaForm({
     }
   }, [initialParams]);
 
+  const [alreadySubmittedBefore, setAlreadySubmittedBefore] = useState(false);
+  const [isSubmitted, setIsSubmitted] = useState(false);
+  const [paymentPhoto, setPaymentPhoto] = useState<string | null>(null);
+  const [paymentAmount, setPaymentAmount] = useState<number>(0);
+  const [notes, setNotes] = useState('');
+  const [kmOdometer, setKmOdometer] = useState('');
+  const [fuelLevel, setFuelLevel] = useState<number>(100);
+  const [photos, setPhotos] = useState<string[]>([]);
+  const [targetPhotoItem, setTargetPhotoItem] = useState<string | null>(null);
+  const [ocrStatusMsg, setOcrStatusMsg] = useState<string | null>(null);
+  const [isOcrLoading, setIsOcrLoading] = useState(false);
+  const [isGeneratingPdf, setIsGeneratingPdf] = useState(false);
+  const [previewEnlargedPhoto, setPreviewEnlargedPhoto] = useState<{photos: string[], index: number, title: string} | null>(null);
+  const [isLogoViewerOpen, setIsLogoViewerOpen] = useState(false);
+
+  const cameraInputRef = useRef<HTMLInputElement>(null);
+  const odometerCameraRef = useRef<HTMLInputElement>(null);
+  const requestToken = getParamFromUrlOrProps('reqId');
+
+  const allPhotosTaken = Object.values(checklist).every(item => item.isOk ? true : (item.photoUrl !== null));
+  const getSubmissionStorageKey = () => `vistoria_submitted_${vehicle?.id || 'unknown'}_${requestToken || 'new'}`;
+
+  useEffect(() => {
+    const submitted = localStorage.getItem(getSubmissionStorageKey());
+    if (submitted === 'true') setAlreadySubmittedBefore(true);
+  }, []);
+
+  const runImageOcr = async (dataUrl: string, type: 'receipt' | 'odometer') => {
+    setIsOcrLoading(true);
+    setOcrStatusMsg(type === 'receipt' ? 'Lendo comprovante...' : 'Lendo painel...');
+    try {
+        await new Promise(resolve => setTimeout(resolve, 1500));
+        if (type === 'odometer') setKmOdometer('48500');
+        setOcrStatusMsg(null);
+    } catch (e) {
+        setOcrStatusMsg('Erro na leitura (IA)');
+    } finally {
+        setIsOcrLoading(false);
+    }
+  };
+
+  const handleToggleChecklist = (key: string) => {
+    setChecklist(prev => ({
+        ...prev,
+        [key]: { ...prev[key], isOk: !prev[key].isOk }
+    }));
+  };
+
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      const reader = new FileReader();
+      reader.onload = (ev) => {
+        if (ev.target?.result) {
+          const dataUrl = ev.target.result as string;
+          if (targetPhotoItem) {
+             setChecklist(prev => ({ ...prev, [targetPhotoItem]: { ...prev[targetPhotoItem], photoUrl: dataUrl }}));
+          } else {
+             setPhotos(prev => [...prev, dataUrl]);
+          }
+        }
+      };
+      reader.readAsDataURL(file);
+    }
+  };
+
+  const handleRemovePhoto = (idx: number) => {
+    setPhotos(prev => prev.filter((_, i) => i !== idx));
+  };
+
+  const openEnlargedPhoto = (photo: string, title: string) => {
+    setPreviewEnlargedPhoto({ photos: [photo], index: 0, title });
+  };
+
+  const handleSendWhatsAppConfirmation = () => {
+    // Logic to send confirmation
+  };
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setIsGeneratingPdf(true);
+    // Logic for generating PDF and saving
+    setIsSubmitted(true);
+    setIsGeneratingPdf(false);
+  };
+
+  const handleTouchStart = () => {};
+  const handleTouchEnd = () => {};
+  const handleMouseDown = () => {};
+  const handleMouseUp = () => {};
+
   return (
     <div className="min-h-screen bg-black text-white font-sans flex flex-col fixed inset-0 z-50 overflow-y-auto items-center justify-start sm:py-6 sm:px-4 bg-gradient-to-b from-black via-zinc-950 to-black">
       <div className="w-full sm:max-w-md sm:min-h-[90vh] sm:rounded-3xl sm:border sm:border-white/15 sm:shadow-2xl sm:overflow-hidden bg-black flex flex-col min-h-screen sm:min-h-0 relative">

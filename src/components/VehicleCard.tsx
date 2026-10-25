@@ -9,6 +9,8 @@ import { sendAppNotification, requestNotificationPermission } from '../utils/not
 import { syncVehicleFipe } from '../utils/fipeService';
 import { PdfViewer } from './PdfViewer';
 import { encodeVistoriaParams } from '../utils/vistoriaUrl';
+import { db } from '../firebase';
+import { doc, setDoc } from 'firebase/firestore';
 import { 
   Calendar, 
   User, 
