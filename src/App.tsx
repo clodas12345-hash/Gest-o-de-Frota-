@@ -2572,7 +2572,9 @@ export default function App() {
       setLoadingVistoriaRequest(true);
       getDoc(doc(db, 'vistoriaRequests', reqId))
         .then(snap => {
-          if (snap.exists()) setVistoriaRequest(snap.data());
+          if (snap.exists()) {
+            setVistoriaRequest(snap.data());
+          }
           setLoadingVistoriaRequest(false);
         })
         .catch(err => {
@@ -2655,8 +2657,9 @@ export default function App() {
         checklistConfig={checklistConfig}
         existingVistorias={vistorias}
         isPaymentMode={isPaymentMode}
-        initialType={(getParamCI(params, 'type') || getParamCI(params, 'vistoriaType') || '').toLowerCase() as any}
+        initialType={(vistoriaRequest?.type || getParamCI(params, 'type') || getParamCI(params, 'vistoriaType') || '').toLowerCase() as any}
         initialParams={activeParams}
+        vistoriaRequest={vistoriaRequest}
         onSavePaymentReceipt={(receipt) => {
           knownReceiptIdsRef.current.add(receipt.id);
           sendAppNotification(`🧾 Novo Comprovante Recebido: ${targetVehicle.brand} (${targetVehicle.plate})`, {

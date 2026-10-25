@@ -28,8 +28,9 @@ export function DriverVistoriaForm({
   onExit,
   initialType,
   isPaymentMode,
-  initialParams
-}: DriverVistoriaFormProps) {
+  initialParams,
+  vistoriaRequest
+}: DriverVistoriaFormProps & { vistoriaRequest?: any }) {
   
   useEffect(() => {
     document.title = 'Vistoria Veicular';
@@ -40,6 +41,10 @@ export function DriverVistoriaForm({
   }, []);
 
   const getParamFromUrlOrProps = (key: string): string => {
+    // 0. Check vistoriaRequest data from Firestore
+    if (vistoriaRequest && vistoriaRequest[key]) {
+       return String(vistoriaRequest[key]);
+    }
     const targetKey = key.toLowerCase();
     
     // 1. Check window.location.href first (direct URL query string)
