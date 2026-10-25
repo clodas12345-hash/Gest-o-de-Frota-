@@ -705,7 +705,7 @@ export default function App() {
   const knownReceiptIdsRef = useRef<Set<string>>(new Set());
 
   const saveToCloud = (field: string, data: any) => {
-    // if (!Capacitor.isNativePlatform()) return; // REMOVED: Enable cloud sync on web
+    if (!Capacitor.isNativePlatform()) return;
     if (!isCloudLoadedRef.current || isRemoteUpdateRef.current) return;
     
     try {
@@ -736,13 +736,10 @@ export default function App() {
 
   // Load initial data from Firestore and setup real-time listener for Android APK only
   useEffect(() => {
-    /* 
     if (!Capacitor.isNativePlatform()) {
       isCloudLoadedRef.current = true;
-      return; 
+      return;
     }
-    */
-    // REMOVED: Enable cloud sync on web
     let unsubscribe: () => void = () => {};
     try {
       const docRef = doc(db, 'fleetData', 'main');
@@ -2581,17 +2578,17 @@ export default function App() {
       targetVehicle = { ...targetVehicle, nextVistoriaDate: deadlineFromParam };
     }
 
-    // If not found (e.g. driver opened the link on their own phone where localStorage is empty),
-    // parse details from query params to create a temporary vehicle object.
-    if (!targetVehicle && vistoriaPlateParam) {
-      const brand = (params.get('brand') || 'Veículo').trim();
-      const model = (params.get('model') || '').trim();
-      const driver = (params.get('driver') || '').trim();
+    // If not found, parse details from query params or fallback to first vehicle/default
+    if (!targetVehicle) {
+      const brand = (params.get('brand') || vehicles[0]?.brand || 'Veículo').trim();
+      const model = (params.get('model') || vehicles[0]?.model || '').trim();
+      const driver = (params.get('driver') || vehicles[0]?.driver || '').trim();
+      const plate = vistoriaPlateParam ? vistoriaPlateParam.toUpperCase() : (vehicles[0]?.plate || 'VISTORIA');
       targetVehicle = {
         id: `temp-${Date.now()}`,
         brand,
         model,
-        plate: vistoriaPlateParam.toUpperCase(),
+        plate,
         year: new Date().getFullYear(),
         color: '',
         rentalCompany: '',
@@ -2639,6 +2636,7 @@ export default function App() {
         checklistConfig={checklistConfig}
         existingVistorias={vistorias}
         isPaymentMode={isPaymentMode}
+        initialType={(getParamCI(params, 'type') || getParamCI(params, 'vistoriaType') || '').toLowerCase() as any}
         initialParams={activeParams}
         onSavePaymentReceipt={(receipt) => {
           knownReceiptIdsRef.current.add(receipt.id);

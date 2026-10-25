@@ -869,28 +869,20 @@ export const VehicleCard: React.FC<VehicleCardProps> = ({
   const [customVistoriaMsgText, setCustomVistoriaMsgText] = useState<string>('');
   const [vistoriaReturnLink, setVistoriaReturnLink] = useState<string>(() => {
     const validUrl = getPublicWebBaseUrl();
-    let saved = localStorage.getItem('fleet_vistoria_return_link');
-    
-    // Se o salvo contiver 'localhost', '127.0.0.1', 'ais-pre' ou '/upload-receipt', limpar e usar validUrl limpa
-    if (saved && (saved.includes('localhost') || saved.includes('127.0.0.1') || saved.includes('ais-pre') || saved.includes('/upload-receipt'))) {
-      localStorage.setItem('fleet_vistoria_return_link', validUrl);
-      return validUrl;
-    }
-    
-    if (!saved) {
-      localStorage.setItem('fleet_vistoria_return_link', validUrl);
-      return validUrl;
-    }
-    return saved.replace(/\/upload-receipt\/?$/, '').replace(/\/+$/, '');
+    try {
+      localStorage.removeItem('fleet_vistoria_request_template');
+      localStorage.removeItem('fleet_vistoria_share_template');
+      localStorage.removeItem('fleet_vistoria_return_link');
+    } catch (e) {}
+    return validUrl;
   });
 
   useEffect(() => {
-    if (vistoriaReturnLink.includes('localhost') || vistoriaReturnLink.includes('127.0.0.1')) {
-      const fixed = getPublicWebBaseUrl();
+    const fixed = getPublicWebBaseUrl();
+    if (vistoriaReturnLink !== fixed) {
       setVistoriaReturnLink(fixed);
-      localStorage.setItem('fleet_vistoria_return_link', fixed);
     }
-  }, [vistoriaReturnLink]);
+  }, [vehicle.id, vehicle.plate]);
 
   const availableChecklistItems = getChecklistForVistoriaType(newVistoriaType, checklistConfig);
 
@@ -915,13 +907,13 @@ export const VehicleCard: React.FC<VehicleCardProps> = ({
   ) => {
     let text = templateText;
     
-    // Safety check: if templateText doesn't have essential placeholders, fallback to DEFAULT
-    if (!isShare && (!text.includes('{placa}') || !text.includes('{itens_inspecao}'))) {
-      text = DEFAULT_REQUEST_TEMPLATE;
-      try { localStorage.removeItem('fleet_vistoria_request_template'); } catch (e) {}
-    } else if (isShare && (!text.includes('{placa}') || !text.includes('{checklist}'))) {
+    // Safety check: if templateText doesn't have essential placeholders or contains an existing URL, fallback to pristine DEFAULT
+    if (!isShare) {
+      if (!text.includes('{placa}') || !text.includes('{itens_inspecao}') || !text.includes('{link_retorno}') || text.includes('http://') || text.includes('https://')) {
+        text = DEFAULT_REQUEST_TEMPLATE;
+      }
+    } else if (isShare && (!text.includes('{placa}') || !text.includes('{checklist}') || !text.includes('{link_retorno}'))) {
       text = DEFAULT_SHARE_TEMPLATE;
-      try { localStorage.removeItem('fleet_vistoria_share_template'); } catch (e) {}
     }
 
     const typeToUse = reqType || requestVistoriaType || 'periódica';
@@ -977,7 +969,9 @@ export const VehicleCard: React.FC<VehicleCardProps> = ({
       text = text.replace(/\{itens_inspecao\}/g, itemsListFormatted);
     }
 
-    if (!text.includes(returnUrlWithPlaca) && !text.includes('placa=')) {
+    if (!text.includes(returnUrlWithPlaca)) {
+      // Remove any old appended URLs before adding current vehicle's returnUrlWithPlaca
+      text = text.replace(/🔗\s*https?:\/\/[^\s]+/gi, '').trim();
       text += `\n\n🔗 *Link de Acesso / Retorno:*\n${returnUrlWithPlaca}`;
     }
 
@@ -985,18 +979,11 @@ export const VehicleCard: React.FC<VehicleCardProps> = ({
   };
 
   const saveTemplateFromText = (text: string, isShare: boolean) => {
-    if (!isShare && (!text.includes('{placa}') || !text.includes('{itens_inspecao}'))) {
-      try { localStorage.removeItem('fleet_vistoria_request_template'); } catch (e) {}
-      return;
-    }
-    if (isShare && (!text.includes('{placa}') || !text.includes('{checklist}'))) {
-      try { localStorage.removeItem('fleet_vistoria_share_template'); } catch (e) {}
-      return;
-    }
-    const key = isShare ? 'fleet_vistoria_share_template' : 'fleet_vistoria_request_template';
-    try { localStorage.setItem(key, text); } catch (e) {}
-    setTemplateSavedStatus('Modelo salvo como padrão!');
-    setTimeout(() => setTemplateSavedStatus(null), 3000);
+    // Disable saving evaluated text into localStorage to prevent cross-vehicle contamination
+    try {
+      localStorage.removeItem('fleet_vistoria_request_template');
+      localStorage.removeItem('fleet_vistoria_share_template');
+    } catch (e) {}
   };
 
   const handleToggleRequestItem = (item: string) => {
@@ -1005,32 +992,19 @@ export const VehicleCard: React.FC<VehicleCardProps> = ({
       : [...selectedRequestItems, item];
     
     setSelectedRequestItems(nextSelected);
-
-    let savedTemplate = localStorage.getItem('fleet_vistoria_request_template') || DEFAULT_REQUEST_TEMPLATE;
-    if (!savedTemplate.includes('{itens_inspecao}')) {
-      savedTemplate = DEFAULT_REQUEST_TEMPLATE;
-    }
-    const formatted = formatTemplateText(savedTemplate, false, null, requestVistoriaType, nextSelected);
+    const formatted = formatTemplateText(DEFAULT_REQUEST_TEMPLATE, false, null, requestVistoriaType, nextSelected);
     setCustomVistoriaMsgText(formatted);
   };
 
   const handleSelectAllRequestItems = () => {
     setSelectedRequestItems([...availableChecklistItems]);
-    let savedTemplate = localStorage.getItem('fleet_vistoria_request_template') || DEFAULT_REQUEST_TEMPLATE;
-    if (!savedTemplate.includes('{itens_inspecao}')) {
-      savedTemplate = DEFAULT_REQUEST_TEMPLATE;
-    }
-    const formatted = formatTemplateText(savedTemplate, false, null, requestVistoriaType, availableChecklistItems);
+    const formatted = formatTemplateText(DEFAULT_REQUEST_TEMPLATE, false, null, requestVistoriaType, availableChecklistItems);
     setCustomVistoriaMsgText(formatted);
   };
 
   const handleDeselectAllRequestItems = () => {
     setSelectedRequestItems([]);
-    let savedTemplate = localStorage.getItem('fleet_vistoria_request_template') || DEFAULT_REQUEST_TEMPLATE;
-    if (!savedTemplate.includes('{itens_inspecao}')) {
-      savedTemplate = DEFAULT_REQUEST_TEMPLATE;
-    }
-    const formatted = formatTemplateText(savedTemplate, false, null, requestVistoriaType, []);
+    const formatted = formatTemplateText(DEFAULT_REQUEST_TEMPLATE, false, null, requestVistoriaType, []);
     setCustomVistoriaMsgText(formatted);
   };
 
@@ -1589,22 +1563,11 @@ export const VehicleCard: React.FC<VehicleCardProps> = ({
       cleanPhone = '55' + cleanPhone;
     }
     
-    // Auto-save customized template
-    saveTemplateFromText(customVistoriaMsgText, !!sharingVistoria);
-
-    let finalMsg = customVistoriaMsgText;
     const itemsToUse = selectedRequestItems.length > 0 ? selectedRequestItems : availableChecklistItems;
-    const safeBaseLink = (vistoriaReturnLink && !vistoriaReturnLink.includes('localhost') && !vistoriaReturnLink.includes('127.0.0.1'))
-      ? vistoriaReturnLink
-      : getPublicWebBaseUrl();
     
-    const baseWithSlash = safeBaseLink.replace(/\/+$/, '') + '/';
-    const itemsParam = itemsToUse && itemsToUse.length > 0 ? `&items=${encodeURIComponent(itemsToUse.join(','))}` : '';
-    const returnUrl = `${baseWithSlash}?mode=vistoria_retorno&vehicleId=${encodeURIComponent(vehicle.id)}&placa=${encodeURIComponent(vehicle.plate)}&brand=${encodeURIComponent(vehicle.brand)}&model=${encodeURIComponent(vehicle.model)}&driver=${encodeURIComponent(vehicle.driver || '')}&type=${encodeURIComponent(requestVistoriaType)}&deadline=${encodeURIComponent(vehicle.nextVistoriaDate || '')}&reqId=${vistoriaRequestToken}${itemsParam}`;
-
-    if (!finalMsg.includes('placa=') && !finalMsg.includes('http')) {
-      finalMsg += `\n\n🔗 *Link de Acesso / Retorno para Vistoria:*\n${returnUrl}`;
-    }
+    // Always dynamically re-format template text to guarantee vehicle, plate, driver, and selected items match current vehicle card
+    const savedTemplate = localStorage.getItem('fleet_vistoria_request_template') || DEFAULT_REQUEST_TEMPLATE;
+    let finalMsg = formatTemplateText(savedTemplate, !!sharingVistoria, sharingVistoria, requestVistoriaType, itemsToUse, vistoriaRequestToken);
 
     const waUrl = cleanPhone 
       ? `https://api.whatsapp.com/send?phone=${cleanPhone}&text=${encodeURIComponent(finalMsg)}`

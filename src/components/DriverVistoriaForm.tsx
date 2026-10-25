@@ -31,91 +31,149 @@ export function DriverVistoriaForm({
   initialParams
 }: DriverVistoriaFormProps) {
   
-  const [vistoriaType, setVistoriaType] = useState<'entrega' | 'periódica' | 'devolução'>(() => {
-    if (initialType) return initialType;
-    const params = initialParams || new URLSearchParams(window.location.search);
-    const typeParam = params.get('type')?.toLowerCase() || '';
-    
-    if (typeParam.includes('entrega')) return 'entrega';
-    if (typeParam.includes('devolu')) return 'devolução';
-    if (typeParam.includes('periódica') || typeParam.includes('periodica')) return 'periódica';
-    
-    return 'periódica';
-  });
+  useEffect(() => {
+    document.title = 'Vistoria Veicular';
+    const ogTitle = document.querySelector('meta[property="og:title"]');
+    if (ogTitle) {
+      ogTitle.setAttribute('content', 'Vistoria Veicular');
+    }
+  }, []);
 
-  const [checklist, setChecklist] = useState<Record<string, { isOk: boolean, photoUrl: string | null }>>(() => {
-    const params = initialParams || new URLSearchParams(window.location.search);
-    const itemsFromUrl = params.get('items');
-    const typeFromUrl = (params.get('type') as 'entrega' | 'periódica' | 'devolução') || initialType || 'periódica';
-    const isPeriodica = typeFromUrl === 'periódica';
-    const initial: Record<string, { isOk: boolean, photoUrl: string | null }> = {};
+  const getParamFromUrlOrProps = (key: string): string => {
+    const targetKey = key.toLowerCase();
     
-    let baseList: string[] = [];
-    if (itemsFromUrl) {
-      baseList = itemsFromUrl.split(',').map(s => decodeURIComponent(s.trim())).filter(Boolean);
-    } else {
-      if (checklistConfig && checklistConfig.length > 0) {
-        baseList = [...checklistConfig];
-      } else {
-        baseList = isPeriodica ? [
-          'Frente do carro',
-          'Fundo do carro',
-          'Lateral direita',
-          'Lateral esquerda',
-          'Estofados frente',
-          'Estofados trás',
-          'Nível de combustivel'
-        ] : [
-          'Estepe',
-          'Chaves de roda',
-          'Triângulo',
-          'Frente do carro',
-          'Fundo do carro',
-          'Lateral direita',
-          'Lateral esquerda',
-          'Estofados frente',
-          'Estofados trás',
-          'Nível de combustivel'
-        ];
+    // 1. Check window.location.href first (direct URL query string)
+    if (typeof window !== 'undefined' && window.location.href) {
+      const href = window.location.href;
+      if (href.includes('?')) {
+        const queryStr = href.substring(href.indexOf('?') + 1);
+        const urlParams = new URLSearchParams(queryStr);
+        for (const [k, v] of urlParams.entries()) {
+          if (k.toLowerCase() === targetKey && v && v.trim() !== '') return v.trim();
+        }
       }
+    }
 
-      if (isPeriodica) {
-        // Das vistorias periódicas tira step, chave de rodas e triângulo
-        baseList = baseList.filter(item => {
-          const lower = item.toLowerCase();
-          return !lower.includes('estepe') && !lower.includes('step') && !lower.includes('chave de roda') && !lower.includes('chaves de roda') && !lower.includes('triângulo') && !lower.includes('triangulo');
-        });
-      } else {
-        // Na entrega e devolução incluir Estepe, Chaves de roda e Triângulo
-        const hasEstepe = baseList.some(item => item.toLowerCase().includes('estepe') || item.toLowerCase().includes('step'));
-        const hasChaves = baseList.some(item => item.toLowerCase().includes('chave de roda') || item.toLowerCase().includes('chaves de roda'));
-        const hasTriangulo = baseList.some(item => item.toLowerCase().includes('triângulo') || item.toLowerCase().includes('triangulo'));
+    // 2. Check initialParams if provided
+    if (initialParams) {
+      for (const [k, v] of initialParams.entries()) {
+        if (k.toLowerCase() === targetKey && v && v.trim() !== '') return v.trim();
+      }
+    }
 
-        const requiredFront: string[] = [];
-        if (!hasEstepe) requiredFront.push('Estepe');
-        if (!hasChaves) requiredFront.push('Chaves de roda');
-        if (!hasTriangulo) requiredFront.push('Triângulo');
-
-        if (requiredFront.length > 0) {
-          baseList = [...requiredFront, ...baseList];
+    // 3. Check window.location.search
+    if (typeof window !== 'undefined') {
+      if (window.location.search) {
+        const searchParams = new URLSearchParams(window.location.search);
+        for (const [k, v] of searchParams.entries()) {
+          if (k.toLowerCase() === targetKey && v && v.trim() !== '') return v.trim();
         }
       }
 
-      const hasCamera = baseList.some(item => item.toLowerCase().includes('câmera') || item.toLowerCase().includes('camera'));
-      const hasSd = baseList.some(item => item.toLowerCase().includes('cartão') || item.toLowerCase().includes('cartao') || item.toLowerCase().includes('memória') || item.toLowerCase().includes('memoria'));
-      const hasTracker = baseList.some(item => item.toLowerCase().includes('rastreador'));
-
-      if (!hasCamera) baseList.push('Câmera do carro (Foto)');
-      if (!hasSd) baseList.push('Cartão de memória (Foto)');
-      if (!hasTracker) baseList.push('Rastreador está funcionando?');
+      // 4. Check window.location.hash
+      if (window.location.hash && window.location.hash.includes('?')) {
+        const hashQuery = window.location.hash.substring(window.location.hash.indexOf('?') + 1);
+        const hashParams = new URLSearchParams(hashQuery);
+        for (const [k, v] of hashParams.entries()) {
+          if (k.toLowerCase() === targetKey && v && v.trim() !== '') return v.trim();
+        }
+      }
     }
 
+    return '';
+  };
+
+  const [vistoriaType, setVistoriaType] = useState<'entrega' | 'periódica' | 'devolução'>(() => {
+    const rawType = getParamFromUrlOrProps('type') || getParamFromUrlOrProps('vistoriaType') || (initialType ? String(initialType) : '');
+    const decoded = decodeURIComponent(rawType).toLowerCase().trim();
+    if (decoded.includes('entrega')) return 'entrega';
+    if (decoded.includes('devolu')) return 'devolução';
+    if (decoded.includes('periódica') || decoded.includes('periodica')) return 'periódica';
+    return 'periódica';
+  });
+
+  useEffect(() => {
+    const rawType = getParamFromUrlOrProps('type') || getParamFromUrlOrProps('vistoriaType') || (initialType ? String(initialType) : '');
+    const decoded = decodeURIComponent(rawType).toLowerCase().trim();
+    if (decoded.includes('entrega')) {
+      setVistoriaType('entrega');
+    } else if (decoded.includes('devolu')) {
+      setVistoriaType('devolução');
+    } else if (decoded.includes('periódica') || decoded.includes('periodica')) {
+      setVistoriaType('periódica');
+    }
+  }, [initialParams, initialType]);
+
+  const [checklist, setChecklist] = useState<Record<string, { isOk: boolean, photoUrl: string | null }>>(() => {
+    const itemsFromUrl = getParamFromUrlOrProps('items') || getParamFromUrlOrProps('item');
+    if (itemsFromUrl && itemsFromUrl.trim().length > 0) {
+      const parsedItems = itemsFromUrl.split(',').map(s => decodeURIComponent(s.trim())).filter(Boolean);
+      if (parsedItems.length > 0) {
+        const initial: Record<string, { isOk: boolean, photoUrl: string | null }> = {};
+        parsedItems.forEach(item => {
+          initial[item] = { isOk: true, photoUrl: null };
+        });
+        return initial;
+      }
+    }
+
+    const rawType = getParamFromUrlOrProps('type') || (initialType ? String(initialType) : '');
+    const isPeriodica = rawType.toLowerCase().includes('periódica') || rawType.toLowerCase().includes('periodica');
+
+    let baseList: string[] = [];
+    if (checklistConfig && checklistConfig.length > 0) {
+      baseList = [...checklistConfig];
+    } else {
+      baseList = isPeriodica ? [
+        'Frente do carro',
+        'Fundo do carro',
+        'Lateral direita',
+        'Lateral esquerda',
+        'Estofados frente',
+        'Estofados trás',
+        'Nível de combustivel'
+      ] : [
+        'Estepe',
+        'Chaves de roda',
+        'Triângulo',
+        'Frente do carro',
+        'Fundo do carro',
+        'Lateral direita',
+        'Lateral esquerda',
+        'Estofados frente',
+        'Estofados trás',
+        'Nível de combustivel'
+      ];
+    }
+
+    if (isPeriodica) {
+      baseList = baseList.filter(item => {
+        const lower = item.toLowerCase();
+        return !lower.includes('estepe') && !lower.includes('step') && !lower.includes('chave de roda') && !lower.includes('chaves de roda') && !lower.includes('triângulo') && !lower.includes('triangulo');
+      });
+    }
+
+    const initial: Record<string, { isOk: boolean, photoUrl: string | null }> = {};
     baseList.forEach(item => {
       initial[item] = { isOk: true, photoUrl: null };
     });
 
     return initial;
   });
+
+  useEffect(() => {
+    const itemsFromUrl = getParamFromUrlOrProps('items') || getParamFromUrlOrProps('item');
+    if (itemsFromUrl && itemsFromUrl.trim().length > 0) {
+      const parsedItems = itemsFromUrl.split(',').map(s => decodeURIComponent(s.trim())).filter(Boolean);
+      if (parsedItems.length > 0) {
+        const newChecklist: Record<string, { isOk: boolean, photoUrl: string | null }> = {};
+        parsedItems.forEach(item => {
+          newChecklist[item] = { isOk: true, photoUrl: null };
+        });
+        setChecklist(newChecklist);
+      }
+    }
+  }, [initialParams]);
 
   const [notes, setNotes] = useState('');
   const [photos, setPhotos] = useState<string[]>([]);
