@@ -4969,7 +4969,7 @@ _Enviado via sistema de gestão de frota._`;
                       return (
                         <div key={v.id} className="border border-white/5 rounded-lg bg-white/[0.01] hover:bg-white/[0.02] p-2 text-xs transition-all">
                           <div 
-                            className="flex justify-between items-start gap-2 cursor-pointer select-none"
+                            className="flex flex-col sm:flex-row sm:justify-between sm:items-start gap-2 cursor-pointer select-none"
                             onClick={() => setExpandedVistoriaId(isExpanded ? null : v.id)}
                           >
                             <div className="min-w-0 flex-1">
@@ -5039,7 +5039,7 @@ _Enviado via sistema de gestão de frota._`;
                               )}
                             </div>
 
-                            <div className="flex items-center gap-1 shrink-0 flex-wrap justify-end" onClick={(e) => e.stopPropagation()}>
+                            <div className="flex items-center gap-1.5 flex-wrap justify-start sm:justify-end w-full sm:w-auto pt-1 sm:pt-0 border-t border-white/5 sm:border-0" onClick={(e) => e.stopPropagation()}>
                               {v.status !== 'approved' && onApproveVistoria && (
                                 <button
                                   type="button"
