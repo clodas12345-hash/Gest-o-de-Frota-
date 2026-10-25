@@ -589,6 +589,12 @@ export const VehicleCard: React.FC<VehicleCardProps> = ({
     window.addEventListener('focus-vehicle', handleFocus);
     return () => window.removeEventListener('focus-vehicle', handleFocus);
   }, [vehicle.id]);
+
+  useEffect(() => {
+    setIsRequestingNewVistoria(false);
+    setSelectedRequestItems([]);
+    setCustomVistoriaMsgText('');
+  }, [vehicle.id, vehicle.plate]);
   
   // Weekly payment form state
   const [showAddPayment, setShowAddPayment] = useState(false);
@@ -1637,7 +1643,7 @@ export const VehicleCard: React.FC<VehicleCardProps> = ({
       }
       setWhatsappVistoriaPhone(rawPhone);
 
-      const itemsToUse = getChecklistForVistoriaType(targetType, checklistConfig);
+      const itemsToUse: string[] = [];
       setSelectedRequestItems(itemsToUse);
 
       let savedTemplate = localStorage.getItem('fleet_vistoria_request_template') || DEFAULT_REQUEST_TEMPLATE;

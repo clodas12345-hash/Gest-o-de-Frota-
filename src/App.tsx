@@ -2971,7 +2971,7 @@ export default function App() {
             <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-6" id="vehicles-grid">
               {sortedVehicles.map((car) => (
                 <VehicleCard
-                  key={car.id}
+                  key={`veh-${car.id}-${car.plate}`}
                   vehicle={car}
                   vehicleExpenses={expenseLogs.filter((log) => log.vehicleId === car.id)}
                   maintenanceLogs={maintenanceLogs.filter((log) => log.vehicleId === car.id)}
