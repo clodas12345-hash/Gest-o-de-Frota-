@@ -1564,8 +1564,41 @@ export const VehicleCard: React.FC<VehicleCardProps> = ({
       ? selectedRequestItems 
       : getChecklistForVistoriaType(targetType, checklistConfig);
     
+    // Save request details to Firestore for short URL
+    const pendingRequest = {
+      vehicleId: vehicle.id,
+      plate: vehicle.plate,
+      brand: vehicle.brand,
+      model: vehicle.model,
+      driver: vehicle.driver,
+      type: targetType,
+      items: itemsToUse,
+      deadline: vehicle.nextVistoriaDate,
+      reqId: vistoriaRequestToken,
+      createdAt: new Date().toISOString()
+    };
+    
+    // Use the firebase firestore client to save
+    try {
+      await setDoc(doc(db, 'vistoriaRequests', vistoriaRequestToken), pendingRequest);
+    } catch (err) {
+      console.error('Error saving vistoria request:', err);
+    }
+    
     const savedTemplate = DEFAULT_REQUEST_TEMPLATE;
+    
+    // Build shortened URL
+    const safeBaseLink = (vistoriaReturnLink && !vistoriaReturnLink.includes('localhost') && !vistoriaReturnLink.includes('127.0.0.1'))
+        ? vistoriaReturnLink
+        : getPublicWebBaseUrl();
+    const safeBaseClean = safeBaseLink.replace(/\/upload-receipt\/?$/, '').replace(/\/+$/, '');
+    const shortenedUrl = `${safeBaseClean}/?mode=vistoria_retorno&reqId=${encodeURIComponent(vistoriaRequestToken)}`;
+
     let finalMsg = formatTemplateText(savedTemplate, !!sharingVistoria, sharingVistoria, targetType, itemsToUse, vistoriaRequestToken);
+    
+    // Replace the long URL in finalMsg with the short one
+    finalMsg = finalMsg.replace(/🔗\s*https?:\/\/[^\s]+/gi, '').trim();
+    finalMsg += `\n\n🔗 *Link de Acesso / Retorno:*\n${shortenedUrl}`;
 
     const waUrl = cleanPhone 
       ? `https://api.whatsapp.com/send?phone=${cleanPhone}&text=${encodeURIComponent(finalMsg)}`

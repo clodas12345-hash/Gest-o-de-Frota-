@@ -2562,33 +2562,52 @@ export default function App() {
     event.target.value = '';
   };
 
+  // AWAIT FOR VISTORIA REQUEST DATA IF REQID IS PRESENT
+  const [vistoriaRequest, setVistoriaRequest] = useState<any>(null);
+  const [loadingVistoriaRequest, setLoadingVistoriaRequest] = useState(false);
+
+  useEffect(() => {
+    const reqId = activeParams.get('reqId');
+    if (reqId && isVistoriaMode) {
+      setLoadingVistoriaRequest(true);
+      getDoc(doc(db, 'vistoriaRequests', reqId))
+        .then(snap => {
+          if (snap.exists()) setVistoriaRequest(snap.data());
+          setLoadingVistoriaRequest(false);
+        })
+        .catch(err => {
+          console.error('Error fetching vistoria request:', err);
+          setLoadingVistoriaRequest(false);
+        });
+    }
+  }, [isVistoriaMode, activeParams]);
+
+  if (isVistoriaMode && loadingVistoriaRequest) {
+    return <div className="min-h-screen flex items-center justify-center text-white">Carregando...</div>;
+  }
+
   if (isVistoriaMode) {
-    const params = activeParams; // USAR OS PARAMS JÁ PROCESSADOS
-    const vehicleIdParam = params.get('vehicleId');
-    let targetVehicle = vehicles.find(v => v.id === vehicleIdParam) || vehicles.find(
+    const params = activeParams;
+    let targetVehicle = vehicles.find(v => v.id === (vistoriaRequest?.vehicleId || params.get('vehicleId'))) || vehicles.find(
       v => {
         const vPlate = (v.plate || '').replace(/[^A-Z0-9]/gi, '').toUpperCase();
-        const pPlate = (vistoriaPlateParam || '').replace(/[^A-Z0-9]/gi, '').toUpperCase();
+        const pPlate = (vistoriaPlateParam || vistoriaRequest?.plate || '').replace(/[^A-Z0-9]/gi, '').toUpperCase();
         return vPlate === pPlate && pPlate !== '';
       }
     );
-    const deadlineFromParam = params.get('deadline') || '';
+    const deadlineFromParam = vistoriaRequest?.deadline || params.get('deadline') || '';
 
     if (targetVehicle && deadlineFromParam && !targetVehicle.nextVistoriaDate) {
       targetVehicle = { ...targetVehicle, nextVistoriaDate: deadlineFromParam };
     }
 
-    // If not found in local array, build targetVehicle from URL parameters cleanly
+    // If not found in local array, build targetVehicle from Firestore request or URL parameters
     if (!targetVehicle) {
-      const brand = (params.get('brand') || 'Veículo').trim();
-      const model = (params.get('model') || '').trim();
-      const driver = (params.get('driver') || 'Motorista').trim();
-      const plate = vistoriaPlateParam ? vistoriaPlateParam.toUpperCase() : 'TDD-5I76';
       targetVehicle = {
-        id: vehicleIdParam || `temp-${Date.now()}`,
-        brand,
-        model,
-        plate,
+        id: vistoriaRequest?.vehicleId || `temp-${Date.now()}`,
+        brand: vistoriaRequest?.brand || params.get('brand') || 'Veículo',
+        model: vistoriaRequest?.model || params.get('model') || '',
+        plate: vistoriaRequest?.plate || (vistoriaPlateParam ? vistoriaPlateParam.toUpperCase() : 'TDD-5I76'),
         year: new Date().getFullYear(),
         color: '',
         rentalCompany: '',
@@ -2601,7 +2620,7 @@ export default function App() {
         manutencaoPreventiva: 0,
         currentKm: 0,
         fuelLevel: 8,
-        driver,
+        driver: vistoriaRequest?.driver || params.get('driver') || 'Motorista',
         weeklyPayments: [],
         nextVistoriaDate: deadlineFromParam || undefined
       };
