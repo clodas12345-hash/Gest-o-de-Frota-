@@ -1073,21 +1073,30 @@ export const VehicleCard: React.FC<VehicleCardProps> = ({
     
     setSelectedRequestItems(nextSelected);
 
-    const savedTemplate = localStorage.getItem('fleet_vistoria_request_template') || DEFAULT_REQUEST_TEMPLATE;
+    let savedTemplate = localStorage.getItem('fleet_vistoria_request_template') || DEFAULT_REQUEST_TEMPLATE;
+    if (!savedTemplate.includes('{itens_inspecao}')) {
+      savedTemplate = DEFAULT_REQUEST_TEMPLATE;
+    }
     const formatted = formatTemplateText(savedTemplate, false, null, requestVistoriaType, nextSelected);
     setCustomVistoriaMsgText(formatted);
   };
 
   const handleSelectAllRequestItems = () => {
     setSelectedRequestItems([...availableChecklistItems]);
-    const savedTemplate = localStorage.getItem('fleet_vistoria_request_template') || DEFAULT_REQUEST_TEMPLATE;
+    let savedTemplate = localStorage.getItem('fleet_vistoria_request_template') || DEFAULT_REQUEST_TEMPLATE;
+    if (!savedTemplate.includes('{itens_inspecao}')) {
+      savedTemplate = DEFAULT_REQUEST_TEMPLATE;
+    }
     const formatted = formatTemplateText(savedTemplate, false, null, requestVistoriaType, availableChecklistItems);
     setCustomVistoriaMsgText(formatted);
   };
 
   const handleDeselectAllRequestItems = () => {
     setSelectedRequestItems([]);
-    const savedTemplate = localStorage.getItem('fleet_vistoria_request_template') || DEFAULT_REQUEST_TEMPLATE;
+    let savedTemplate = localStorage.getItem('fleet_vistoria_request_template') || DEFAULT_REQUEST_TEMPLATE;
+    if (!savedTemplate.includes('{itens_inspecao}')) {
+      savedTemplate = DEFAULT_REQUEST_TEMPLATE;
+    }
     const formatted = formatTemplateText(savedTemplate, false, null, requestVistoriaType, []);
     setCustomVistoriaMsgText(formatted);
   };
@@ -1631,7 +1640,11 @@ export const VehicleCard: React.FC<VehicleCardProps> = ({
       const itemsToUse = getChecklistForVistoriaType(targetType, checklistConfig);
       setSelectedRequestItems(itemsToUse);
 
-      const savedTemplate = localStorage.getItem('fleet_vistoria_request_template') || DEFAULT_REQUEST_TEMPLATE;
+      let savedTemplate = localStorage.getItem('fleet_vistoria_request_template') || DEFAULT_REQUEST_TEMPLATE;
+      if (!savedTemplate.includes('{itens_inspecao}')) {
+        savedTemplate = DEFAULT_REQUEST_TEMPLATE;
+        localStorage.removeItem('fleet_vistoria_request_template');
+      }
       const formatted = formatTemplateText(savedTemplate, false, null, targetType, itemsToUse, freshToken);
       setCustomVistoriaMsgText(formatted);
     }
