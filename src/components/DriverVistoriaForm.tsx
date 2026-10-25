@@ -175,9 +175,6 @@ export function DriverVistoriaForm({
     }
   }, [initialParams]);
 
-      <main className="flex-1 p-4 max-w-lg w-full mx-auto pb-32">
-        {!vehicle ? (
-
   return (
     <div className="min-h-screen bg-black text-white font-sans flex flex-col fixed inset-0 z-50 overflow-y-auto items-center justify-start sm:py-6 sm:px-4 bg-gradient-to-b from-black via-zinc-950 to-black">
       <div className="w-full sm:max-w-md sm:min-h-[90vh] sm:rounded-3xl sm:border sm:border-white/15 sm:shadow-2xl sm:overflow-hidden bg-black flex flex-col min-h-screen sm:min-h-0 relative">
@@ -232,64 +229,6 @@ export function DriverVistoriaForm({
         )}
       </header>
       <main className="flex-1 p-4 max-w-lg w-full mx-auto pb-32">
-        {/* PAINEL DE DIAGNÓSTICO VISÍVEL */}
-        <div className="bg-amber-950/80 border border-amber-500/40 rounded-2xl p-4 mb-4 text-xs text-amber-200 font-mono shadow-xl space-y-2">
-          <div className="flex items-center justify-between border-b border-amber-500/30 pb-2">
-            <span className="font-bold text-amber-400 uppercase tracking-wider text-[11px]">
-              🔍 DIAGNÓSTICO DE VISTORIA (LOG DE INVESTIGAÇÃO)
-            </span>
-            <span className="text-[10px] bg-amber-500/20 text-amber-300 px-2 py-0.5 rounded font-bold">
-              LOG ATIVO
-            </span>
-          </div>
-
-          <div className="space-y-2 text-[11px]">
-            <div className="bg-black/50 p-2 rounded border border-amber-500/20">
-              <span className="text-amber-400 font-bold block">1) Query String / Parâmetros da URL:</span>
-              <div className="text-gray-300 break-all text-[10px] mt-1 font-mono">
-                <b>Full URL:</b> {debugFullUrl}<br/>
-                <b>Query:</b> {debugQueryString || '(nenhum)'}
-              </div>
-              <div className="mt-1.5 text-amber-300 flex flex-wrap gap-x-3 gap-y-1 text-[11px]">
-                <span>vehicleId: <b className="text-white">"{debugVehicleIdFromUrl || 'vazio'}"</b></span>
-                <span>placa: <b className="text-white">"{debugPlacaFromUrl || 'vazio'}"</b></span>
-                <span>type: <b className="text-white">"{debugRawTypeFromUrl || 'vazio'}"</b></span>
-                <span>items: <b className="text-white">"{debugRawItemsFromUrl || 'vazio'}"</b></span>
-              </div>
-            </div>
-
-            <div className="bg-black/50 p-2 rounded border border-amber-500/20">
-              <span className="text-amber-400 font-bold block">2) Resultado da Busca do Veículo no Banco:</span>
-              {vehicle ? (
-                <div className="text-emerald-300 font-bold text-[11px] mt-1">
-                  ✅ Veículo Encontrado: {vehicle.brand} {vehicle.model} (Placa: {vehicle.plate}) | ID: {vehicle.id}
-                </div>
-              ) : (
-                <div className="text-red-400 font-bold text-[11px] mt-1">
-                  ❌ Nenhum veículo cadastrado correspondeu a este ID ({debugVehicleIdFromUrl}) ou Placa ({debugPlacaFromUrl})
-                </div>
-              )}
-            </div>
-
-            <div className="bg-black/50 p-2 rounded border border-amber-500/20">
-              <span className="text-amber-400 font-bold block">3) Processamento do Tipo e Itens:</span>
-              <div className="mt-1 text-[11px] space-y-1">
-                <div>• Type na URL: <b className="text-white">"{debugRawTypeFromUrl || 'vazio'}"</b></div>
-                <div>• Type em Prop (initialType): <b className="text-white">"{initialType || 'vazio'}"</b></div>
-                <div>• <b>TYPE FINAL EXIBIDO NA TELA: <span className="text-emerald-400 uppercase font-black">{vistoriaType}</span></b></div>
-                <div className="pt-1.5">• Items na URL: <b className="text-white">"{debugRawItemsFromUrl || 'vazio'}"</b></div>
-                <div>• <b>ITEMS FINAIS NO CHECKLIST NA TELA ({Object.keys(checklist).length}):</b></div>
-                <div className="flex flex-wrap gap-1 mt-1">
-                  {Object.keys(checklist).map((it, idx) => (
-                    <span key={idx} className="bg-emerald-950 border border-emerald-500/40 text-emerald-300 px-1.5 py-0.5 rounded text-[10px] font-bold">
-                      {it}
-                    </span>
-                  ))}
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
 
         {!vehicle ? (
           <div className="bg-[#111111] border border-red-500/20 rounded-2xl p-6 text-center space-y-4 shadow-xl">

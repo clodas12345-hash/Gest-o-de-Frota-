@@ -1553,7 +1553,7 @@ export const VehicleCard: React.FC<VehicleCardProps> = ({
     }
   };
 
-  const handleSendVistoriaWhatsAppSubmit = () => {
+  const handleSendVistoriaWhatsAppSubmit = async () => {
     let cleanPhone = whatsappVistoriaPhone.replace(/\D/g, '');
     if (cleanPhone.length > 0 && !cleanPhone.startsWith('55')) {
       cleanPhone = '55' + cleanPhone;
