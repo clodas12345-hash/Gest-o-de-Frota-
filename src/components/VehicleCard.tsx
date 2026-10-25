@@ -1531,7 +1531,7 @@ export const VehicleCard: React.FC<VehicleCardProps> = ({
     setShowScheduleVistoria(false);
     setShowAddVistoria(false);
     setSharingVistoria(null);
-    const targetType = forcedType || (requestVistoriaType === 'devolução' ? 'periódica' : requestVistoriaType);
+    const targetType = forcedType || (requestVistoriaType === 'devolução' ? 'entrega' : requestVistoriaType);
     setRequestVistoriaType(targetType);
     const nextState = isRequestingNewVistoria && requestVistoriaType === targetType ? false : true;
     setIsRequestingNewVistoria(nextState);
@@ -1544,14 +1544,10 @@ export const VehicleCard: React.FC<VehicleCardProps> = ({
       }
       setWhatsappVistoriaPhone(rawPhone);
 
-      const itemsToUse: string[] = [];
+      const itemsToUse = getChecklistForVistoriaType(targetType, checklistConfig);
       setSelectedRequestItems(itemsToUse);
 
-      let savedTemplate = localStorage.getItem('fleet_vistoria_request_template') || DEFAULT_REQUEST_TEMPLATE;
-      if (!savedTemplate.includes('{itens_inspecao}')) {
-        savedTemplate = DEFAULT_REQUEST_TEMPLATE;
-        localStorage.removeItem('fleet_vistoria_request_template');
-      }
+      const savedTemplate = DEFAULT_REQUEST_TEMPLATE;
       const formatted = formatTemplateText(savedTemplate, false, null, targetType, itemsToUse, freshToken);
       setCustomVistoriaMsgText(formatted);
     }
@@ -1563,18 +1559,18 @@ export const VehicleCard: React.FC<VehicleCardProps> = ({
       cleanPhone = '55' + cleanPhone;
     }
     
-    const itemsToUse = selectedRequestItems.length > 0 ? selectedRequestItems : availableChecklistItems;
+    const targetType = requestVistoriaType === 'devolução' ? 'entrega' : requestVistoriaType;
+    const itemsToUse = selectedRequestItems.length > 0 
+      ? selectedRequestItems 
+      : getChecklistForVistoriaType(targetType, checklistConfig);
     
-    // Always dynamically re-format template text to guarantee vehicle, plate, driver, and selected items match current vehicle card
-    const savedTemplate = localStorage.getItem('fleet_vistoria_request_template') || DEFAULT_REQUEST_TEMPLATE;
-    let finalMsg = formatTemplateText(savedTemplate, !!sharingVistoria, sharingVistoria, requestVistoriaType, itemsToUse, vistoriaRequestToken);
+    const savedTemplate = DEFAULT_REQUEST_TEMPLATE;
+    let finalMsg = formatTemplateText(savedTemplate, !!sharingVistoria, sharingVistoria, targetType, itemsToUse, vistoriaRequestToken);
 
     const waUrl = cleanPhone 
       ? `https://api.whatsapp.com/send?phone=${cleanPhone}&text=${encodeURIComponent(finalMsg)}`
       : `https://api.whatsapp.com/send?text=${encodeURIComponent(finalMsg)}`;
-      
 
-    // Save customized return link for future use
     localStorage.setItem('fleet_vistoria_return_link', vistoriaReturnLink);
 
     const newTab = window.open(waUrl, '_blank', 'noopener,noreferrer');
@@ -1595,7 +1591,7 @@ export const VehicleCard: React.FC<VehicleCardProps> = ({
         vehicleId: vehicle.id,
         vehiclePlate: vehicle.plate,
         date: new Date().toISOString().split('T')[0],
-        type: requestVistoriaType,
+        type: targetType,
         checklist: itemsToUse.reduce((acc, it) => ({ ...acc, [it]: false }), {}),
         photos: [],
         status: 'requested',
@@ -5203,21 +5199,23 @@ _Enviado via sistema de gestão de frota._`;
                             </span>
                           </div>
                           <select
-                            value={requestVistoriaType === 'devolução' ? 'periódica' : requestVistoriaType}
+                            value={requestVistoriaType === 'devolução' ? 'entrega' : requestVistoriaType}
                             onChange={(e) => {
                               const newType = e.target.value as 'entrega' | 'periódica';
                               const freshToken = `${Date.now().toString(36)}-${Math.random().toString(36).substring(2, 6)}`;
                               setVistoriaRequestToken(freshToken);
                               setRequestVistoriaType(newType);
-                              const savedTemplate = localStorage.getItem('fleet_vistoria_request_template') || DEFAULT_REQUEST_TEMPLATE;
-                              const formatted = formatTemplateText(savedTemplate, false, null, newType, selectedRequestItems, freshToken);
+                              const newItems = getChecklistForVistoriaType(newType, checklistConfig);
+                              setSelectedRequestItems(newItems);
+                              const savedTemplate = DEFAULT_REQUEST_TEMPLATE;
+                              const formatted = formatTemplateText(savedTemplate, false, null, newType, newItems, freshToken);
                               setCustomVistoriaMsgText(formatted);
                             }}
                             className="w-full text-xs bg-black border border-emerald-500/40 rounded-md px-2.5 py-1.5 text-white focus:outline-hidden focus:border-emerald-400 font-semibold cursor-pointer"
                             id={`select-request-vistoria-type-${vehicle.id}`}
                           >
-                            <option value="periódica">periódica</option>
                             <option value="entrega">entrega</option>
+                            <option value="periódica">periódica</option>
                           </select>
                           <p className="text-[9px] text-emerald-400/90 italic">
                             Nas vistorias de <strong>entrega</strong> e <strong>periódica</strong>, o link único de utilização única é enviado ao motorista. A vistoria de <strong>devolução</strong> é feita diretamente por você no botão <strong>"+ Fazer devolução"</strong>.
