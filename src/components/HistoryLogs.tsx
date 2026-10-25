@@ -2273,8 +2273,18 @@ export function HistoryLogs({
                 <button
                   type="button"
                   onClick={() => {
-                    if (onClearAllVistorias) {
-                      onClearAllVistorias();
+                    if (onShowDeleteConfirm) {
+                      onShowDeleteConfirm(
+                        "Excluir Todas as Vistorias?",
+                        "Deseja realmente excluir todas as vistorias registradas na frota?",
+                        () => {
+                          if (onClearAllVistorias) onClearAllVistorias();
+                        }
+                      );
+                    } else if (window.confirm("Deseja realmente excluir todas as vistorias registradas na frota?")) {
+                      if (onClearAllVistorias) {
+                        onClearAllVistorias();
+                      }
                     }
                   }}
                   className="w-full sm:w-auto justify-center px-3 py-1.5 bg-rose-600 hover:bg-rose-500 text-white rounded-xl text-xs font-bold transition-all shadow-md flex items-center gap-1.5 cursor-pointer"

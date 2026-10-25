@@ -459,7 +459,7 @@ const formatPaymentTemplateText = (
     .replace(/\{plate\}/g, plate || '')
     .replace(/\{valor\}/g, formattedAmount)
     .replace(/\{data_vencimento\}/g, formattedDate)
-    .replace(/\{link_comprovante\}/g, `${baseLink}${sep}mode=pagamento&placa=${encodeURIComponent(plate)}&reqId=${Date.now().toString(36)}`);
+    .replace(/\{link_comprovante\}/g, `${baseLink}${sep}mode=pagamento&vehicleId=${encodeURIComponent(vehicle.id)}&placa=${encodeURIComponent(plate)}&reqId=${Date.now().toString(36)}`);
 };
 
 interface VehicleCardProps {
@@ -933,7 +933,7 @@ export const VehicleCard: React.FC<VehicleCardProps> = ({
     const returnUrlWithPlaca = (() => {
       const baseWithSlash = safeBaseLink.replace(/\/+$/, '') + '/';
       const itemsParam = itemsToUse && itemsToUse.length > 0 ? `&items=${encodeURIComponent(itemsToUse.join(','))}` : '';
-      return `${baseWithSlash}?mode=vistoria_retorno&placa=${encodeURIComponent(vehicle.plate)}&brand=${encodeURIComponent(vehicle.brand)}&model=${encodeURIComponent(vehicle.model)}&driver=${encodeURIComponent(vehicle.driver || '')}&type=${encodeURIComponent(typeToUse)}&deadline=${encodeURIComponent(vehicle.nextVistoriaDate || '')}&reqId=${tokenToUse}${itemsParam}`;
+      return `${baseWithSlash}?mode=vistoria_retorno&vehicleId=${encodeURIComponent(vehicle.id)}&placa=${encodeURIComponent(vehicle.plate)}&brand=${encodeURIComponent(vehicle.brand)}&model=${encodeURIComponent(vehicle.model)}&driver=${encodeURIComponent(vehicle.driver || '')}&type=${encodeURIComponent(typeToUse)}&deadline=${encodeURIComponent(vehicle.nextVistoriaDate || '')}&reqId=${tokenToUse}${itemsParam}`;
     })();
 
     text = text.replace(/{veiculo}/g, veiculoStr);
@@ -1010,7 +1010,7 @@ export const VehicleCard: React.FC<VehicleCardProps> = ({
     })();
     const returnUrlWithPlaca = (() => {
       const baseWithSlash = safeBaseLink.replace(/\/+$/, '') + '/';
-      return `${baseWithSlash}?mode=vistoria_retorno&placa=${encodeURIComponent(vehicle.plate)}&brand=${encodeURIComponent(vehicle.brand)}&model=${encodeURIComponent(vehicle.model)}&driver=${encodeURIComponent(vehicle.driver || '')}&type=${encodeURIComponent(requestVistoriaType)}&deadline=${encodeURIComponent(vehicle.nextVistoriaDate || '')}&reqId=${vistoriaRequestToken}`;
+      return `${baseWithSlash}?mode=vistoria_retorno&vehicleId=${encodeURIComponent(vehicle.id)}&placa=${encodeURIComponent(vehicle.plate)}&brand=${encodeURIComponent(vehicle.brand)}&model=${encodeURIComponent(vehicle.model)}&driver=${encodeURIComponent(vehicle.driver || '')}&type=${encodeURIComponent(requestVistoriaType)}&deadline=${encodeURIComponent(vehicle.nextVistoriaDate || '')}&reqId=${vistoriaRequestToken}`;
     })();
 
     // Replace return URL first
@@ -1654,7 +1654,7 @@ export const VehicleCard: React.FC<VehicleCardProps> = ({
     
     const baseWithSlash = safeBaseLink.replace(/\/+$/, '') + '/';
     const itemsParam = itemsToUse && itemsToUse.length > 0 ? `&items=${encodeURIComponent(itemsToUse.join(','))}` : '';
-    const returnUrl = `${baseWithSlash}?mode=vistoria_retorno&placa=${encodeURIComponent(vehicle.plate)}&brand=${encodeURIComponent(vehicle.brand)}&model=${encodeURIComponent(vehicle.model)}&driver=${encodeURIComponent(vehicle.driver || '')}&type=${encodeURIComponent(requestVistoriaType)}&deadline=${encodeURIComponent(vehicle.nextVistoriaDate || '')}&reqId=${vistoriaRequestToken}${itemsParam}`;
+    const returnUrl = `${baseWithSlash}?mode=vistoria_retorno&vehicleId=${encodeURIComponent(vehicle.id)}&placa=${encodeURIComponent(vehicle.plate)}&brand=${encodeURIComponent(vehicle.brand)}&model=${encodeURIComponent(vehicle.model)}&driver=${encodeURIComponent(vehicle.driver || '')}&type=${encodeURIComponent(requestVistoriaType)}&deadline=${encodeURIComponent(vehicle.nextVistoriaDate || '')}&reqId=${vistoriaRequestToken}${itemsParam}`;
 
     if (!finalMsg.includes('placa=') && !finalMsg.includes('http')) {
       finalMsg += `\n\n🔗 *Link de Acesso / Retorno para Vistoria:*\n${returnUrl}`;

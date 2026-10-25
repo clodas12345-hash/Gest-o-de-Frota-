@@ -2149,7 +2149,11 @@ export default function App() {
     setVehicles((prev) =>
       prev.map((v) => ({
         ...v,
-        documents: (v.documents || []).filter((d) => d.id !== `doc-vist-${id}` && d.id !== id)
+        documents: (v.documents || []).filter((d) => {
+          if (d.category === 'Vistoria' && (d.id.includes(id) || d.id === id)) return false;
+          if (d.id === `doc-vist-${id}` || d.id === id) return false;
+          return true;
+        })
       }))
     );
     setDeleteToastMsg('Vistoria excluída com sucesso.');
@@ -2164,7 +2168,7 @@ export default function App() {
           ? {
               ...v,
               nextVistoriaDate: undefined,
-              documents: (v.documents || []).filter((d) => !d.id.startsWith('doc-vist-'))
+              documents: (v.documents || []).filter((d) => d.category !== 'Vistoria' && !d.id.startsWith('doc-vist-'))
             }
           : v
       )
@@ -2179,7 +2183,7 @@ export default function App() {
       prev.map((v) => ({
         ...v,
         nextVistoriaDate: undefined,
-        documents: (v.documents || []).filter((d) => !d.id.startsWith('doc-vist-'))
+        documents: (v.documents || []).filter((d) => d.category !== 'Vistoria' && !d.id.startsWith('doc-vist-'))
       }))
     );
     setDeleteToastMsg('Todas as vistorias da frota foram excluídas com sucesso.');
@@ -2562,15 +2566,15 @@ export default function App() {
   };
 
   if (isVistoriaMode) {
-    let targetVehicle = vehicles.find(
+    const params = activeParams; // USAR OS PARAMS JÁ PROCESSADOS
+    const vehicleIdParam = params.get('vehicleId');
+    let targetVehicle = vehicles.find(v => v.id === vehicleIdParam) || vehicles.find(
       v => {
         const vPlate = (v.plate || '').replace(/[^A-Z0-9]/gi, '').toUpperCase();
         const pPlate = (vistoriaPlateParam || '').replace(/[^A-Z0-9]/gi, '').toUpperCase();
         return vPlate === pPlate && pPlate !== '';
       }
     );
-
-    const params = activeParams; // USAR OS PARAMS JÁ PROCESSADOS
     const deadlineFromParam = params.get('deadline') || '';
 
     if (targetVehicle && deadlineFromParam && !targetVehicle.nextVistoriaDate) {
@@ -2671,14 +2675,14 @@ export default function App() {
           const plateSanitized = (newVistoria.vehiclePlate || targetVehicle?.plate || '').replace(/[^A-Z0-9]/gi, '').toUpperCase();
           const matchedRealVehicle = vehicles.find(
             v => v.id === newVistoria.vehicleId || v.id === targetVehicle?.id || (plateSanitized && v.plate.replace(/[^A-Z0-9]/gi, '').toUpperCase() === plateSanitized)
-          ) || targetVehicle || vehicles[0];
+          ) || targetVehicle;
 
           const finalVistoria: Vistoria = {
             ...newVistoria,
             vehicleId: matchedRealVehicle ? matchedRealVehicle.id : newVistoria.vehicleId,
             vehiclePlate: matchedRealVehicle ? matchedRealVehicle.plate : (targetVehicle?.plate || newVistoria.vehiclePlate)
           };
-          const activeVehicle = matchedRealVehicle || targetVehicle || vehicles[0];
+          const activeVehicle = matchedRealVehicle || targetVehicle;
 
           sendAppNotification(`📋 Vistoria Concluída: ${activeVehicle.brand} (${activeVehicle.plate})`, {
             body: `Vistoria (${finalVistoria.type || 'periódica'}) registrada com ${finalVistoria.photos?.length || 0} foto(s).`,
@@ -3296,6 +3300,20 @@ export default function App() {
         confirmButtonText="Sim, Zerar Todos os Dados"
         onConfirm={handleConfirmResetData}
         onCancel={() => setIsResetConfirmOpen(false)}
+      />
+
+      {/* Confirmation Modal: Generic Delete (vistorias, maintenance, expenses) */}
+      <ConfirmDeleteModal
+        isOpen={Boolean(deleteConfirm?.isOpen)}
+        title={deleteConfirm?.title || 'Excluir Item?'}
+        description={deleteConfirm?.description || 'Deseja realmente excluir este item?'}
+        onConfirm={() => {
+          if (deleteConfirm?.onConfirm) {
+            deleteConfirm.onConfirm();
+          }
+          setDeleteConfirm(null);
+        }}
+        onCancel={() => setDeleteConfirm(null)}
       />
 
       {/* Action Toast Banner */}
