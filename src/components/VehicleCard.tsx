@@ -423,7 +423,8 @@ const formatPaymentTemplateText = (
   plate: string,
   amount: number,
   dueDateStr: string,
-  returnLink?: string
+  returnLink?: string,
+  vehicleId?: string
 ) => {
   const formattedAmount = amount ? amount.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : '0,00';
   let formattedDate = 'Hoje';
@@ -438,6 +439,7 @@ const formatPaymentTemplateText = (
     ? returnLink
     : getPublicWebBaseUrl();
   const sep = baseLink.includes('?') ? '&' : '?';
+  const vehParam = vehicleId ? `&vehicleId=${encodeURIComponent(vehicleId)}` : '';
 
   return template
     .replace(/\{driver\}/g, driverName || 'Locatário')
@@ -446,7 +448,7 @@ const formatPaymentTemplateText = (
     .replace(/\{plate\}/g, plate || '')
     .replace(/\{valor\}/g, formattedAmount)
     .replace(/\{data_vencimento\}/g, formattedDate)
-    .replace(/\{link_comprovante\}/g, `${baseLink}${sep}mode=pagamento&vehicleId=${encodeURIComponent(vehicle.id)}&placa=${encodeURIComponent(plate)}&reqId=${Date.now().toString(36)}`);
+    .replace(/\{link_comprovante\}/g, `${baseLink}${sep}mode=pagamento${vehParam}&placa=${encodeURIComponent(plate)}&reqId=${Date.now().toString(36)}`);
 };
 
 interface VehicleCardProps {
@@ -2193,7 +2195,9 @@ _Enviado via sistema de gestão de frota._`;
                       vehicle.model || '',
                       vehicle.plate || '',
                       paymentWhatsAppAmount || vehicle.valorRecebido || 0,
-                      paymentWhatsAppDueDate
+                      paymentWhatsAppDueDate,
+                      undefined,
+                      vehicle.id
                     );
                     setCustomPaymentMsgText(text);
                   }}
@@ -3605,7 +3609,9 @@ _Enviado via sistema de gestão de frota._`;
                           vehicle.model || '',
                           vehicle.plate || '',
                           paymentWhatsAppAmount || vehicle.valorRecebido || 0,
-                          paymentWhatsAppDueDate
+                          paymentWhatsAppDueDate,
+                          undefined,
+                          vehicle.id
                         );
                         setCustomPaymentMsgText(text);
                       }
@@ -3689,7 +3695,9 @@ _Enviado via sistema de gestão de frota._`;
                             vehicle.model || '',
                             vehicle.plate || '',
                             paymentWhatsAppAmount || vehicle.valorRecebido || 0,
-                            paymentWhatsAppDueDate
+                            paymentWhatsAppDueDate,
+                            undefined,
+                            vehicle.id
                           );
                           setCustomPaymentMsgText(text);
                         }}
@@ -3715,7 +3723,9 @@ _Enviado via sistema de gestão de frota._`;
                             vehicle.model || '',
                             vehicle.plate || '',
                             paymentWhatsAppAmount || vehicle.valorRecebido || 0,
-                            paymentWhatsAppDueDate
+                            paymentWhatsAppDueDate,
+                            undefined,
+                            vehicle.id
                           );
                           setCustomPaymentMsgText(text);
                         }}
@@ -3741,7 +3751,9 @@ _Enviado via sistema de gestão de frota._`;
                             vehicle.model || '',
                             vehicle.plate || '',
                             paymentWhatsAppAmount || vehicle.valorRecebido || 0,
-                            paymentWhatsAppDueDate
+                            paymentWhatsAppDueDate,
+                            undefined,
+                            vehicle.id
                           );
                           setCustomPaymentMsgText(text);
                         }}
@@ -3799,7 +3811,9 @@ _Enviado via sistema de gestão de frota._`;
                             vehicle.model || '',
                             vehicle.plate || '',
                             newAmt,
-                            paymentWhatsAppDueDate
+                            paymentWhatsAppDueDate,
+                            undefined,
+                            vehicle.id
                           );
                           setCustomPaymentMsgText(text);
                         }}
@@ -3826,7 +3840,9 @@ _Enviado via sistema de gestão de frota._`;
                             vehicle.model || '',
                             vehicle.plate || '',
                             paymentWhatsAppAmount || vehicle.valorRecebido || 0,
-                            newDate
+                            newDate,
+                            undefined,
+                            vehicle.id
                           );
                           setCustomPaymentMsgText(text);
                         }}
