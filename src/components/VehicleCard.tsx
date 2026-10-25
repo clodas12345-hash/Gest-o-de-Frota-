@@ -412,19 +412,6 @@ const DEFAULT_PAYMENT_TEMPLATES = {
 const PUBLIC_WEB_ORIGIN = 'https://ais-dev-nxg4lixniko7ymx3t5cstw-473118395752.us-west2.run.app';
 
 export const getPublicWebBaseUrl = (): string => {
-  const origin = typeof window !== 'undefined' ? window.location.origin : '';
-  
-  // Se for localhost, manter localhost para testes locais
-  if (origin.includes('localhost') || origin.includes('127.0.0.1')) {
-    return origin.replace(/\/+$/, '');
-  }
-
-  // Se por acaso o origin contiver 'ais-pre', converter estritamente para 'ais-dev'
-  if (origin && origin.includes('ais-pre')) {
-    return origin.replace('ais-pre', 'ais-dev').replace(/\/+$/, '');
-  }
-
-  // Para qualquer outro caso, usar PUBLIC_WEB_ORIGIN (ais-dev)
   return PUBLIC_WEB_ORIGIN.replace(/\/+$/, '');
 };
 
@@ -882,8 +869,8 @@ export const VehicleCard: React.FC<VehicleCardProps> = ({
     const validUrl = getPublicWebBaseUrl();
     let saved = localStorage.getItem('fleet_vistoria_return_link');
     
-    // Se o salvo contiver 'ais-pre' ou '/upload-receipt', limpar e usar validUrl limpa
-    if (saved && (saved.includes('ais-pre') || saved.includes('/upload-receipt'))) {
+    // Se o salvo contiver 'localhost', '127.0.0.1', 'ais-pre' ou '/upload-receipt', limpar e usar validUrl limpa
+    if (saved && (saved.includes('localhost') || saved.includes('127.0.0.1') || saved.includes('ais-pre') || saved.includes('/upload-receipt'))) {
       localStorage.setItem('fleet_vistoria_return_link', validUrl);
       return validUrl;
     }
@@ -894,6 +881,14 @@ export const VehicleCard: React.FC<VehicleCardProps> = ({
     }
     return saved.replace(/\/upload-receipt\/?$/, '').replace(/\/+$/, '');
   });
+
+  useEffect(() => {
+    if (vistoriaReturnLink.includes('localhost') || vistoriaReturnLink.includes('127.0.0.1')) {
+      const fixed = getPublicWebBaseUrl();
+      setVistoriaReturnLink(fixed);
+      localStorage.setItem('fleet_vistoria_return_link', fixed);
+    }
+  }, [vistoriaReturnLink]);
 
   const availableChecklistItems = getChecklistForVistoriaType(newVistoriaType, checklistConfig);
 
