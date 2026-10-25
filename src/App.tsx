@@ -2578,14 +2578,14 @@ export default function App() {
       targetVehicle = { ...targetVehicle, nextVistoriaDate: deadlineFromParam };
     }
 
-    // If not found, parse details from query params or fallback to first vehicle/default
+    // If not found in local array, build targetVehicle from URL parameters cleanly
     if (!targetVehicle) {
-      const brand = (params.get('brand') || vehicles[0]?.brand || 'Veículo').trim();
-      const model = (params.get('model') || vehicles[0]?.model || '').trim();
-      const driver = (params.get('driver') || vehicles[0]?.driver || '').trim();
-      const plate = vistoriaPlateParam ? vistoriaPlateParam.toUpperCase() : (vehicles[0]?.plate || 'VISTORIA');
+      const brand = (params.get('brand') || 'Veículo').trim();
+      const model = (params.get('model') || '').trim();
+      const driver = (params.get('driver') || 'Motorista').trim();
+      const plate = vistoriaPlateParam ? vistoriaPlateParam.toUpperCase() : 'TDD-5I76';
       targetVehicle = {
-        id: `temp-${Date.now()}`,
+        id: vehicleIdParam || `temp-${Date.now()}`,
         brand,
         model,
         plate,
