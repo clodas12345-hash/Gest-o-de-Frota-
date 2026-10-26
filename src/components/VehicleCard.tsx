@@ -404,6 +404,12 @@ const DEFAULT_PAYMENT_TEMPLATES = {
 const PUBLIC_WEB_ORIGIN = 'https://ais-dev-nxg4lixniko7ymx3t5cstw-473118395752.us-west2.run.app';
 
 export const getPublicWebBaseUrl = (): string => {
+  if (typeof window !== 'undefined' && window.location?.origin) {
+    const orig = window.location.origin;
+    if (!orig.includes('localhost') && !orig.includes('127.0.0.1') && !orig.includes('capacitor://')) {
+      return orig.replace(/\/+$/, '');
+    }
+  }
   return PUBLIC_WEB_ORIGIN.replace(/\/+$/, '');
 };
 
@@ -1556,17 +1562,17 @@ export const VehicleCard: React.FC<VehicleCardProps> = ({
       ? selectedRequestItems 
       : getChecklistForVistoriaType(targetType, checklistConfig);
     
-    // Save request details to Firestore for short URL
+    // Save request details to Firestore (safely avoiding undefined values)
     const pendingRequest = {
-      vehicleId: vehicle.id,
-      plate: vehicle.plate,
-      brand: vehicle.brand,
-      model: vehicle.model,
-      driver: vehicle.driver,
-      type: targetType,
-      items: itemsToUse,
-      deadline: vehicle.nextVistoriaDate,
-      reqId: vistoriaRequestToken,
+      vehicleId: vehicle.id || '',
+      plate: vehicle.plate || '',
+      brand: vehicle.brand || '',
+      model: vehicle.model || '',
+      driver: vehicle.driver || '',
+      type: targetType || 'periódica',
+      items: itemsToUse || [],
+      deadline: vehicle.nextVistoriaDate || '',
+      reqId: vistoriaRequestToken || '',
       createdAt: new Date().toISOString()
     };
     
@@ -1577,20 +1583,23 @@ export const VehicleCard: React.FC<VehicleCardProps> = ({
       console.error('Error saving vistoria request:', err);
     }
     
-    const savedTemplate = DEFAULT_REQUEST_TEMPLATE;
-    
-    // Build shortened URL
-    const safeBaseLink = (vistoriaReturnLink && !vistoriaReturnLink.includes('localhost') && !vistoriaReturnLink.includes('127.0.0.1'))
+    // Use the complete long URL with all vehicle details and checklist items
+    let finalMsg = (customVistoriaMsgText && customVistoriaMsgText.trim() && customVistoriaMsgText.includes('&placa='))
+      ? customVistoriaMsgText.trim()
+      : formatTemplateText(DEFAULT_REQUEST_TEMPLATE, !!sharingVistoria, sharingVistoria, targetType, itemsToUse, vistoriaRequestToken);
+
+    // If link is missing, ensure the complete long link is included
+    if (!finalMsg.includes('http://') && !finalMsg.includes('https://')) {
+      const safeBaseLink = (vistoriaReturnLink && !vistoriaReturnLink.includes('localhost') && !vistoriaReturnLink.includes('127.0.0.1'))
         ? vistoriaReturnLink
         : getPublicWebBaseUrl();
-    const safeBaseClean = safeBaseLink.replace(/\/upload-receipt\/?$/, '').replace(/\/+$/, '');
-    const shortenedUrl = `${safeBaseClean}/?mode=vistoria_retorno&reqId=${encodeURIComponent(vistoriaRequestToken)}`;
-
-    let finalMsg = formatTemplateText(savedTemplate, !!sharingVistoria, sharingVistoria, targetType, itemsToUse, vistoriaRequestToken);
-    
-    // Replace the long URL in finalMsg with the short one
-    finalMsg = finalMsg.replace(/🔗\s*https?:\/\/[^\s]+/gi, '').trim();
-    finalMsg += `\n\n🔗 *Link de Acesso / Retorno:*\n${shortenedUrl}`;
+      const safeBaseClean = safeBaseLink.replace(/\/upload-receipt\/?$/, '').replace(/\/+$/, '');
+      const itemsQueryParam = itemsToUse && itemsToUse.length > 0
+        ? `&items=${encodeURIComponent(itemsToUse.join(','))}`
+        : '';
+      const longUrl = `${safeBaseClean}/?mode=vistoria_retorno&vehicleId=${encodeURIComponent(vehicle.id)}&placa=${encodeURIComponent(vehicle.plate)}&brand=${encodeURIComponent(vehicle.brand)}&model=${encodeURIComponent(vehicle.model)}&driver=${encodeURIComponent(vehicle.driver || '')}&type=${encodeURIComponent(targetType)}&deadline=${encodeURIComponent(vehicle.nextVistoriaDate || '')}&reqId=${vistoriaRequestToken}${itemsQueryParam}`;
+      finalMsg += `\n\n🔗 *Link de Acesso / Retorno:*\n${longUrl}`;
+    }
 
     const waUrl = cleanPhone 
       ? `https://api.whatsapp.com/send?phone=${cleanPhone}&text=${encodeURIComponent(finalMsg)}`

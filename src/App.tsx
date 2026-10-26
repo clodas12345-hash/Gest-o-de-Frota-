@@ -2593,7 +2593,7 @@ export default function App() {
   const [loadingVistoriaRequest, setLoadingVistoriaRequest] = useState(() => {
     if (typeof window !== 'undefined') {
        const params = new URLSearchParams(window.location.search);
-       return !!params.get('reqId');
+       return !!params.get('reqId') && !params.get('placa') && !params.get('vehicleId');
     }
     return false;
   });
@@ -2601,7 +2601,9 @@ export default function App() {
   useEffect(() => {
     const reqId = activeParams.get('reqId');
     if (reqId && isVistoriaMode) {
-      setLoadingVistoriaRequest(true);
+      if (!activeParams.get('placa') && !activeParams.get('vehicleId')) {
+        setLoadingVistoriaRequest(true);
+      }
       getDoc(doc(db, 'vistoriaRequests', reqId))
         .then(snap => {
           if (snap.exists()) {
@@ -2616,7 +2618,7 @@ export default function App() {
     }
   }, [isVistoriaMode, activeParams]);
 
-  if (isVistoriaMode && loadingVistoriaRequest) {
+  if (isVistoriaMode && loadingVistoriaRequest && !activeParams.get('placa') && !activeParams.get('vehicleId')) {
     return <div className="min-h-screen flex items-center justify-center text-white">Carregando...</div>;
   }
 
