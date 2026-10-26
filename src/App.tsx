@@ -45,7 +45,7 @@ import { GlobalVoiceAssistant } from './components/GlobalVoiceAssistant';
 import { BatchOdometerModal } from './components/BatchOdometerModal';
 import { InterestCalculatorModal } from './components/InterestCalculatorModal';
 import { generateVehiclePDF, generateVistoriaPDF, generateExecutiveMonthlyPDF } from './utils/pdfGenerator';
-import { sendAppNotification, requestNotificationPermission } from './utils/notifications';
+import { sendAppNotification, requestNotificationPermission, scheduleVistoriaReminders, VISTORIA_REMINDER_SLOTS, isNotificationEventEnabled } from './utils/notifications';
 import logoImg from './assets/logo.png';
 
 // Icons
@@ -370,16 +370,32 @@ export default function App() {
 
       const todayDateStr = new Date().toISOString().split('T')[0];
 
-      // 1. Check Friday Vistoria Reminder (#6)
-      const isFriday = new Date().getDay() === 5;
-      const lastFridayCheck = localStorage.getItem('fleet_last_friday_check');
+      // 1. Check & Schedule Vistoria Reminders exclusively on:
+      // Quarta (10h e 16h), Quinta (11h e 20h) e Sexta (10h, 13h e 17h)
+      if (!disableFridayReminder) {
+        scheduleVistoriaReminders();
 
-      if (isFriday && !disableFridayReminder && lastFridayCheck !== todayDateStr) {
-        localStorage.setItem('fleet_last_friday_check', todayDateStr);
-        sendAppNotification('📋 Lembrete de Vistoria Semanal', {
-          body: 'Hoje é sexta-feira! Lembre-se de solicitar as fotos e vistorias semanais aos motoristas da frota.',
-          eventKey: 'vistoria_friday',
-        });
+        const now = new Date();
+        const dayOfWeek = now.getDay();
+        const hour = now.getHours();
+
+        const matchingSlot = VISTORIA_REMINDER_SLOTS.find(
+          (s) => s.day === dayOfWeek && s.hour === hour
+        );
+
+        if (matchingSlot && isNotificationEventEnabled('vistoria_friday')) {
+          const slotKey = `fleet_vistoria_slot_${todayDateStr}_${matchingSlot.id}`;
+          const alreadySent = localStorage.getItem(slotKey);
+
+          if (!alreadySent) {
+            localStorage.setItem(slotKey, 'true');
+            sendAppNotification(matchingSlot.title, {
+              id: matchingSlot.id,
+              body: matchingSlot.body,
+              eventKey: 'vistoria_friday',
+            });
+          }
+        }
       }
 
       // 2. Check Daily Scheduled & Alert Conditions on Startup
@@ -716,7 +732,6 @@ export default function App() {
   const knownReceiptIdsRef = useRef<Set<string>>(new Set());
 
   const saveToCloud = (field: string, data: any) => {
-    if (!Capacitor.isNativePlatform()) return;
     if (!isCloudLoadedRef.current || isRemoteUpdateRef.current) return;
     
     try {
@@ -770,8 +785,8 @@ export default function App() {
             setVistorias(d.vistorias);
           }
           if (d.finalizedContracts && Array.isArray(d.finalizedContracts)) setFinalizedContracts(d.finalizedContracts);
-        } else if (Capacitor.isNativePlatform()) {
-          // Initialize cloud only on native app if missing
+        } else {
+          // Initialize cloud if missing
           vistorias.forEach((vist) => knownVistoriaIdsRef.current.add(vist.id));
           vehicles.forEach((veh) => (veh.pendingReceipts || []).forEach((r) => knownReceiptIdsRef.current.add(r.id)));
           const initialPayload = sanitizeForCloud({

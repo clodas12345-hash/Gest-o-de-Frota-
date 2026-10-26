@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Vehicle, VehicleDocument, FuelLog, MaintenanceLog, ExpenseLog, AgendaContact, SinistroLog, TireState, MAINTENANCE_CATEGORIES, MAINTENANCE_SCOPES, getScopesForCategory } from '../types';
+import { Vehicle, VehicleDocument, FuelLog, MaintenanceLog, ExpenseLog, AgendaContact, SinistroLog, TireState, PromisePayment, MAINTENANCE_CATEGORIES, MAINTENANCE_SCOPES, getScopesForCategory } from '../types';
 import { X, Save, AlertCircle, Users, BookOpen, Sparkles, Mic, MicOff, Calculator, Plus, Trash2, User, Phone, Search, Smartphone, Check, Upload, ExternalLink, AlertTriangle, Car, Calendar, Camera, Shield, Bell, Paperclip, Eye, FileText, Building2, FilePlus, Layers, FileCheck, Loader2, Wrench, Coins } from 'lucide-react';
 import { Contacts } from '@capacitor-community/contacts';
 import { Capacitor } from '@capacitor/core';
@@ -217,6 +217,10 @@ export function LogForms({
   const [caucaoValor, setCaucaoValor] = useState(0);
   const [caucaoData, setCaucaoData] = useState('');
   const [caucaoObservacoes, setCaucaoObservacoes] = useState('');
+  const [promisePayments, setPromisePayments] = useState<PromisePayment[]>([]);
+  const [showAddCaucaoPromise, setShowAddCaucaoPromise] = useState(false);
+  const [newCaucaoPromiseDate, setNewCaucaoPromiseDate] = useState(() => getTodayStr());
+  const [newCaucaoPromiseAmount, setNewCaucaoPromiseAmount] = useState<number>(0);
   const [nextVistoriaDate, setNextVistoriaDate] = useState('');
   const [insuranceExpirationDate, setInsuranceExpirationDate] = useState('');
   const [showAddExpense, setShowAddExpense] = useState(false);
@@ -719,6 +723,7 @@ export function LogForms({
         setCaucaoValor(vehicleToEdit.caucaoValor || 0);
         setCaucaoData(vehicleToEdit.caucaoData || '2026-08-01');
         setCaucaoObservacoes(vehicleToEdit.caucaoObservacoes || '');
+        setPromisePayments(vehicleToEdit.promisePayments || []);
         setNextVistoriaDate(vehicleToEdit.nextVistoriaDate || '');
         setInsuranceExpirationDate(vehicleToEdit.insuranceExpirationDate || vehicleToEdit.seguroVencimento || '');
         setDriverCnhExpiration(vehicleToEdit.driverCnhExpiration || '');
@@ -807,6 +812,7 @@ export function LogForms({
           setCaucaoValor(0);
           setCaucaoData(new Date().toISOString().split('T')[0]);
           setCaucaoObservacoes('');
+          setPromisePayments([]);
           setNextVistoriaDate('');
           setInsuranceExpirationDate('');
           setDriverCnhExpiration('');
@@ -1138,6 +1144,7 @@ export function LogForms({
         caucaoValor: Number(caucaoValor) || 0,
         caucaoData: caucaoData || getTodayStr(),
         caucaoObservacoes: caucaoObservacoes || '',
+        promisePayments,
         weeklyPayments: vehicleToEdit ? (vehicleToEdit.weeklyPayments || []) : [],
         custoExtra: extraExpenses.reduce((sum, exp) => sum + (exp.value || 0), 0),
         custoExtraLabel: extraExpenses.length > 0 ? extraExpenses[0].label : 'Outras Despesas',
@@ -2532,6 +2539,143 @@ export function LogForms({
                     placeholder="Ex: Caução recebido via PIX, retido sob contrato..."
                     className="w-full text-xs bg-black/40 border border-white/10 rounded-xl px-3 py-2 text-white focus:outline-hidden focus:border-emerald-500/50 h-20 resize-none font-sans"
                   />
+                </div>
+
+                {/* Promessas de Pagamento do Caução */}
+                <div className="bg-black/30 border border-white/5 p-3 rounded-xl space-y-2 mt-2">
+                  <div className="flex items-center justify-between">
+                    <span className="text-[11px] font-bold text-gray-300">Promessas de Pagamento (Caução)</span>
+                    {promisePayments.length > 0 && (
+                      <span className="text-[9px] text-emerald-400 bg-emerald-500/10 px-1.5 py-0.5 rounded border border-emerald-500/20 font-mono">
+                        {promisePayments.filter(p => p.isPaid).length}/{promisePayments.length} pagas
+                      </span>
+                    )}
+                  </div>
+
+                  {promisePayments.length === 0 && !showAddCaucaoPromise && (
+                    <p className="text-[10px] text-gray-500 italic py-1">Nenhuma promessa cadastrada.</p>
+                  )}
+
+                  <div className="space-y-1.5">
+                    {promisePayments.map((p) => {
+                      const dateParts = (p.date || '').split('-');
+                      const formattedDate = dateParts.length === 3 
+                        ? `${dateParts[2]}/${dateParts[1]}/${dateParts[0]}`
+                        : p.date;
+
+                      return (
+                        <div key={p.id} className="flex justify-between items-center text-xs bg-white/[0.03] p-2 rounded-lg border border-white/5">
+                          <span className={`font-mono text-xs ${p.isPaid ? 'line-through text-gray-500' : 'text-gray-200 font-bold'}`}>
+                            {formattedDate} — R$ {(p.amount || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                          </span>
+                          <div className="flex items-center gap-1.5">
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setPromisePayments(prev => prev.map(item => item.id === p.id ? { ...item, isPaid: !item.isPaid } : item));
+                              }}
+                              className={`text-[9px] px-2 py-0.5 rounded font-bold cursor-pointer transition-colors ${
+                                p.isPaid
+                                  ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30'
+                                  : 'bg-amber-500/20 text-amber-300 border border-amber-500/30'
+                              }`}
+                            >
+                              {p.isPaid ? '✓ Pago' : 'Pendente'}
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setPromisePayments(prev => prev.filter(item => item.id !== p.id));
+                              }}
+                              className="p-1 text-gray-500 hover:text-rose-400 transition-colors cursor-pointer rounded"
+                              title="Excluir promessa"
+                            >
+                              <Trash2 className="w-3 h-3" />
+                            </button>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+
+                  {showAddCaucaoPromise && (
+                    <div className="p-3 bg-neutral-900 rounded-lg border border-blue-500/30 space-y-2 mt-2">
+                      <div className="grid grid-cols-2 gap-2">
+                        <div>
+                          <label className="text-[9px] text-gray-400 block mb-0.5">Data Prevista</label>
+                          <input
+                            type="date"
+                            value={newCaucaoPromiseDate}
+                            onChange={(e) => setNewCaucaoPromiseDate(e.target.value)}
+                            className="w-full text-xs bg-black border border-white/10 rounded-md px-2 py-1 text-white focus:outline-hidden font-mono"
+                          />
+                        </div>
+                        <div>
+                          <label className="text-[9px] text-gray-400 block mb-0.5">Valor da Promessa (R$)</label>
+                          <CurrencyInput
+                            value={newCaucaoPromiseAmount}
+                            onChange={setNewCaucaoPromiseAmount}
+                            placeholder="0,00"
+                            className="w-full text-xs bg-black border border-white/10 rounded-md px-2 py-1 text-white focus:outline-hidden font-mono"
+                            autoFocus
+                          />
+                        </div>
+                      </div>
+                      <div className="flex justify-end gap-1.5 text-[10px] pt-1">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setShowAddCaucaoPromise(false);
+                            setNewCaucaoPromiseAmount(0);
+                          }}
+                          className="px-2.5 py-1 text-gray-400 hover:text-white cursor-pointer"
+                        >
+                          Cancelar
+                        </button>
+                        <button
+                          type="button"
+                          disabled={!newCaucaoPromiseAmount || newCaucaoPromiseAmount <= 0}
+                          onClick={() => {
+                            if (newCaucaoPromiseAmount > 0) {
+                              const dateToUse = newCaucaoPromiseDate || getTodayStr();
+                              setPromisePayments(prev => [
+                                ...prev,
+                                {
+                                  id: `prom-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
+                                  date: dateToUse,
+                                  amount: Number(newCaucaoPromiseAmount),
+                                  isPaid: false
+                                }
+                              ]);
+                              setShowAddCaucaoPromise(false);
+                              setNewCaucaoPromiseAmount(0);
+                            }
+                          }}
+                          className={`px-3 py-1 rounded font-bold transition-all ${
+                            newCaucaoPromiseAmount > 0
+                              ? 'bg-blue-600 hover:bg-blue-500 text-white cursor-pointer'
+                              : 'bg-white/10 text-gray-500 cursor-not-allowed'
+                          }`}
+                        >
+                          Adicionar
+                        </button>
+                      </div>
+                    </div>
+                  )}
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (!showAddCaucaoPromise) {
+                        setNewCaucaoPromiseDate(getTodayStr());
+                        setNewCaucaoPromiseAmount(0);
+                      }
+                      setShowAddCaucaoPromise(!showAddCaucaoPromise);
+                    }}
+                    className="w-full text-xs text-blue-400 border border-blue-400/30 rounded py-1 hover:bg-blue-400/10 cursor-pointer font-medium transition-colors"
+                  >
+                    {showAddCaucaoPromise ? 'Fechar Formulário' : '+ Adicionar Promessa de Caução'}
+                  </button>
                 </div>
               </div>
 

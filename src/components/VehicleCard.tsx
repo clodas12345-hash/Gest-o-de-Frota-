@@ -3,7 +3,7 @@ import { Capacitor, registerPlugin } from '@capacitor/core';
 const Filesystem = registerPlugin<any>('Filesystem');
 const Share = registerPlugin<any>('Share');
 const Directory = { Cache: 'CACHE', Documents: 'DOCUMENTS', Data: 'DATA' };
-import { Vehicle, ExpenseLog, WeeklyPayment, Vistoria, VehicleDocument, MaintenanceLog, FuelLog, SinistroLog } from '../types';
+import { Vehicle, ExpenseLog, WeeklyPayment, Vistoria, VehicleDocument, MaintenanceLog, FuelLog, SinistroLog, PromisePayment } from '../types';
 import { generateVistoriaPDF, generatePaymentReceiptPDF } from '../utils/pdfGenerator';
 import { sendAppNotification, requestNotificationPermission } from '../utils/notifications';
 import { syncVehicleFipe } from '../utils/fipeService';
@@ -3270,33 +3270,71 @@ _Enviado via sistema de gestão de frota._`;
                     </div>
                     {/* Botão de Promessa de Pagamento */}
                     <div className="bg-white/[0.01] p-3 rounded-xl border border-white/5">
-                      <span className="text-[10px] text-gray-400 font-semibold mb-2 block">Promessas de Pagamento (Caução)</span>
+                      <div className="flex items-center justify-between mb-2">
+                        <span className="text-[10px] text-gray-400 font-semibold block">Promessas de Pagamento (Caução)</span>
+                        {vehicle.promisePayments && vehicle.promisePayments.length > 0 && (
+                          <span className="text-[9px] text-emerald-400 bg-emerald-500/10 px-1.5 py-0.5 rounded border border-emerald-500/20 font-mono">
+                            {vehicle.promisePayments.filter(p => p.isPaid).length}/{vehicle.promisePayments.length} pagas
+                          </span>
+                        )}
+                      </div>
                       <div className="space-y-2">
-                        {vehicle.promisePayments?.map((p) => (
-                          <div key={p.id} className="flex justify-between items-center text-xs bg-white/[0.03] p-1.5 rounded">
-                            <span className={p.isPaid ? 'line-through text-gray-500' : 'text-gray-200'}>
-                              {new Date(p.date).toLocaleDateString('pt-BR')} - R$ {p.amount.toFixed(2)}
-                            </span>
-                            {!p.isPaid && (
-                              <button
-                                onClick={() => {
-                                  onUpdateVehicle({
-                                    ...vehicle,
-                                    promisePayments: vehicle.promisePayments?.map(prev => prev.id === p.id ? {...prev, isPaid: true} : prev)
-                                  })
-                                }}
-                                className="text-[9px] bg-emerald-600 px-1.5 py-0.5 rounded text-white"
-                              >
-                                Pago
-                              </button>
-                            )}
-                          </div>
-                        ))}
+                        {(!vehicle.promisePayments || vehicle.promisePayments.length === 0) && !showAddPromise && (
+                          <p className="text-[10px] text-gray-500 italic py-1">Nenhuma promessa de pagamento registrada.</p>
+                        )}
+                        {vehicle.promisePayments?.map((p) => {
+                          const dateParts = (p.date || '').split('-');
+                          const formattedDate = dateParts.length === 3 
+                            ? `${dateParts[2]}/${dateParts[1]}/${dateParts[0]}`
+                            : p.date;
+
+                          return (
+                            <div key={p.id} className="flex justify-between items-center text-xs bg-white/[0.03] p-2 rounded-lg border border-white/5 hover:border-white/10 transition-colors">
+                              <div className="flex items-center gap-2 min-w-0">
+                                <span className={`font-mono text-xs ${p.isPaid ? 'line-through text-gray-500' : 'text-gray-200 font-bold'}`}>
+                                  {formattedDate} — R$ {(p.amount || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                </span>
+                              </div>
+                              <div className="flex items-center gap-1.5 shrink-0">
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    onUpdateVehicle({
+                                      ...vehicle,
+                                      promisePayments: (vehicle.promisePayments || []).map(prev => prev.id === p.id ? { ...prev, isPaid: !prev.isPaid } : prev)
+                                    });
+                                  }}
+                                  className={`text-[9px] px-2 py-0.5 rounded font-bold cursor-pointer transition-colors ${
+                                    p.isPaid
+                                      ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 hover:bg-emerald-500/30'
+                                      : 'bg-amber-500/20 text-amber-300 border border-amber-500/30 hover:bg-amber-500/30'
+                                  }`}
+                                  title={p.isPaid ? 'Clique para desmarcar como pago' : 'Clique para marcar como pago'}
+                                >
+                                  {p.isPaid ? '✓ Pago' : 'Pendente'}
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    onUpdateVehicle({
+                                      ...vehicle,
+                                      promisePayments: (vehicle.promisePayments || []).filter(prev => prev.id !== p.id)
+                                    });
+                                  }}
+                                  className="p-1 text-gray-500 hover:text-rose-400 transition-colors cursor-pointer rounded"
+                                  title="Excluir promessa"
+                                >
+                                  <Trash2 className="w-3 h-3" />
+                                </button>
+                              </div>
+                            </div>
+                          );
+                        })}
                         {showAddPromise && (
                           <div className="p-3 bg-neutral-900 rounded-lg border border-blue-500/30 space-y-2 mb-2 animate-in slide-in-from-top-1 duration-150">
                             <div className="grid grid-cols-2 gap-2">
                               <div>
-                                <label className="text-[9px] text-gray-400 block mb-0.5">Data</label>
+                                <label className="text-[9px] text-gray-400 block mb-0.5">Data Prevista</label>
                                 <input
                                   type="date"
                                   value={newPromiseDate}
@@ -3305,35 +3343,56 @@ _Enviado via sistema de gestão de frota._`;
                                 />
                               </div>
                               <div>
-                                <label className="text-[9px] text-gray-400 block mb-0.5">Valor (R$)</label>
+                                <label className="text-[9px] text-gray-400 block mb-0.5">Valor da Promessa (R$)</label>
                                 <CurrencyInput
                                   value={newPromiseAmount}
                                   onChange={setNewPromiseAmount}
                                   placeholder="0,00"
                                   className="w-full text-xs bg-black border border-white/10 rounded-md px-2 py-1 text-white focus:outline-hidden font-mono"
                                   autoFocus
+                                  onKeyDown={(e) => {
+                                    if (e.key === 'Enter' && newPromiseAmount > 0) {
+                                      e.preventDefault();
+                                      const dateToUse = newPromiseDate || new Date().toISOString().split('T')[0];
+                                      onUpdateVehicle({
+                                        ...vehicle,
+                                        promisePayments: [...(vehicle.promisePayments || []), { 
+                                          id: `prom-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`, 
+                                          date: dateToUse, 
+                                          amount: Number(newPromiseAmount), 
+                                          isPaid: false 
+                                        }]
+                                      });
+                                      setShowAddPromise(false);
+                                      setNewPromiseAmount(0);
+                                    }
+                                  }}
                                 />
                               </div>
                             </div>
                             <div className="flex justify-end gap-1.5 text-[10px] pt-1">
                               <button
+                                type="button"
                                 onClick={() => {
                                   setShowAddPromise(false);
                                   setNewPromiseAmount(0);
                                 }}
-                                className="px-2 py-1 text-gray-400 hover:text-white"
+                                className="px-2.5 py-1 text-gray-400 hover:text-white cursor-pointer"
                               >
                                 Cancelar
                               </button>
                               <button
+                                type="button"
+                                disabled={!newPromiseAmount || newPromiseAmount <= 0}
                                 onClick={() => {
                                   if (newPromiseAmount > 0) {
+                                    const dateToUse = newPromiseDate || new Date().toISOString().split('T')[0];
                                     onUpdateVehicle({
                                       ...vehicle,
                                       promisePayments: [...(vehicle.promisePayments || []), { 
-                                        id: Date.now().toString(), 
-                                        date: newPromiseDate, 
-                                        amount: newPromiseAmount, 
+                                        id: `prom-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`, 
+                                        date: dateToUse, 
+                                        amount: Number(newPromiseAmount), 
                                         isPaid: false 
                                       }]
                                     });
@@ -3341,7 +3400,11 @@ _Enviado via sistema de gestão de frota._`;
                                     setNewPromiseAmount(0);
                                   }
                                 }}
-                                className="px-3 py-1 bg-blue-600 hover:bg-blue-500 text-white rounded font-bold"
+                                className={`px-3 py-1 rounded font-bold transition-all ${
+                                  newPromiseAmount > 0
+                                    ? 'bg-blue-600 hover:bg-blue-500 text-white cursor-pointer'
+                                    : 'bg-white/10 text-gray-500 cursor-not-allowed'
+                                }`}
                               >
                                 Adicionar
                               </button>
@@ -3349,10 +3412,17 @@ _Enviado via sistema de gestão de frota._`;
                           </div>
                         )}
                         <button
-                          onClick={() => setShowAddPromise(!showAddPromise)}
-                          className="w-full text-xs text-blue-400 border border-blue-400/30 rounded py-1 hover:bg-blue-400/10"
+                          type="button"
+                          onClick={() => {
+                            if (!showAddPromise) {
+                              setNewPromiseDate(new Date().toISOString().split('T')[0]);
+                              setNewPromiseAmount(0);
+                            }
+                            setShowAddPromise(!showAddPromise);
+                          }}
+                          className="w-full text-xs text-blue-400 border border-blue-400/30 rounded py-1 hover:bg-blue-400/10 cursor-pointer font-medium transition-colors"
                         >
-                          {showAddPromise ? 'Fechar' : '+ Adicionar Promessa'}
+                          {showAddPromise ? 'Fechar Formulário' : '+ Adicionar Promessa'}
                         </button>
                       </div>
                     </div>

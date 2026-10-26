@@ -467,10 +467,10 @@ export function SettingsModal({
                   <div className="flex items-start justify-between gap-3">
                     <div className="space-y-1">
                       <p className="text-xs font-bold text-white flex items-center gap-2">
-                        <span>Aviso de Vistoria de Sexta-Feira</span>
+                        <span>Lembretes Programados de Vistoria</span>
                       </p>
                       <p className="text-[11px] text-gray-400 leading-relaxed">
-                        Banner exibido todas as sextas-feiras no topo do aplicativo e notificação agendada às 09:00 lembrando do envio de vistorias aos motoristas.
+                        Notificações push enviadas na <strong>Quarta</strong> (10h e 16h), <strong>Quinta</strong> (11h e 20h) e <strong>Sexta-feira</strong> (10h, 13h e 17h) lembrando de solicitar fotos e vistorias aos motoristas.
                       </p>
                     </div>
 
@@ -499,10 +499,10 @@ export function SettingsModal({
                   </div>
 
                   <div className="pt-2 border-t border-white/5 flex items-center justify-between">
-                    <span className="text-[11px] text-gray-400">Status do Lembrete:</span>
+                    <span className="text-[11px] text-gray-400">Status dos Lembretes:</span>
                     {!disableFridayReminder ? (
                       <span className="text-[11px] font-bold text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 px-2.5 py-0.5 rounded-full flex items-center gap-1">
-                        <Bell className="w-3 h-3 text-emerald-400" /> Ativado (Aviso exibe na sexta)
+                        <Bell className="w-3 h-3 text-emerald-400" /> Ativado (Qua 10h/16h, Qui 11h/20h, Sex 10h/13h/17h)
                       </span>
                     ) : (
                       <span className="text-[11px] font-bold text-rose-400 bg-rose-500/10 border border-rose-500/20 px-2.5 py-0.5 rounded-full flex items-center gap-1">

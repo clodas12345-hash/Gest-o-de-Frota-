@@ -91,11 +91,11 @@ export const NOTIFICATION_OPTIONS: NotificationOptionDefinition[] = [
   {
     key: 'vistoria_friday',
     number: 6,
-    title: 'Lembrete de Vistoria Semanal (Sexta-Feira às 09h)',
-    description: 'Agendamento automático toda sexta-feira pela manhã para cobrar fotos e vistorias dos motoristas.',
+    title: 'Lembretes de Vistoria (Quarta, Quinta e Sexta)',
+    description: 'Notificações push programadas exclusivamente na Quarta (10h e 16h), Quinta (11h e 20h) e Sexta (10h, 13h e 17h) para solicitar vistorias aos motoristas.',
     category: 'Vistorias',
-    sampleTitle: '📋 Lembrete de Vistoria Semanal',
-    sampleBody: 'Hoje é sexta-feira! Lembre-se de solicitar as vistorias semanais aos motoristas da sua frota.'
+    sampleTitle: '📋 Lembrete de Vistoria',
+    sampleBody: 'Lembrete de Vistoria: Solicite as fotos e vistorias aos motoristas da frota.'
   },
   {
     key: 'vistoria_scheduled_date',
@@ -482,29 +482,134 @@ export async function sendAppNotification(
   });
 }
 
-export function getNextFriday9AM(): Date {
-  const now = new Date();
-  const result = new Date();
-  result.setHours(9, 0, 0, 0);
+export interface VistoriaScheduleSlot {
+  id: number;
+  day: number; // 0 = Dom, 1 = Seg, 2 = Ter, 3 = Qua, 4 = Qui, 5 = Sex, 6 = Sáb
+  dayName: string;
+  hour: number;
+  minute: number;
+  title: string;
+  body: string;
+}
 
-  const dayOfWeek = now.getDay(); // 0 = Sun, 5 = Fri
-  let daysUntilFriday = (5 - dayOfWeek + 7) % 7;
+export const VISTORIA_REMINDER_SLOTS: VistoriaScheduleSlot[] = [
+  // Quarta-feira às 10h e 16h
+  {
+    id: 888001,
+    day: 3,
+    dayName: 'Quarta-feira',
+    hour: 10,
+    minute: 0,
+    title: '📋 Lembrete de Vistoria (Quarta - 10h)',
+    body: 'Lembrete das 10h: Inicie a solicitação das vistorias e fotos aos motoristas da frota.'
+  },
+  {
+    id: 888002,
+    day: 3,
+    dayName: 'Quarta-feira',
+    hour: 16,
+    minute: 0,
+    title: '📋 Lembrete de Vistoria (Quarta - 16h)',
+    body: 'Lembrete das 16h: Verifique o envio das vistorias e acompanhe os motoristas pendentes.'
+  },
+  // Quinta-feira às 11h e 20h
+  {
+    id: 888003,
+    day: 4,
+    dayName: 'Quinta-feira',
+    hour: 11,
+    minute: 0,
+    title: '📋 Lembrete de Vistoria (Quinta - 11h)',
+    body: 'Lembrete das 11h: Acompanhe as fotos e vistorias da semana da sua frota.'
+  },
+  {
+    id: 888004,
+    day: 4,
+    dayName: 'Quinta-feira',
+    hour: 20,
+    minute: 0,
+    title: '📋 Lembrete de Vistoria (Quinta - 20h)',
+    body: 'Lembrete das 20h: Notifique os motoristas que ainda não enviaram a vistoria desta semana.'
+  },
+  // Sexta-feira às 10h, 13h e 17h
+  {
+    id: 888005,
+    day: 5,
+    dayName: 'Sexta-feira',
+    hour: 10,
+    minute: 0,
+    title: '📋 Lembrete de Vistoria (Sexta - 10h)',
+    body: 'Lembrete das 10h: Dia principal de vistoria! Solicite fotos do painel e itens.'
+  },
+  {
+    id: 888006,
+    day: 5,
+    dayName: 'Sexta-feira',
+    hour: 13,
+    minute: 0,
+    title: '📋 Lembrete de Vistoria (Sexta - 13h)',
+    body: 'Lembrete das 13h: Cobrança de vistorias pendentes da sexta-feira.'
+  },
+  {
+    id: 888007,
+    day: 5,
+    dayName: 'Sexta-feira',
+    hour: 17,
+    minute: 0,
+    title: '📋 Lembrete de Vistoria (Sexta - 17h)',
+    body: 'Lembrete das 17h: Prazo final para envio das vistorias semanais dos motoristas!'
+  }
+];
 
-  if (daysUntilFriday === 0 && now.getTime() >= result.getTime()) {
-    daysUntilFriday = 7;
+export function getNextSlotDate(slot: { day: number; hour: number; minute: number }, fromDate: Date = new Date()): Date {
+  const result = new Date(fromDate);
+  result.setHours(slot.hour, slot.minute, 0, 0);
+
+  const currentDay = fromDate.getDay();
+  let daysUntil = (slot.day - currentDay + 7) % 7;
+
+  // Se for hoje mas o horário já passou, agenda para a próxima semana (+7 dias)
+  if (daysUntil === 0 && fromDate.getTime() >= result.getTime()) {
+    daysUntil = 7;
   }
 
-  result.setDate(now.getDate() + daysUntilFriday);
+  result.setDate(fromDate.getDate() + daysUntil);
   return result;
 }
 
-export async function scheduleFridayInspectionNotification() {
+export function getNextFriday9AM(): Date {
+  return getNextSlotDate({ day: 5, hour: 10, minute: 0 });
+}
+
+export async function scheduleVistoriaReminders() {
+  if (Capacitor.isNativePlatform()) {
+    try {
+      await LocalNotifications.cancel({
+        notifications: VISTORIA_REMINDER_SLOTS.map((s) => ({ id: s.id }))
+      });
+    } catch (e) {
+      console.warn('Erro ao cancelar notificações de vistoria antigas:', e);
+    }
+  }
+
   if (!isNotificationEventEnabled('vistoria_friday')) return;
-  const fridayDate = getNextFriday9AM();
-  await scheduleAppNotification('📋 Lembrete de Vistoria Semanal', {
-    id: 888001,
-    body: 'Hoje é sexta-feira! Lembre-se de solicitar as vistorias aos motoristas da sua frota.',
-    at: fridayDate,
-    eventKey: 'vistoria_friday'
-  });
+
+  for (const slot of VISTORIA_REMINDER_SLOTS) {
+    const nextDate = getNextSlotDate(slot);
+    await scheduleAppNotification(slot.title, {
+      id: slot.id,
+      body: slot.body,
+      at: nextDate,
+      eventKey: 'vistoria_friday',
+      extra: {
+        slotId: slot.id,
+        repeats: true,
+        every: 'week'
+      }
+    });
+  }
+}
+
+export async function scheduleFridayInspectionNotification() {
+  await scheduleVistoriaReminders();
 }
