@@ -111,23 +111,8 @@ export function DashboardStats({
 
   // 3. Despesas Adicionais/Variáveis do Mês (maintenance logs, expense logs)
   const currentMonthMaintenance = maintenanceLogs
-    .reduce((sum, log) => {
-      if (log.parcelasTotais && log.parcelasTotais > 1) {
-        // Compute if it's active in the current month
-        const [logYear, logMonth] = log.date.split('-').map(Number);
-        const monthsDiff = (currentYear - logYear) * 12 + (currentMonth - (logMonth - 1));
-        const parcelaBase = log.parcelasPagas || 1;
-        const currentParcela = parcelaBase + monthsDiff;
-        
-        if (currentParcela >= 1 && currentParcela <= log.parcelasTotais) {
-          return sum + (log.cost / log.parcelasTotais);
-        }
-        return sum;
-      }
-      
-      // Regular single payment maintenance
-      return isCurrentMonth(log.date) ? sum + log.cost : sum;
-    }, 0);
+    .filter((log) => isCurrentMonth(log.date))
+    .reduce((sum, log) => sum + log.cost, 0);
 
   const currentMonthExpenses = expenseLogs
     .filter((log) => isCurrentMonth(log.date))

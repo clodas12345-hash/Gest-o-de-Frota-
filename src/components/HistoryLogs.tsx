@@ -56,6 +56,20 @@ export function HistoryLogs({
   const [filterMaintCategory, setFilterMaintCategory] = useState<string>('all');
   const [filterMaintScope, setFilterMaintScope] = useState<string>('all');
   const [searchQuery, setSearchQuery] = useState<string>('');
+  const [expandedMonths, setExpandedMonths] = useState<string[]>([]);
+  const [expandedVehicles, setExpandedVehicles] = useState<string[]>([]);
+
+  const toggleMonth = (monthKey: string) => {
+    setExpandedMonths(prev => 
+      prev.includes(monthKey) ? prev.filter(k => k !== monthKey) : [...prev, monthKey]
+    );
+  };
+
+  const toggleVehicle = (vehicleId: string) => {
+    setExpandedVehicles(prev => 
+      prev.includes(vehicleId) ? prev.filter(v => v !== vehicleId) : [...prev, vehicleId]
+    );
+  };
 
   React.useEffect(() => {
     const handleOpenHistory = () => {
@@ -1168,23 +1182,34 @@ export function HistoryLogs({
                     return (
                       <div key={monthKey} className="space-y-2.5">
                         {/* Month Header Banner */}
-                        <div className="flex items-center justify-between bg-blue-500/10 border border-blue-500/25 rounded-xl px-3.5 py-2.5 sticky top-2 z-10 backdrop-blur-md shadow-sm">
-                          <div className="flex items-center gap-2 min-w-0">
+                        <button
+                          onClick={() => toggleMonth(monthKey)}
+                          className="w-full flex items-center justify-between bg-blue-500/10 hover:bg-blue-500/20 border border-blue-500/25 rounded-xl px-3.5 py-2.5 sticky top-2 z-10 backdrop-blur-md shadow-sm transition-colors cursor-pointer text-left"
+                        >
+                          <div className="flex items-center gap-2 min-w-0 flex-1">
                             <Calendar className="w-3.5 h-3.5 text-blue-400 shrink-0" />
-                            <span className="text-xs font-bold text-white uppercase tracking-wider truncate">
+                            <span className="text-xs font-bold text-white uppercase tracking-wider shrink-0">
                               {formatMonthYear(monthKey)}
                             </span>
-                            <span className="text-[10px] font-semibold text-blue-300 bg-blue-500/20 px-1.5 py-0.5 rounded shrink-0">
+                            <span className="text-[10px] font-semibold text-blue-300 bg-blue-500/20 px-1.5 py-0.5 rounded truncate min-w-0">
                               {monthItems.length} {monthItems.length === 1 ? 'item' : 'itens'} ({maintCount} man., {expenseCount} desp.)
                             </span>
                           </div>
-                          <span className="text-xs font-bold font-mono text-emerald-400 shrink-0 ml-2">
-                            {formatBRL(monthTotal)}
-                          </span>
-                        </div>
+                          <div className="flex items-center gap-3 shrink-0 ml-2">
+                            <span className="text-xs font-bold font-mono text-emerald-400">
+                              {formatBRL(monthTotal)}
+                            </span>
+                            {expandedMonths.includes(monthKey) ? (
+                              <ChevronUp className="w-4 h-4 text-blue-400" />
+                            ) : (
+                              <ChevronDown className="w-4 h-4 text-blue-400" />
+                            )}
+                          </div>
+                        </button>
 
                         {/* Cards for this month */}
-                        <div className="space-y-2.5">
+                        {expandedMonths.includes(monthKey) && (
+                          <div className="space-y-2.5">
                           {monthItems.map((item, index) => {
                             if (item.kind === 'maintenance') {
                               const log = item.data;
@@ -1343,7 +1368,8 @@ export function HistoryLogs({
                               );
                             }
                           })}
-                        </div>
+                          </div>
+                        )}
                       </div>
                     );
                   })}
@@ -1373,26 +1399,36 @@ export function HistoryLogs({
                           <React.Fragment key={monthKey}>
                             <tr className="bg-blue-950/30 border-y border-blue-500/25">
                               <td colSpan={7} className="py-2.5 px-3">
-                                <div className="flex items-center justify-between">
+                                <button
+                                  onClick={() => toggleMonth(monthKey)}
+                                  className="w-full flex items-center justify-between transition-colors cursor-pointer text-left group"
+                                >
                                   <div className="flex items-center gap-2">
-                                    <Calendar className="w-3.5 h-3.5 text-blue-400" />
-                                    <span className="font-bold text-xs text-white uppercase tracking-wider">
+                                    <Calendar className="w-3.5 h-3.5 text-blue-400 group-hover:text-blue-300" />
+                                    <span className="font-bold text-xs text-white uppercase tracking-wider group-hover:text-blue-100">
                                       {formatMonthYear(monthKey)}
                                     </span>
-                                    <span className="text-[10px] font-semibold text-blue-300 bg-blue-500/20 px-2 py-0.5 rounded-full">
+                                    <span className="text-[10px] font-semibold text-blue-300 bg-blue-500/20 px-2 py-0.5 rounded-full group-hover:bg-blue-500/30">
                                       {monthItems.length} lançamentos ({maintCount} manutenções, {expenseCount} despesas)
                                     </span>
                                   </div>
-                                  <div className="flex items-center gap-1.5 text-right">
-                                    <span className="text-[11px] text-gray-400">Total no mês:</span>
-                                    <span className="font-bold font-mono text-xs text-emerald-400">
-                                      {formatBRL(monthTotal)}
-                                    </span>
+                                  <div className="flex items-center gap-4 text-right">
+                                    <div className="flex items-center gap-1.5">
+                                      <span className="text-[11px] text-gray-400">Total no mês:</span>
+                                      <span className="font-bold font-mono text-xs text-emerald-400">
+                                        {formatBRL(monthTotal)}
+                                      </span>
+                                    </div>
+                                    {expandedMonths.includes(monthKey) ? (
+                                      <ChevronUp className="w-4 h-4 text-blue-400" />
+                                    ) : (
+                                      <ChevronDown className="w-4 h-4 text-blue-400" />
+                                    )}
                                   </div>
-                                </div>
+                                </button>
                               </td>
                             </tr>
-                            {monthItems.map((item, index) => {
+                            {expandedMonths.includes(monthKey) && monthItems.map((item, index) => {
                               if (item.kind === 'maintenance') {
                                 const log = item.data;
                                 const isEditing = editingMaintId === log.id;
@@ -1591,24 +1627,35 @@ export function HistoryLogs({
                     return (
                       <div key={vehicleId} className="space-y-2.5">
                         {/* Vehicle Header Banner */}
-                        <div className="flex items-center justify-between bg-blue-500/10 border border-blue-500/25 rounded-xl px-3.5 py-2.5">
-                          <div className="flex items-center gap-2 min-w-0">
+                        <button
+                          onClick={() => toggleVehicle(vehicleId)}
+                          className="w-full flex items-center justify-between bg-blue-500/10 hover:bg-blue-500/20 border border-blue-500/25 rounded-xl px-3.5 py-2.5 transition-colors cursor-pointer text-left"
+                        >
+                          <div className="flex items-center gap-2 min-w-0 flex-1">
                             <Car className="w-4 h-4 text-blue-400 shrink-0" />
-                            <span className="text-xs font-bold text-white uppercase tracking-wider truncate">
+                            <span className="text-xs font-bold text-white uppercase tracking-wider shrink-0">
                               {getVehicleName(vehicleId)}
                             </span>
-                            <span className="text-[10px] font-semibold text-blue-300 bg-blue-500/20 px-1.5 py-0.5 rounded shrink-0">
+                            <span className="text-[10px] font-semibold text-blue-300 bg-blue-500/20 px-1.5 py-0.5 rounded truncate min-w-0">
                               {vehicleItems.length} {vehicleItems.length === 1 ? 'item' : 'itens'}
                             </span>
                           </div>
-                          <span className="text-xs font-bold font-mono text-emerald-400 shrink-0 ml-2">
-                            {formatBRL(vehicleTotal)}
-                          </span>
-                        </div>
+                          <div className="flex items-center gap-3 shrink-0 ml-2">
+                            <span className="text-xs font-bold font-mono text-emerald-400">
+                              {formatBRL(vehicleTotal)}
+                            </span>
+                            {expandedVehicles.includes(vehicleId) ? (
+                              <ChevronUp className="w-4 h-4 text-blue-400" />
+                            ) : (
+                              <ChevronDown className="w-4 h-4 text-blue-400" />
+                            )}
+                          </div>
+                        </button>
 
                         {/* Cards for this vehicle */}
-                        <div className="space-y-2.5">
-                          {vehicleItems.map((log, index) => {
+                        {expandedVehicles.includes(vehicleId) && (
+                          <div className="space-y-2.5">
+                            {vehicleItems.map((log, index) => {
                     const isEditing = editingMaintId === log.id;
                     if (isEditing) {
                       return (
@@ -1689,9 +1736,10 @@ export function HistoryLogs({
                     );
                           })}
                         </div>
-                      </div>
-                    );
-                  })}
+                      )}
+                    </div>
+                  );
+                })}
                 </div>
 
                 {/* Desktop View: Table */}
@@ -1715,26 +1763,36 @@ export function HistoryLogs({
                           <React.Fragment key={vehicleId}>
                             <tr className="bg-blue-950/35 border-y border-blue-500/25">
                               <td colSpan={7} className="py-3 px-3">
-                                <div className="flex items-center justify-between">
+                                <button
+                                  onClick={() => toggleVehicle(vehicleId)}
+                                  className="w-full flex items-center justify-between transition-colors cursor-pointer text-left group"
+                                >
                                   <div className="flex items-center gap-2.5">
-                                    <Car className="w-4 h-4 text-blue-400" />
-                                    <span className="font-bold text-xs text-white uppercase tracking-wider">
+                                    <Car className="w-4 h-4 text-blue-400 group-hover:text-blue-300" />
+                                    <span className="font-bold text-xs text-white uppercase tracking-wider group-hover:text-blue-100">
                                       {getVehicleName(vehicleId)}
                                     </span>
-                                    <span className="text-[10px] font-semibold text-blue-300 bg-blue-500/20 px-2.5 py-0.5 rounded-full">
+                                    <span className="text-[10px] font-semibold text-blue-300 bg-blue-500/20 px-2.5 py-0.5 rounded-full group-hover:bg-blue-500/30">
                                       {vehicleItems.length} {vehicleItems.length === 1 ? 'manutenção' : 'manutenções'}
                                     </span>
                                   </div>
-                                  <div className="flex items-center gap-1.5 text-right">
-                                    <span className="text-[11px] text-gray-400">Total do veículo:</span>
-                                    <span className="font-bold font-mono text-xs text-emerald-400">
-                                      {formatBRL(vehicleTotal)}
-                                    </span>
+                                  <div className="flex items-center gap-4 text-right">
+                                    <div className="flex items-center gap-1.5">
+                                      <span className="text-[11px] text-gray-400">Total do veículo:</span>
+                                      <span className="font-bold font-mono text-xs text-emerald-400">
+                                        {formatBRL(vehicleTotal)}
+                                      </span>
+                                    </div>
+                                    {expandedVehicles.includes(vehicleId) ? (
+                                      <ChevronUp className="w-4 h-4 text-blue-400" />
+                                    ) : (
+                                      <ChevronDown className="w-4 h-4 text-blue-400" />
+                                    )}
                                   </div>
-                                </div>
+                                </button>
                               </td>
                             </tr>
-                            {vehicleItems.map((log, index) => {
+                            {expandedVehicles.includes(vehicleId) && vehicleItems.map((log, index) => {
                               const isEditing = editingMaintId === log.id;
                         if (isEditing) {
                           return (
@@ -2044,24 +2102,35 @@ export function HistoryLogs({
                     return (
                       <div key={vehicleId} className="space-y-2.5">
                         {/* Vehicle Header Banner */}
-                        <div className="flex items-center justify-between bg-blue-500/10 border border-blue-500/25 rounded-xl px-3.5 py-2.5">
-                          <div className="flex items-center gap-2 min-w-0">
+                        <button
+                          onClick={() => toggleVehicle(vehicleId)}
+                          className="w-full flex items-center justify-between bg-blue-500/10 hover:bg-blue-500/20 border border-blue-500/25 rounded-xl px-3.5 py-2.5 transition-colors cursor-pointer text-left"
+                        >
+                          <div className="flex items-center gap-2 min-w-0 flex-1">
                             <Car className="w-4 h-4 text-blue-400 shrink-0" />
-                            <span className="text-xs font-bold text-white uppercase tracking-wider truncate">
+                            <span className="text-xs font-bold text-white uppercase tracking-wider shrink-0">
                               {getVehicleName(vehicleId)}
                             </span>
-                            <span className="text-[10px] font-semibold text-blue-300 bg-blue-500/20 px-1.5 py-0.5 rounded shrink-0">
+                            <span className="text-[10px] font-semibold text-blue-300 bg-blue-500/20 px-1.5 py-0.5 rounded truncate min-w-0">
                               {vehicleItems.length} {vehicleItems.length === 1 ? 'item' : 'itens'}
                             </span>
                           </div>
-                          <span className="text-xs font-bold font-mono text-emerald-400 shrink-0 ml-2">
-                            {formatBRL(vehicleTotal)}
-                          </span>
-                        </div>
+                          <div className="flex items-center gap-3 shrink-0 ml-2">
+                            <span className="text-xs font-bold font-mono text-emerald-400">
+                              {formatBRL(vehicleTotal)}
+                            </span>
+                            {expandedVehicles.includes(vehicleId) ? (
+                              <ChevronUp className="w-4 h-4 text-blue-400" />
+                            ) : (
+                              <ChevronDown className="w-4 h-4 text-blue-400" />
+                            )}
+                          </div>
+                        </button>
 
                         {/* Cards for this vehicle */}
-                        <div className="space-y-2.5">
-                          {vehicleItems.map((log, index) => {
+                        {expandedVehicles.includes(vehicleId) && (
+                          <div className="space-y-2.5">
+                            {vehicleItems.map((log, index) => {
                     const isEditing = editingExpenseId === log.id;
                     if (isEditing) {
                       return (
@@ -2124,8 +2193,9 @@ export function HistoryLogs({
                     );
                           })}
                         </div>
-                      </div>
-                    );
+                      )}
+                    </div>
+                  );
                   })}
                 </div>
 
@@ -2149,26 +2219,36 @@ export function HistoryLogs({
                       <React.Fragment key={monthKey}>
                         <tr className="bg-purple-950/30 border-y border-purple-500/25">
                           <td colSpan={6} className="py-2.5 px-3">
-                            <div className="flex items-center justify-between">
+                            <button
+                              onClick={() => toggleMonth(monthKey)}
+                              className="w-full flex items-center justify-between transition-colors cursor-pointer text-left group"
+                            >
                               <div className="flex items-center gap-2">
-                                <Calendar className="w-3.5 h-3.5 text-purple-400" />
-                                <span className="font-bold text-xs text-white uppercase tracking-wider">
+                                <Calendar className="w-3.5 h-3.5 text-purple-400 group-hover:text-purple-300" />
+                                <span className="font-bold text-xs text-white uppercase tracking-wider group-hover:text-purple-100">
                                   {formatMonthYear(monthKey)}
                                 </span>
-                                <span className="text-[10px] font-semibold text-purple-300 bg-purple-500/20 px-2 py-0.5 rounded-full">
+                                <span className="text-[10px] font-semibold text-purple-300 bg-purple-500/20 px-2 py-0.5 rounded-full group-hover:bg-purple-500/30">
                                   {monthItems.length} {monthItems.length === 1 ? 'lançamento' : 'lançamentos'}
                                 </span>
                               </div>
-                              <div className="flex items-center gap-1.5 text-right">
-                                <span className="text-[11px] text-gray-400">Total no mês:</span>
-                                <span className="font-bold font-mono text-xs text-emerald-400">
-                                  {formatBRL(monthTotal)}
-                                </span>
+                              <div className="flex items-center gap-4 text-right">
+                                <div className="flex items-center gap-1.5">
+                                  <span className="text-[11px] text-gray-400">Total no mês:</span>
+                                  <span className="font-bold font-mono text-xs text-emerald-400">
+                                    {formatBRL(monthTotal)}
+                                  </span>
+                                </div>
+                                {expandedMonths.includes(monthKey) ? (
+                                  <ChevronUp className="w-4 h-4 text-purple-400" />
+                                ) : (
+                                  <ChevronDown className="w-4 h-4 text-purple-400" />
+                                )}
                               </div>
-                            </div>
+                            </button>
                           </td>
                         </tr>
-                        {monthItems.map((log, index) => {
+                        {expandedMonths.includes(monthKey) && monthItems.map((log, index) => {
                           const isEditing = editingExpenseId === log.id;
                           if (isEditing) {
                             return (
@@ -2304,18 +2384,29 @@ export function HistoryLogs({
                 <div className="md:hidden space-y-4">
                   {groupedVistorias.map(([monthKey, monthItems]) => (
                     <div key={monthKey} className="space-y-2.5">
-                      <div className="flex items-center justify-between bg-indigo-500/10 border border-indigo-500/25 rounded-xl px-3.5 py-2">
+                      <button
+                        onClick={() => toggleMonth(monthKey)}
+                        className="w-full flex items-center justify-between bg-indigo-500/10 hover:bg-indigo-500/20 border border-indigo-500/25 rounded-xl px-3.5 py-2 transition-colors cursor-pointer text-left"
+                      >
                         <div className="flex items-center gap-2 min-w-0">
                           <Calendar className="w-3.5 h-3.5 text-indigo-400 shrink-0" />
-                          <span className="text-xs font-bold text-white uppercase tracking-wider truncate">
+                          <span className="text-xs font-bold text-white uppercase tracking-wider">
                             {formatMonthYear(monthKey)}
                           </span>
                         </div>
-                        <span className="text-[10px] font-semibold text-indigo-300 bg-indigo-500/20 px-1.5 py-0.5 rounded">
-                          {monthItems.length} {monthItems.length === 1 ? 'vistoria' : 'vistorias'}
-                        </span>
-                      </div>
-                      <div className="space-y-2.5">
+                        <div className="flex items-center gap-3">
+                          <span className="text-[10px] font-semibold text-indigo-300 bg-indigo-500/20 px-1.5 py-0.5 rounded">
+                            {monthItems.length} {monthItems.length === 1 ? 'vistoria' : 'vistorias'}
+                          </span>
+                          {expandedMonths.includes(monthKey) ? (
+                            <ChevronUp className="w-4 h-4 text-indigo-400" />
+                          ) : (
+                            <ChevronDown className="w-4 h-4 text-indigo-400" />
+                          )}
+                        </div>
+                      </button>
+                      {expandedMonths.includes(monthKey) && (
+                        <div className="space-y-2.5">
                         {monthItems.map((log, index) => {
                     const totalItems = Object.keys(log.checklist || {}).length;
                     const approvedCount = Object.values(log.checklist || {}).filter(Boolean).length;
@@ -2374,10 +2465,11 @@ export function HistoryLogs({
                         </div>
                       </div>
                     );
-                        })}
-                      </div>
-                    </div>
-                  ))}
+                  })}
+                </div>
+              )}
+            </div>
+          ))}
                 </div>
 
                 {/* Desktop View: Table */}
@@ -2398,20 +2490,28 @@ export function HistoryLogs({
                     <React.Fragment key={monthKey}>
                       <tr className="bg-indigo-950/30 border-y border-indigo-500/25">
                         <td colSpan={6} className="py-2.5 px-3">
-                          <div className="flex items-center justify-between">
+                          <button
+                            onClick={() => toggleMonth(monthKey)}
+                            className="w-full flex items-center justify-between transition-colors cursor-pointer text-left group"
+                          >
                             <div className="flex items-center gap-2">
-                              <Calendar className="w-3.5 h-3.5 text-indigo-400" />
-                              <span className="font-bold text-xs text-white uppercase tracking-wider">
+                              <Calendar className="w-3.5 h-3.5 text-indigo-400 group-hover:text-indigo-300" />
+                              <span className="font-bold text-xs text-white uppercase tracking-wider group-hover:text-indigo-100">
                                 {formatMonthYear(monthKey)}
                               </span>
+                              <span className="text-[10px] font-semibold text-indigo-300 bg-indigo-500/20 px-2 py-0.5 rounded-full group-hover:bg-indigo-500/30">
+                                {monthItems.length} {monthItems.length === 1 ? 'vistoria' : 'vistorias'}
+                              </span>
                             </div>
-                            <span className="text-[10px] font-semibold text-indigo-300 bg-indigo-500/20 px-2 py-0.5 rounded-full">
-                              {monthItems.length} {monthItems.length === 1 ? 'vistoria' : 'vistorias'}
-                            </span>
-                          </div>
+                            {expandedMonths.includes(monthKey) ? (
+                              <ChevronUp className="w-4 h-4 text-indigo-400" />
+                            ) : (
+                              <ChevronDown className="w-4 h-4 text-indigo-400" />
+                            )}
+                          </button>
                         </td>
                       </tr>
-                      {monthItems.map((log, index) => {
+                      {expandedMonths.includes(monthKey) && monthItems.map((log, index) => {
                         const isEditing = editingVistoriaId === log.id;
                     const totalItems = Object.keys(log.checklist || {}).length;
                     const approvedCount = Object.values(log.checklist || {}).filter(Boolean).length;

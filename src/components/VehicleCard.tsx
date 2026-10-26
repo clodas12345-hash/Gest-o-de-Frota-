@@ -309,8 +309,8 @@ const DEFAULT_SHARE_TEMPLATE = `📋 *LAUDO DE VISTORIA*
 ⚠️ *Observações:* {observacoes}
 
 ---
-📸 *RETORNO COM FOTOS:*
-Para nos enviar fotos das pendências ou de retorno, responda diretamente a esta mensagem anexando as fotos no WhatsApp ou utilize o link abaixo para enviá-las de forma estruturada:
+📸 *RELATÓRIO COMPLETO:*
+Utilize o link abaixo para visualizar o laudo completo e as fotos em alta resolução:
 🔗 {link_retorno}`;
 
 const DEFAULT_CHECKLIST_ITEMS = [
@@ -359,34 +359,24 @@ export const getChecklistForVistoriaType = (type: string, customConfig?: string[
   }
 
   if (isPeriodica) {
-    // Das vistorias periódicas tira step, chave de rodas e triângulo
+    // Das vistorias periódicas tira step, chave de rodas e triângulo por padrão
     base = base.filter(item => {
       const lower = item.toLowerCase();
       return !lower.includes('estepe') && !lower.includes('step') && !lower.includes('chave de roda') && !lower.includes('chaves de roda') && !lower.includes('triângulo') && !lower.includes('triangulo');
     });
-  } else {
-    // Na entrega e devolução incluir Estepe, Chaves de roda e Triângulo
-    const hasEstepe = base.some(i => i.toLowerCase().includes('estepe') || i.toLowerCase().includes('step'));
-    const hasChaves = base.some(i => i.toLowerCase().includes('chave de roda') || i.toLowerCase().includes('chaves de roda'));
-    const hasTriangulo = base.some(i => i.toLowerCase().includes('triângulo') || i.toLowerCase().includes('triangulo'));
-
-    const requiredItems: string[] = [];
-    if (!hasEstepe) requiredItems.push('Estepe');
-    if (!hasChaves) requiredItems.push('Chaves de roda');
-    if (!hasTriangulo) requiredItems.push('Triângulo');
-
-    if (requiredItems.length > 0) {
-      base = [...requiredItems, ...base];
-    }
   }
 
-  const hasCamera = base.some(item => item.toLowerCase().includes('câmera') || item.toLowerCase().includes('camera'));
-  const hasSd = base.some(item => item.toLowerCase().includes('cartão') || item.toLowerCase().includes('cartao') || item.toLowerCase().includes('memória') || item.toLowerCase().includes('memoria'));
-  const hasTracker = base.some(item => item.toLowerCase().includes('rastreador'));
+  // Do NOT force items here anymore to allow manager to have full control over selection.
+  // We only add these if they are completely missing from any config and it's NOT a periodic one.
+  if (!isPeriodica) {
+    const hasCamera = base.some(item => item.toLowerCase().includes('câmera') || item.toLowerCase().includes('camera'));
+    const hasSd = base.some(item => item.toLowerCase().includes('cartão') || item.toLowerCase().includes('cartao') || item.toLowerCase().includes('memória') || item.toLowerCase().includes('memoria'));
+    const hasTracker = base.some(item => item.toLowerCase().includes('rastreador'));
 
-  if (!hasCamera) base.push('Câmera do carro (Foto)');
-  if (!hasSd) base.push('Cartão de memória (Foto)');
-  if (!hasTracker) base.push('Rastreador está funcionando?');
+    if (!hasCamera) base.push('Câmera do carro (Foto)');
+    if (!hasSd) base.push('Cartão de memória (Foto)');
+    if (!hasTracker) base.push('Rastreador está funcionando?');
+  }
 
   return base;
 };
@@ -402,7 +392,7 @@ Por favor, realize a vistoria (*{tipo}*) do veículo *{veiculo}* (Placa: *{placa
 {itens_inspecao}
 
 📸 *RETORNO COM FOTOS:*
-Por favor, responda a esta mensagem enviando fotos dos itens inspecionados e do painel (odômetro), ou clique no link abaixo para preencher a vistoria e enviar as fotos:
+Por favor, clique no link abaixo para preencher a vistoria e enviar as fotos:
 🔗 {link_retorno}`;
 
 const DEFAULT_PAYMENT_TEMPLATES = {

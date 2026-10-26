@@ -107,9 +107,18 @@ export function DriverVistoriaForm({
     } else if (decoded.includes('periódica') || decoded.includes('periodica')) {
       setVistoriaType('periódica');
     }
-  }, [initialParams, initialType]);
+  }, [initialParams, initialType, vistoriaRequest]);
 
   const [checklist, setChecklist] = useState<Record<string, { isOk: boolean, photoUrl: string | null }>>(() => {
+    // Prioritize vistoriaRequest items first (Firestore)
+    if (vistoriaRequest && Array.isArray(vistoriaRequest.items) && vistoriaRequest.items.length > 0) {
+      const initial: Record<string, { isOk: boolean, photoUrl: string | null }> = {};
+      vistoriaRequest.items.forEach((item: string) => {
+        initial[item] = { isOk: true, photoUrl: null };
+      });
+      return initial;
+    }
+
     const itemsFromUrl = getParamFromUrlOrProps('items') || getParamFromUrlOrProps('item');
     if (itemsFromUrl && itemsFromUrl.trim().length > 0) {
       const parsedItems = itemsFromUrl.split(',').map(s => decodeURIComponent(s.trim())).filter(Boolean);
@@ -168,6 +177,14 @@ export function DriverVistoriaForm({
 
   useEffect(() => {
     const itemsFromUrl = getParamFromUrlOrProps('items') || getParamFromUrlOrProps('item');
+    if (vistoriaRequest && Array.isArray(vistoriaRequest.items) && vistoriaRequest.items.length > 0) {
+      const newChecklist: Record<string, { isOk: boolean, photoUrl: string | null }> = {};
+      vistoriaRequest.items.forEach((item: string) => {
+        newChecklist[item] = { isOk: true, photoUrl: null };
+      });
+      setChecklist(newChecklist);
+      return;
+    }
     if (itemsFromUrl && itemsFromUrl.trim().length > 0) {
       const parsedItems = itemsFromUrl.split(',').map(s => decodeURIComponent(s.trim())).filter(Boolean);
       if (parsedItems.length > 0) {
@@ -176,9 +193,53 @@ export function DriverVistoriaForm({
           newChecklist[item] = { isOk: true, photoUrl: null };
         });
         setChecklist(newChecklist);
+        return; // Prioritize explicit items from URL/Request
       }
     }
-  }, [initialParams]);
+
+    // Default checklist logic if no specific items requested
+    const rawType = getParamFromUrlOrProps('type') || (initialType ? String(initialType) : '');
+    const isPeriodica = rawType.toLowerCase().includes('periódica') || rawType.toLowerCase().includes('periodica');
+
+    let baseList: string[] = [];
+    if (checklistConfig && checklistConfig.length > 0) {
+      baseList = [...checklistConfig];
+    } else {
+      baseList = isPeriodica ? [
+        'Frente do carro',
+        'Fundo do carro',
+        'Lateral direita',
+        'Lateral esquerda',
+        'Estofados frente',
+        'Estofados trás',
+        'Nível de combustivel'
+      ] : [
+        'Estepe',
+        'Chaves de roda',
+        'Triângulo',
+        'Frente do carro',
+        'Fundo do carro',
+        'Lateral direita',
+        'Lateral esquerda',
+        'Estofados frente',
+        'Estofados trás',
+        'Nível de combustivel'
+      ];
+    }
+
+    if (isPeriodica) {
+      baseList = baseList.filter(item => {
+        const lower = item.toLowerCase();
+        return !lower.includes('estepe') && !lower.includes('step') && !lower.includes('chave de roda') && !lower.includes('chaves de roda') && !lower.includes('triângulo') && !lower.includes('triangulo');
+      });
+    }
+
+    const initial: Record<string, { isOk: boolean, photoUrl: string | null }> = {};
+    baseList.forEach(item => {
+      initial[item] = { isOk: true, photoUrl: null };
+    });
+    setChecklist(initial);
+  }, [initialParams, vistoriaRequest, checklistConfig, initialType]);
 
   const [alreadySubmittedBefore, setAlreadySubmittedBefore] = useState(false);
   const [isSubmitted, setIsSubmitted] = useState(false);
@@ -260,10 +321,43 @@ export function DriverVistoriaForm({
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!vehicle) return;
+
     setIsGeneratingPdf(true);
-    // Logic for generating PDF and saving
-    setIsSubmitted(true);
-    setIsGeneratingPdf(false);
+    try {
+      const newVistoria: Vistoria = {
+        id: `vist-${Date.now()}`,
+        vehicleId: vehicle.id,
+        vehiclePlate: vehicle.plate,
+        date: new Date().toISOString().split('T')[0],
+        type: vistoriaType,
+        checklist: Object.fromEntries(
+          Object.entries(checklist).map(([key, val]) => [key, val.isOk])
+        ),
+        photos: [
+          ...Object.values(checklist).map(i => i.photoUrl).filter((url): url is string => url !== null),
+          ...photos
+        ],
+        notes: notes.trim(),
+        km: kmOdometer ? parseInt(kmOdometer, 10) : undefined,
+        fuelLevel: fuelLevel,
+        status: 'pending'
+      };
+
+      const { pdfDataUrl, fileName } = await generateVistoriaPDF(vehicle, newVistoria);
+      
+      if (requestToken) {
+        localStorage.setItem(getSubmissionStorageKey(), 'true');
+      }
+
+      onSaveVistoria(newVistoria, pdfDataUrl, fileName);
+      setIsSubmitted(true);
+    } catch (error) {
+      console.error('Error generating PDF or saving vistoria:', error);
+      alert('Erro ao processar a vistoria. Por favor, tente novamente.');
+    } finally {
+      setIsGeneratingPdf(false);
+    }
   };
 
   const handleTouchStart = () => {};

@@ -254,6 +254,7 @@ export default function App() {
   const [selectedMonth, setSelectedMonth] = useState<number>(() => new Date().getMonth());
   const [selectedYear, setSelectedYear] = useState<number>(() => new Date().getFullYear());
   
+  
   // Friday Vistoria check, toggle and completion state
   const isTodayFriday = new Date().getDay() === 5;
   const todayDateStr = new Date().toISOString().split('T')[0];
@@ -639,17 +640,27 @@ export default function App() {
     return val.trim();
   };
 
+  const [urlHref, setUrlHref] = useState(typeof window !== 'undefined' ? window.location.href : '');
+
+  useEffect(() => {
+    const handleUrlChange = () => setUrlHref(window.location.href);
+    window.addEventListener('popstate', handleUrlChange);
+    window.addEventListener('hashchange', handleUrlChange);
+    return () => {
+      window.removeEventListener('popstate', handleUrlChange);
+      window.removeEventListener('hashchange', handleUrlChange);
+    };
+  }, []);
+
   // PARSE PARAMS ONCE (Synchronously)
   const activeParams = useMemo(() => {
     if (typeof window === 'undefined') return new URLSearchParams();
     
-    // Get search string from either .search or .hash
+    // Get search string from either .search or .hash or .href
     let searchStr = window.location.search;
     if (!searchStr && window.location.hash.includes('?')) {
       searchStr = '?' + window.location.hash.split('?')[1];
     }
-    
-    // Last resort: check full URL for any ?
     if (!searchStr && window.location.href.includes('?')) {
       searchStr = '?' + window.location.href.split('?')[1];
     }
@@ -671,7 +682,7 @@ export default function App() {
     }
     
     return params;
-  }, []);
+  }, [urlHref]);
 
   // Public Driver Vistoria mode states
   const isVistoriaMode = useMemo(() => {
@@ -734,12 +745,8 @@ export default function App() {
     }
   };
 
-  // Load initial data from Firestore and setup real-time listener for Android APK only
+  // Load initial data from Firestore and setup real-time listener
   useEffect(() => {
-    if (!Capacitor.isNativePlatform()) {
-      isCloudLoadedRef.current = true;
-      return;
-    }
     let unsubscribe: () => void = () => {};
     try {
       const docRef = doc(db, 'fleetData', 'main');
@@ -763,7 +770,8 @@ export default function App() {
             setVistorias(d.vistorias);
           }
           if (d.finalizedContracts && Array.isArray(d.finalizedContracts)) setFinalizedContracts(d.finalizedContracts);
-        } else {
+        } else if (Capacitor.isNativePlatform()) {
+          // Initialize cloud only on native app if missing
           vistorias.forEach((vist) => knownVistoriaIdsRef.current.add(vist.id));
           vehicles.forEach((veh) => (veh.pendingReceipts || []).forEach((r) => knownReceiptIdsRef.current.add(r.id)));
           const initialPayload = sanitizeForCloud({
@@ -784,67 +792,70 @@ export default function App() {
         isCloudLoadedRef.current = true;
       });
 
-      unsubscribe = onSnapshot(docRef, (snap) => {
-        if (snap.exists() && isCloudLoadedRef.current) {
-          const d = snap.data();
-          isRemoteUpdateRef.current = true;
+      // Real-time listener for Android APK only (optional optimization, but good for reactivity)
+      if (Capacitor.isNativePlatform()) {
+        unsubscribe = onSnapshot(docRef, (snap) => {
+          if (snap.exists() && isCloudLoadedRef.current) {
+            const d = snap.data();
+            isRemoteUpdateRef.current = true;
 
-          const incomingVehicles: Vehicle[] = (d.vehicles && Array.isArray(d.vehicles))
-            ? ensureFuturePaymentsForVehicles(d.vehicles)
-            : [];
+            const incomingVehicles: Vehicle[] = (d.vehicles && Array.isArray(d.vehicles))
+              ? ensureFuturePaymentsForVehicles(d.vehicles)
+              : [];
 
-          if (d.vistorias && Array.isArray(d.vistorias)) {
-            const incomingVistorias: Vistoria[] = d.vistorias;
-            incomingVistorias.forEach((vist) => {
-              if (!knownVistoriaIdsRef.current.has(vist.id)) {
-                knownVistoriaIdsRef.current.add(vist.id);
-                const cleanPlate = (vist.vehiclePlate || '').replace(/[^A-Z0-9]/gi, '').toUpperCase();
-                const matchedVeh = incomingVehicles.find(
-                  (v) =>
-                    v.id === vist.vehicleId ||
-                    (cleanPlate && v.plate.replace(/[^A-Z0-9]/gi, '').toUpperCase() === cleanPlate)
-                );
-                const vehTitle = matchedVeh
-                  ? `${matchedVeh.brand} ${matchedVeh.model} (${matchedVeh.plate})`
-                  : (vist.vehiclePlate || 'Veículo');
-                const photosCount = vist.photos?.length || 0;
+            if (d.vistorias && Array.isArray(d.vistorias)) {
+              const incomingVistorias: Vistoria[] = d.vistorias;
+              incomingVistorias.forEach((vist) => {
+                if (!knownVistoriaIdsRef.current.has(vist.id)) {
+                  knownVistoriaIdsRef.current.add(vist.id);
+                  const cleanPlate = (vist.vehiclePlate || '').replace(/[^A-Z0-9]/gi, '').toUpperCase();
+                  const matchedVeh = incomingVehicles.find(
+                    (v) =>
+                      v.id === vist.vehicleId ||
+                      (cleanPlate && v.plate.replace(/[^A-Z0-9]/gi, '').toUpperCase() === cleanPlate)
+                  );
+                  const vehTitle = matchedVeh
+                    ? `${matchedVeh.brand} ${matchedVeh.model} (${matchedVeh.plate})`
+                    : (vist.vehiclePlate || 'Veículo');
+                  const photosCount = vist.photos?.length || 0;
 
-                sendAppNotification(`📋 Nova Vistoria Recebida: ${vehTitle}`, {
-                  body: `O motorista enviou a vistoria (${vist.type || 'periódica'}) com ${photosCount} foto(s)${vist.km ? ` e odômetro em ${vist.km.toLocaleString('pt-BR')} KM` : ''}.`,
-                  eventKey: 'vistoria_completed',
-                });
-              }
-            });
-            setVistorias(incomingVistorias);
-          }
-
-          if (incomingVehicles.length > 0) {
-            incomingVehicles.forEach((veh) => {
-              (veh.pendingReceipts || []).forEach((rec) => {
-                if (!knownReceiptIdsRef.current.has(rec.id)) {
-                  knownReceiptIdsRef.current.add(rec.id);
-                  sendAppNotification(`🧾 Novo Comprovante Recebido: ${veh.brand} (${veh.plate})`, {
-                    body: `O motorista ${rec.driverName || veh.driver || ''} enviou um comprovante de R$ ${(rec.amount || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })} para aprovação.`,
-                    eventKey: 'receipt_received',
+                  sendAppNotification(`📋 Nova Vistoria Recebida: ${vehTitle}`, {
+                    body: `O motorista enviou a vistoria (${vist.type || 'periódica'}) com ${photosCount} foto(s)${vist.km ? ` e odômetro em ${vist.km.toLocaleString('pt-BR')} KM` : ''}.`,
+                    eventKey: 'vistoria_completed',
                   });
                 }
               });
-            });
-            setVehicles(incomingVehicles);
-          }
+              setVistorias(incomingVistorias);
+            }
 
-          if (d.contacts && Array.isArray(d.contacts)) setContacts(d.contacts);
-          if (d.fuelLogs && Array.isArray(d.fuelLogs)) setFuelLogs(d.fuelLogs);
-          if (d.maintenanceLogs && Array.isArray(d.maintenanceLogs)) setMaintenanceLogs(d.maintenanceLogs);
-          if (d.expenseLogs && Array.isArray(d.expenseLogs)) setExpenseLogs(d.expenseLogs);
-          if (d.finalizedContracts && Array.isArray(d.finalizedContracts)) setFinalizedContracts(d.finalizedContracts);
-          setTimeout(() => {
-            isRemoteUpdateRef.current = false;
-          }, 150);
-        }
-      }, (err) => {
-        console.warn('Firestore snapshot error:', err);
-      });
+            if (incomingVehicles.length > 0) {
+              incomingVehicles.forEach((veh) => {
+                (veh.pendingReceipts || []).forEach((rec) => {
+                  if (!knownReceiptIdsRef.current.has(rec.id)) {
+                    knownReceiptIdsRef.current.add(rec.id);
+                    sendAppNotification(`🧾 Novo Comprovante Recebido: ${veh.brand} (${veh.plate})`, {
+                      body: `O motorista ${rec.driverName || veh.driver || ''} enviou um comprovante de R$ ${(rec.amount || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })} para aprovação.`,
+                      eventKey: 'receipt_received',
+                    });
+                  }
+                });
+              });
+              setVehicles(incomingVehicles);
+            }
+
+            if (d.contacts && Array.isArray(d.contacts)) setContacts(d.contacts);
+            if (d.fuelLogs && Array.isArray(d.fuelLogs)) setFuelLogs(d.fuelLogs);
+            if (d.maintenanceLogs && Array.isArray(d.maintenanceLogs)) setMaintenanceLogs(d.maintenanceLogs);
+            if (d.expenseLogs && Array.isArray(d.expenseLogs)) setExpenseLogs(d.expenseLogs);
+            if (d.finalizedContracts && Array.isArray(d.finalizedContracts)) setFinalizedContracts(d.finalizedContracts);
+            setTimeout(() => {
+              isRemoteUpdateRef.current = false;
+            }, 150);
+          }
+        }, (err) => {
+          console.warn('Firestore snapshot error:', err);
+        });
+      }
     } catch (err) {
       console.warn('Error setting up Firestore listener:', err);
       isCloudLoadedRef.current = true;
@@ -2564,7 +2575,13 @@ export default function App() {
 
   // AWAIT FOR VISTORIA REQUEST DATA IF REQID IS PRESENT
   const [vistoriaRequest, setVistoriaRequest] = useState<any>(null);
-  const [loadingVistoriaRequest, setLoadingVistoriaRequest] = useState(false);
+  const [loadingVistoriaRequest, setLoadingVistoriaRequest] = useState(() => {
+    if (typeof window !== 'undefined') {
+       const params = new URLSearchParams(window.location.search);
+       return !!params.get('reqId');
+    }
+    return false;
+  });
 
   useEffect(() => {
     const reqId = activeParams.get('reqId');
@@ -2606,10 +2623,10 @@ export default function App() {
     // If not found in local array, build targetVehicle from Firestore request or URL parameters
     if (!targetVehicle) {
       targetVehicle = {
-        id: vistoriaRequest?.vehicleId || `temp-${Date.now()}`,
+        id: vistoriaRequest?.vehicleId || params.get('vehicleId') || `temp-${Date.now()}`,
         brand: vistoriaRequest?.brand || params.get('brand') || 'Veículo',
         model: vistoriaRequest?.model || params.get('model') || '',
-        plate: vistoriaRequest?.plate || (vistoriaPlateParam ? vistoriaPlateParam.toUpperCase() : 'TDD-5I76'),
+        plate: vistoriaRequest?.plate || vistoriaPlateParam?.toUpperCase() || '',
         year: new Date().getFullYear(),
         color: '',
         rentalCompany: '',
@@ -2621,7 +2638,7 @@ export default function App() {
         ipva: 0,
         manutencaoPreventiva: 0,
         currentKm: 0,
-        fuelLevel: 8,
+        fuelLevel: 100,
         driver: vistoriaRequest?.driver || params.get('driver') || 'Motorista',
         weeklyPayments: [],
         nextVistoriaDate: deadlineFromParam || undefined
@@ -2637,12 +2654,15 @@ export default function App() {
             window.location.href = window.location.pathname;
           }}
           onOpenVistoriaForm={() => {
-            const uniqueToken = `${Date.now().toString(36)}-${Math.random().toString(36).substring(2, 6)}`;
-            window.location.search = `?mode=vistoria_retorno&placa=${encodeURIComponent(targetVehicle.plate)}&type=${encodeURIComponent('periódica')}&reqId=${encodeURIComponent(uniqueToken)}`;
+            // Se já temos um reqId e dados de vistoria, preservar ao abrir o formulário
+            const reqId = params.get('reqId') || vistoriaRequest?.id || `${Date.now().toString(36)}-new`;
+            const type = vistoriaRequest?.type || params.get('type') || 'periódica';
+            const items = vistoriaRequest?.items ? `&items=${encodeURIComponent(vistoriaRequest.items.join(','))}` : '';
+            window.location.search = `?mode=vistoria_retorno&placa=${encodeURIComponent(targetVehicle.plate)}&type=${encodeURIComponent(type)}&reqId=${encodeURIComponent(reqId)}${items}`;
           }}
           onOpenReceiptUpload={() => {
-            const uniqueToken = `${Date.now().toString(36)}-${Math.random().toString(36).substring(2, 6)}`;
-            window.location.search = `?mode=pagamento&placa=${encodeURIComponent(targetVehicle.plate)}&reqId=${encodeURIComponent(uniqueToken)}`;
+            const reqId = params.get('reqId') || `${Date.now().toString(36)}-receipt`;
+            window.location.search = `?mode=pagamento&placa=${encodeURIComponent(targetVehicle.plate)}&reqId=${encodeURIComponent(reqId)}`;
           }}
         />
       );
@@ -2906,6 +2926,8 @@ export default function App() {
 
       {/* Main Container */}
       <main className="flex-1 max-w-7xl w-full mx-auto p-4 sm:p-6 lg:p-8 space-y-8" id="app-main-content">
+
+
         
         {/* Friday Vistoria Reminder Banner - Only shows on Fridays when enabled and not completed */}
         {isTodayFriday && !disableFridayReminder && fridayReminderDoneDate !== todayDateStr && (
