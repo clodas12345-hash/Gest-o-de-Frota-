@@ -311,6 +311,7 @@ const DEFAULT_SHARE_TEMPLATE = `📋 *LAUDO DE VISTORIA*
 
 ---
 📸 *RELATÓRIO COMPLETO:*
+(👉 *Caso a mensagem esteja cortada, clique em "LER MAIS" para que o link esteja todo disponível*)
 Utilize o link abaixo para visualizar o laudo completo e as fotos em alta resolução:
 🔗 {link_retorno}`;
 
@@ -393,13 +394,14 @@ Por favor, realize a vistoria (*{tipo}*) do veículo *{veiculo}* (Placa: *{placa
 {itens_inspecao}
 
 📸 *RETORNO COM FOTOS:*
+(👉 *Caso a mensagem esteja cortada, clique em "LER MAIS" para que o link esteja todo disponível*)
 Por favor, clique no link abaixo para preencher a vistoria e enviar as fotos:
 🔗 {link_retorno}`;
 
 const DEFAULT_PAYMENT_TEMPLATES = {
-  lembrete: `Olá, *{driver}*! Tudo bem? 😊\n\nPassando para lembrar do pagamento semanal referente ao veículo *{brand} {model}* ({plate}).\n\n💵 *Valor:* R$ {valor}\n📅 *Vencimento:* {data_vencimento}\n\nEnvie o comprovante de pagamento pelo link:\n🔗 {link_comprovante}\n\nAbraços!`,
-  hoje: `Olá, *{driver}*! Tudo bem?\n\nLembrete: *Hoje* é o dia do pagamento semanal referente ao veículo *{brand} {model}* ({plate}).\n\n💵 *Valor:* R$ {valor}\n🗓️ *Vencimento:* Hoje ({data_vencimento})\n\nEnvie o comprovante pelo link:\n🔗 {link_comprovante}\n\nAgradeço a parceria! 👍`,
-  atrasado: `Olá, *{driver}*.\n\nIdentificamos que o pagamento semanal referente ao veículo *{brand} {model}* ({plate}) com vencimento em *{data_vencimento}* consta em **atraso**.\n\n⚠️ *Valor em aberto:* R$ {valor}\n\nRegularize e envie o comprovante pelo link:\n🔗 {link_comprovante}\n\nFicamos no aguardo. Obrigado!`
+  lembrete: `Olá, *{driver}*! Tudo bem? 😊\n\nPassando para lembrar do pagamento semanal referente ao veículo *{brand} {model}* ({plate}).\n\n💵 *Valor:* R$ {valor}\n📅 *Vencimento:* {data_vencimento}\n\n(👉 *Caso a mensagem esteja cortada, clique em "LER MAIS" para que o link esteja todo disponível*)\nEnvie o comprovante de pagamento pelo link:\n🔗 {link_comprovante}\n\nAbraços!`,
+  hoje: `Olá, *{driver}*! Tudo bem?\n\nLembrete: *Hoje* é o dia do pagamento semanal referente ao veículo *{brand} {model}* ({plate}).\n\n💵 *Valor:* R$ {valor}\n🗓️ *Vencimento:* Hoje ({data_vencimento})\n\n(👉 *Caso a mensagem esteja cortada, clique em "LER MAIS" para que o link esteja todo disponível*)\nEnvie o comprovante pelo link:\n🔗 {link_comprovante}\n\nAgradeço a parceria! 👍`,
+  atrasado: `Olá, *{driver}*.\n\nIdentificamos que o pagamento semanal referente ao veículo *{brand} {model}* ({plate}) com vencimento em *{data_vencimento}* consta em **atraso**.\n\n⚠️ *Valor em aberto:* R$ {valor}\n\n(👉 *Caso a mensagem esteja cortada, clique em "LER MAIS" para que o link esteja todo disponível*)\nRegularize e envie o comprovante pelo link:\n🔗 {link_comprovante}\n\nFicamos no aguardo. Obrigado!`
 };
 
 const PUBLIC_WEB_ORIGIN = 'https://ais-dev-nxg4lixniko7ymx3t5cstw-473118395752.us-west2.run.app';
@@ -971,7 +973,7 @@ export const VehicleCard: React.FC<VehicleCardProps> = ({
     if (!text.includes(returnUrlWithPlaca)) {
       // Remove any old appended URLs before adding current vehicle's returnUrlWithPlaca
       text = text.replace(/🔗\s*https?:\/\/[^\s]+/gi, '').trim();
-      text += `\n\n🔗 *Link de Acesso / Retorno:*\n${returnUrlWithPlaca}`;
+      text += `\n\n(👉 *Caso a mensagem esteja cortada, clique em "LER MAIS" para que o link esteja todo disponível*)\n🔗 *Link de Acesso / Retorno:*\n${returnUrlWithPlaca}`;
     }
 
     return text;
@@ -1569,7 +1571,7 @@ export const VehicleCard: React.FC<VehicleCardProps> = ({
         ? `&items=${encodeURIComponent(itemsToUse.join(','))}`
         : '';
       const longUrl = `${safeBaseClean}/?mode=vistoria_retorno&vehicleId=${encodeURIComponent(vehicle.id)}&placa=${encodeURIComponent(vehicle.plate)}&brand=${encodeURIComponent(vehicle.brand)}&model=${encodeURIComponent(vehicle.model)}&driver=${encodeURIComponent(vehicle.driver || '')}&type=${encodeURIComponent(targetType)}&deadline=${encodeURIComponent(vehicle.nextVistoriaDate || '')}&reqId=${vistoriaRequestToken}${itemsQueryParam}`;
-      finalMsg += `\n\n🔗 *Link de Acesso / Retorno:*\n${longUrl}`;
+      finalMsg += `\n\n(👉 *Caso a mensagem esteja cortada, clique em "LER MAIS" para que o link esteja todo disponível*)\n🔗 *Link de Acesso / Retorno:*\n${longUrl}`;
     }
 
     localStorage.setItem('fleet_vistoria_return_link', vistoriaReturnLink);

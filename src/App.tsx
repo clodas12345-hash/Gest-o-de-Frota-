@@ -742,16 +742,17 @@ export default function App() {
   }, [activeParams]);
 
   const isCloudLoadedRef = useRef(false);
-  const isRemoteUpdateRef = useRef(false);
+  const isQuotaExhaustedRef = useRef(false);
   const lastSyncedJsonRef = useRef<Record<string, string>>({});
   const pendingCloudSyncRef = useRef<Record<string, any>>({});
   const cloudSyncTimerRef = useRef<NodeJS.Timeout | null>(null);
 
   const knownVistoriaIdsRef = useRef<Set<string>>(new Set());
   const knownReceiptIdsRef = useRef<Set<string>>(new Set());
+  const deletedVistoriaIdsRef = useRef<Set<string>>(new Set());
 
   const saveToCloud = (field: string, data: any) => {
-    if (!isCloudLoadedRef.current || isRemoteUpdateRef.current) return;
+    if (!isCloudLoadedRef.current || isQuotaExhaustedRef.current) return;
     
     try {
       // Clean data if field is vehicles or vistorias to prevent Firestore 1MB document limit rejection
@@ -768,26 +769,28 @@ export default function App() {
         return;
       }
 
+      lastSyncedJsonRef.current[field] = serialized;
       pendingCloudSyncRef.current[field] = sanitizeForCloud(cleanData);
 
       if (cloudSyncTimerRef.current) clearTimeout(cloudSyncTimerRef.current);
       cloudSyncTimerRef.current = setTimeout(async () => {
         try {
+          if (Object.keys(pendingCloudSyncRef.current).length === 0) return;
           const payload = sanitizeForCloud({
             ...pendingCloudSyncRef.current,
             updatedAt: new Date().toISOString()
           });
           pendingCloudSyncRef.current = {};
           await setDoc(doc(db, 'fleetData', 'main'), payload, { merge: true });
-          lastSyncedJsonRef.current[field] = serialized;
         } catch (err: any) {
           if (err?.message?.includes('quota') || err?.code === 'resource-exhausted' || err?.message?.includes('Quota')) {
-            console.warn('Firestore quota reached. Data saved locally in localStorage.');
+            console.warn('Firestore quota reached. Disabling cloud sync until page refresh.');
+            isQuotaExhaustedRef.current = true;
           } else {
             console.warn('Error syncing fleetData to cloud:', err);
           }
         }
-      }, 2000);
+      }, 60000);
     } catch (err) {
       console.warn('Error preparing saveToCloud:', err);
     }
@@ -808,16 +811,34 @@ export default function App() {
               (veh.pendingReceipts || []).forEach((r) => knownReceiptIdsRef.current.add(r.id));
             });
             setVehicles(loadedVehicles);
+            lastSyncedJsonRef.current['vehicles'] = JSON.stringify(cleanVehiclesForCloud(loadedVehicles));
           }
-          if (d.contacts && Array.isArray(d.contacts)) setContacts(d.contacts);
-          if (d.fuelLogs && Array.isArray(d.fuelLogs)) setFuelLogs(d.fuelLogs);
-          if (d.maintenanceLogs && Array.isArray(d.maintenanceLogs)) setMaintenanceLogs(d.maintenanceLogs);
-          if (d.expenseLogs && Array.isArray(d.expenseLogs)) setExpenseLogs(d.expenseLogs);
+          if (d.contacts && Array.isArray(d.contacts)) {
+            setContacts(d.contacts);
+            lastSyncedJsonRef.current['contacts'] = JSON.stringify(d.contacts);
+          }
+          if (d.fuelLogs && Array.isArray(d.fuelLogs)) {
+            setFuelLogs(d.fuelLogs);
+            lastSyncedJsonRef.current['fuelLogs'] = JSON.stringify(d.fuelLogs);
+          }
+          if (d.maintenanceLogs && Array.isArray(d.maintenanceLogs)) {
+            setMaintenanceLogs(d.maintenanceLogs);
+            lastSyncedJsonRef.current['maintenanceLogs'] = JSON.stringify(d.maintenanceLogs);
+          }
+          if (d.expenseLogs && Array.isArray(d.expenseLogs)) {
+            setExpenseLogs(d.expenseLogs);
+            lastSyncedJsonRef.current['expenseLogs'] = JSON.stringify(d.expenseLogs);
+          }
           if (d.vistorias && Array.isArray(d.vistorias)) {
-            d.vistorias.forEach((vist: Vistoria) => knownVistoriaIdsRef.current.add(vist.id));
-            setVistorias(d.vistorias);
+            const validVistorias = d.vistorias.filter((vist: Vistoria) => vist && vist.id && !deletedVistoriaIdsRef.current.has(vist.id));
+            validVistorias.forEach((vist: Vistoria) => knownVistoriaIdsRef.current.add(vist.id));
+            setVistorias(validVistorias);
+            lastSyncedJsonRef.current['vistorias'] = JSON.stringify(cleanVistoriasForCloud(validVistorias));
           }
-          if (d.finalizedContracts && Array.isArray(d.finalizedContracts)) setFinalizedContracts(d.finalizedContracts);
+          if (d.finalizedContracts && Array.isArray(d.finalizedContracts)) {
+            setFinalizedContracts(d.finalizedContracts);
+            lastSyncedJsonRef.current['finalizedContracts'] = JSON.stringify(d.finalizedContracts);
+          }
         } else {
           // Initialize cloud if missing
           vistorias.forEach((vist) => knownVistoriaIdsRef.current.add(vist.id));
@@ -844,34 +865,26 @@ export default function App() {
       unsubscribe = onSnapshot(docRef, (snap) => {
         if (snap.exists() && isCloudLoadedRef.current) {
           const d = snap.data();
-          isRemoteUpdateRef.current = true;
 
           const incomingVehicles: Vehicle[] = (d.vehicles && Array.isArray(d.vehicles))
             ? ensureFuturePaymentsForVehicles(d.vehicles)
             : [];
 
           if (d.vistorias && Array.isArray(d.vistorias)) {
-            const incomingVistorias: Vistoria[] = d.vistorias;
-            setVistorias(prev => {
-              // Merge incoming vistorias preserving any full photos loaded locally or from completedVistorias
-              const mapRecord: Record<string, Vistoria> = {};
-              prev.forEach(v => { mapRecord[v.id] = v; });
-              incomingVistorias.forEach(v => {
-                const existing = mapRecord[v.id];
-                if (existing) {
-                  mapRecord[v.id] = {
-                    ...v,
-                    photos: (existing.photos && existing.photos.length > (v.photos?.length || 0)) ? existing.photos : (v.photos || [])
-                  };
-                } else {
-                  mapRecord[v.id] = v;
-                }
-              });
-              return Object.values(mapRecord);
+            const incomingVistorias: Vistoria[] = d.vistorias.filter((v: Vistoria) => {
+              if (!v || !v.id) return false;
+              if (deletedVistoriaIdsRef.current.has(v.id)) return false;
+              if (v.reqId && deletedVistoriaIdsRef.current.has(v.reqId)) return false;
+              return true;
             });
+            lastSyncedJsonRef.current['vistorias'] = JSON.stringify(cleanVistoriasForCloud(incomingVistorias));
+            setVistorias(incomingVistorias);
+          } else if (d.vistorias && Array.isArray(d.vistorias) && d.vistorias.length === 0) {
+            lastSyncedJsonRef.current['vistorias'] = JSON.stringify([]);
+            setVistorias([]);
           }
 
-          if (incomingVehicles.length > 0) {
+          if (d.vehicles && Array.isArray(d.vehicles)) {
             incomingVehicles.forEach((veh) => {
               (veh.pendingReceipts || []).forEach((rec) => {
                 if (!knownReceiptIdsRef.current.has(rec.id)) {
@@ -883,39 +896,30 @@ export default function App() {
                 }
               });
             });
+            lastSyncedJsonRef.current['vehicles'] = JSON.stringify(cleanVehiclesForCloud(incomingVehicles));
             setVehicles(incomingVehicles);
           }
 
           if (d.contacts && Array.isArray(d.contacts)) {
-            setContacts(d.contacts);
             lastSyncedJsonRef.current['contacts'] = JSON.stringify(d.contacts);
+            setContacts(d.contacts);
           }
           if (d.fuelLogs && Array.isArray(d.fuelLogs)) {
-            setFuelLogs(d.fuelLogs);
             lastSyncedJsonRef.current['fuelLogs'] = JSON.stringify(d.fuelLogs);
+            setFuelLogs(d.fuelLogs);
           }
           if (d.maintenanceLogs && Array.isArray(d.maintenanceLogs)) {
-            setMaintenanceLogs(d.maintenanceLogs);
             lastSyncedJsonRef.current['maintenanceLogs'] = JSON.stringify(d.maintenanceLogs);
+            setMaintenanceLogs(d.maintenanceLogs);
           }
           if (d.expenseLogs && Array.isArray(d.expenseLogs)) {
-            setExpenseLogs(d.expenseLogs);
             lastSyncedJsonRef.current['expenseLogs'] = JSON.stringify(d.expenseLogs);
+            setExpenseLogs(d.expenseLogs);
           }
           if (d.finalizedContracts && Array.isArray(d.finalizedContracts)) {
-            setFinalizedContracts(d.finalizedContracts);
             lastSyncedJsonRef.current['finalizedContracts'] = JSON.stringify(d.finalizedContracts);
+            setFinalizedContracts(d.finalizedContracts);
           }
-          if (incomingVehicles.length > 0) {
-            lastSyncedJsonRef.current['vehicles'] = JSON.stringify(cleanVehiclesForCloud(incomingVehicles));
-          }
-          if (d.vistorias && Array.isArray(d.vistorias)) {
-            lastSyncedJsonRef.current['vistorias'] = JSON.stringify(cleanVistoriasForCloud(d.vistorias));
-          }
-
-          setTimeout(() => {
-            isRemoteUpdateRef.current = false;
-          }, 3000);
         }
       }, (err: any) => {
         if (err?.message?.includes('quota') || err?.code === 'resource-exhausted') {
@@ -932,6 +936,8 @@ export default function App() {
         snapshot.forEach((docSnap) => {
           const vistData = docSnap.data() as Vistoria;
           if (vistData && vistData.id) {
+            if (deletedVistoriaIdsRef.current.has(docSnap.id) || deletedVistoriaIdsRef.current.has(vistData.id)) return;
+            if (vistData.reqId && deletedVistoriaIdsRef.current.has(vistData.reqId)) return;
             completedList.push(vistData);
           }
         });
@@ -940,7 +946,7 @@ export default function App() {
 
         setVistorias((prev) => {
           let hasChanges = false;
-          let nextList = [...prev];
+          let nextList = prev.filter(v => !deletedVistoriaIdsRef.current.has(v.id) && (!v.reqId || !deletedVistoriaIdsRef.current.has(v.reqId)));
 
           completedList.forEach((completed) => {
             const cleanCompletedPlate = (completed.vehiclePlate || '').replace(/[^A-Z0-9]/gi, '').toUpperCase();
@@ -2328,40 +2334,42 @@ export default function App() {
     const targetVist = vistorias.find((v) => v.id === id);
     const reqToken = targetVist?.reqId || (id.startsWith('requested-') ? id.replace('requested-', '') : '');
 
-    // 1. Instantly update React state so UI responds immediately
-    setVistorias((prev) => {
-      const next = prev.filter((v) => v.id !== id && (!reqToken || v.reqId !== reqToken) && v.id !== `requested-${reqToken}`);
-      saveToCloud('vistorias', next);
-      return next;
-    });
+    deletedVistoriaIdsRef.current.add(id);
+    if (reqToken) {
+      deletedVistoriaIdsRef.current.add(reqToken);
+      deletedVistoriaIdsRef.current.add(`requested-${reqToken}`);
+    }
 
-    setVehicles((prev) => {
-      const next = prev.map((v) => ({
-        ...v,
-        documents: (v.documents || []).filter((d) => {
-          if (d.category === 'Vistoria' && (d.id.includes(id) || d.id === id)) return false;
-          if (d.id === `doc-vist-${id}` || d.id === id) return false;
-          return true;
-        })
-      }));
-      saveToCloud('vehicles', next);
-      return next;
-    });
+    // 1. Instantly update React state so UI responds immediately
+    const nextVistorias = vistorias.filter((v) => v.id !== id && (!reqToken || v.reqId !== reqToken) && v.id !== `requested-${reqToken}`);
+    setVistorias(nextVistorias);
+    saveToCloud('vistorias', nextVistorias);
+
+    const nextVehicles = vehicles.map((v) => ({
+      ...v,
+      documents: (v.documents || []).filter((d) => {
+        if (d.category === 'Vistoria' && (d.id.includes(id) || d.id === id)) return false;
+        if (d.id === `doc-vist-${id}` || d.id === id) return false;
+        return true;
+      })
+    }));
+    setVehicles(nextVehicles);
+    saveToCloud('vehicles', nextVehicles);
 
     setDeleteToastMsg('Vistoria excluída com sucesso.');
     setTimeout(() => setDeleteToastMsg(null), 3000);
 
-    // 2. Delete from Firestore collections in background
-    try { await deleteDoc(doc(db, 'completedVistorias', id)); } catch (err) {}
-    if (reqToken) {
-      try { await deleteDoc(doc(db, 'completedVistorias', reqToken)); } catch (err) {}
-      try { await deleteDoc(doc(db, 'vistoriaRequests', reqToken)); } catch (err) {}
-      try { await deleteDoc(doc(db, 'completedVistorias', `requested-${reqToken}`)); } catch (err) {}
-    }
-    try { await deleteDoc(doc(db, 'vehicleDocuments', `doc-vist-${id}`)); } catch (err) {}
+    // 2. Delete from Firestore collections in background (parallel)
+    Promise.allSettled([
+      deleteDoc(doc(db, 'completedVistorias', id)),
+      reqToken ? deleteDoc(doc(db, 'completedVistorias', reqToken)) : Promise.resolve(),
+      reqToken ? deleteDoc(doc(db, 'vistoriaRequests', reqToken)) : Promise.resolve(),
+      reqToken ? deleteDoc(doc(db, 'completedVistorias', `requested-${reqToken}`)) : Promise.resolve(),
+      deleteDoc(doc(db, 'vehicleDocuments', `doc-vist-${id}`))
+    ]).catch(() => {});
   };
 
-  const handleDeleteAllVistoriasForVehicle = async (vehicleId: string) => {
+  const handleDeleteAllVistoriasForVehicle = (vehicleId: string) => {
     const veh = vehicles.find(v => v.id === vehicleId);
     const targetPlate = veh?.plate ? veh.plate.replace(/[^A-Z0-9]/gi, '').toUpperCase() : '';
 
@@ -2371,78 +2379,110 @@ export default function App() {
       return false;
     });
 
-    // 1. Instantly update UI state
-    setVistorias((prev) => {
-      const next = prev.filter((v) => {
-        if (v.vehicleId === vehicleId) return false;
-        if (targetPlate && v.vehiclePlate && v.vehiclePlate.replace(/[^A-Z0-9]/gi, '').toUpperCase() === targetPlate) return false;
-        return true;
-      });
-      saveToCloud('vistorias', next);
-      return next;
+    if (targetVistorias.length === 0) {
+      setDeleteToastMsg('Nenhuma vistoria para excluir neste veículo.');
+      setTimeout(() => setDeleteToastMsg(null), 2500);
+      return;
+    }
+
+    targetVistorias.forEach((v) => {
+      deletedVistoriaIdsRef.current.add(v.id);
+      const reqToken = v.reqId || (v.id.startsWith('requested-') ? v.id.replace('requested-', '') : '');
+      if (reqToken) {
+        deletedVistoriaIdsRef.current.add(reqToken);
+        deletedVistoriaIdsRef.current.add(`requested-${reqToken}`);
+      }
     });
 
-    setVehicles((prev) => {
-      const next = prev.map((v) =>
-        (v.id === vehicleId || (targetPlate && v.plate.replace(/[^A-Z0-9]/gi, '').toUpperCase() === targetPlate))
-          ? {
-              ...v,
-              nextVistoriaDate: undefined,
-              documents: (v.documents || []).filter((d) => d.category !== 'Vistoria' && !d.id.startsWith('doc-vist-'))
-            }
-          : v
-      );
-      saveToCloud('vehicles', next);
-      return next;
+    // 1. Instantly update UI state all at once (0ms delay)
+    const nextVistorias = vistorias.filter((v) => {
+      if (v.vehicleId === vehicleId) return false;
+      if (targetPlate && v.vehiclePlate && v.vehiclePlate.replace(/[^A-Z0-9]/gi, '').toUpperCase() === targetPlate) return false;
+      return true;
     });
+    setVistorias(nextVistorias);
+    saveToCloud('vistorias', nextVistorias);
+
+    const nextVehicles = vehicles.map((v) =>
+      (v.id === vehicleId || (targetPlate && v.plate.replace(/[^A-Z0-9]/gi, '').toUpperCase() === targetPlate))
+        ? {
+            ...v,
+            nextVistoriaDate: undefined,
+            documents: (v.documents || []).filter((d) => d.category !== 'Vistoria' && !d.id.startsWith('doc-vist-'))
+          }
+        : v
+    );
+    setVehicles(nextVehicles);
+    saveToCloud('vehicles', nextVehicles);
 
     setDeleteToastMsg('Todas as vistorias deste veículo foram excluídas com sucesso.');
     setTimeout(() => setDeleteToastMsg(null), 3000);
 
-    // 2. Delete all matching docs from Firestore in background
-    for (const v of targetVistorias) {
+    // 2. Delete all matching docs from Firestore in background IN PARALLEL
+    const deletePromises: Promise<any>[] = [];
+    targetVistorias.forEach((v) => {
       const docKey = v.id;
       const reqToken = v.reqId || (v.id.startsWith('requested-') ? v.id.replace('requested-', '') : '');
-      try { await deleteDoc(doc(db, 'completedVistorias', docKey)); } catch (err) {}
+      deletePromises.push(deleteDoc(doc(db, 'completedVistorias', docKey)).catch(() => {}));
       if (reqToken) {
-        try { await deleteDoc(doc(db, 'completedVistorias', reqToken)); } catch (err) {}
-        try { await deleteDoc(doc(db, 'vistoriaRequests', reqToken)); } catch (err) {}
+        deletePromises.push(deleteDoc(doc(db, 'completedVistorias', reqToken)).catch(() => {}));
+        deletePromises.push(deleteDoc(doc(db, 'vistoriaRequests', reqToken)).catch(() => {}));
+        deletePromises.push(deleteDoc(doc(db, 'completedVistorias', `requested-${reqToken}`)).catch(() => {}));
       }
-      try { await deleteDoc(doc(db, 'vehicleDocuments', `doc-vist-${docKey}`)); } catch (err) {}
-    }
+      deletePromises.push(deleteDoc(doc(db, 'vehicleDocuments', `doc-vist-${docKey}`)).catch(() => {}));
+    });
+
+    Promise.allSettled(deletePromises).catch(() => {});
   };
 
-  const handleClearAllVistorias = async () => {
+  const handleClearAllVistorias = () => {
     const listToDelete = [...vistorias];
 
-    // 1. Instantly update UI state
+    if (listToDelete.length === 0) {
+      setDeleteToastMsg('Nenhuma vistoria para excluir.');
+      setTimeout(() => setDeleteToastMsg(null), 2500);
+      return;
+    }
+
+    listToDelete.forEach((v) => {
+      deletedVistoriaIdsRef.current.add(v.id);
+      const reqToken = v.reqId || (v.id.startsWith('requested-') ? v.id.replace('requested-', '') : '');
+      if (reqToken) {
+        deletedVistoriaIdsRef.current.add(reqToken);
+        deletedVistoriaIdsRef.current.add(`requested-${reqToken}`);
+      }
+    });
+
+    // 1. Instantly update UI state all at once (0ms delay)
     setVistorias([]);
     saveToCloud('vistorias', []);
 
-    setVehicles((prev) => {
-      const next = prev.map((v) => ({
-        ...v,
-        nextVistoriaDate: undefined,
-        documents: (v.documents || []).filter((d) => d.category !== 'Vistoria' && !d.id.startsWith('doc-vist-'))
-      }));
-      saveToCloud('vehicles', next);
-      return next;
-    });
+    const nextVehicles = vehicles.map((v) => ({
+      ...v,
+      nextVistoriaDate: undefined,
+      documents: (v.documents || []).filter((d) => d.category !== 'Vistoria' && !d.id.startsWith('doc-vist-'))
+    }));
+    setVehicles(nextVehicles);
+    saveToCloud('vehicles', nextVehicles);
 
     setDeleteToastMsg('Todas as vistorias da frota foram excluídas com sucesso.');
     setTimeout(() => setDeleteToastMsg(null), 3000);
 
-    // 2. Delete from Firestore in background
-    for (const v of listToDelete) {
+    // 2. Delete all matching docs from Firestore in background IN PARALLEL
+    const deletePromises: Promise<any>[] = [];
+    listToDelete.forEach((v) => {
       const docKey = v.id;
       const reqToken = v.reqId || (v.id.startsWith('requested-') ? v.id.replace('requested-', '') : '');
-      try { await deleteDoc(doc(db, 'completedVistorias', docKey)); } catch (err) {}
+      deletePromises.push(deleteDoc(doc(db, 'completedVistorias', docKey)).catch(() => {}));
       if (reqToken) {
-        try { await deleteDoc(doc(db, 'completedVistorias', reqToken)); } catch (err) {}
-        try { await deleteDoc(doc(db, 'vistoriaRequests', reqToken)); } catch (err) {}
+        deletePromises.push(deleteDoc(doc(db, 'completedVistorias', reqToken)).catch(() => {}));
+        deletePromises.push(deleteDoc(doc(db, 'vistoriaRequests', reqToken)).catch(() => {}));
+        deletePromises.push(deleteDoc(doc(db, 'completedVistorias', `requested-${reqToken}`)).catch(() => {}));
       }
-      try { await deleteDoc(doc(db, 'vehicleDocuments', `doc-vist-${docKey}`)); } catch (err) {}
-    }
+      deletePromises.push(deleteDoc(doc(db, 'vehicleDocuments', `doc-vist-${docKey}`)).catch(() => {}));
+    });
+
+    Promise.allSettled(deletePromises).catch(() => {});
   };
 
   // Agenda Handlers
