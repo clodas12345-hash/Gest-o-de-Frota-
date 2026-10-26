@@ -479,6 +479,7 @@ interface VehicleCardProps {
   onOpenLogForm?: (type: 'vehicle' | 'fuel' | 'maintenance' | 'expense' | 'sinistro', vehicleId?: string) => void;
   onOpenInterestCalculator?: (vehicle: Vehicle) => void;
   onShowDeleteConfirm?: (title: string, description: string, onConfirm: () => void) => void;
+  isQuotaExhausted?: boolean;
 }
 
 
@@ -518,6 +519,7 @@ export const VehicleCard: React.FC<VehicleCardProps> = ({
   onOpenLogForm,
   onOpenInterestCalculator,
   onShowDeleteConfirm,
+  isQuotaExhausted,
 }) => {
   const [isExpanded, setIsExpanded] = useState(false); // Default to collapsed/closed as requested by user
 
@@ -1555,7 +1557,9 @@ export const VehicleCard: React.FC<VehicleCardProps> = ({
       createdAt: new Date().toISOString()
     }));
     
-    setDoc(doc(db, 'vistoriaRequests', vistoriaRequestToken), pendingRequest).catch(() => {});
+    if (!isQuotaExhausted) {
+        setDoc(doc(db, 'vistoriaRequests', vistoriaRequestToken), pendingRequest).catch(() => {});
+    }
     
     // Use the complete long URL with all vehicle details and checklist items
     let finalMsg = (customVistoriaMsgText && customVistoriaMsgText.trim() && customVistoriaMsgText.includes('&placa='))

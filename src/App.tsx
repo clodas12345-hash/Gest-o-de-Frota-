@@ -742,7 +742,7 @@ export default function App() {
   }, [activeParams]);
 
   const isCloudLoadedRef = useRef(false);
-  const isQuotaExhaustedRef = useRef(false);
+  const [isQuotaExhausted, setIsQuotaExhausted] = useState(false);
   const lastSyncedJsonRef = useRef<Record<string, string>>({});
   const pendingCloudSyncRef = useRef<Record<string, any>>({});
   const cloudSyncTimerRef = useRef<NodeJS.Timeout | null>(null);
@@ -752,7 +752,7 @@ export default function App() {
   const deletedVistoriaIdsRef = useRef<Set<string>>(new Set());
 
   const saveToCloud = (field: string, data: any) => {
-    if (!isCloudLoadedRef.current || isQuotaExhaustedRef.current) return;
+    if (!isCloudLoadedRef.current || isQuotaExhausted) return;
     
     try {
       // Clean data if field is vehicles or vistorias to prevent Firestore 1MB document limit rejection
@@ -785,7 +785,7 @@ export default function App() {
         } catch (err: any) {
           if (err?.message?.includes('quota') || err?.code === 'resource-exhausted' || err?.message?.includes('Quota')) {
             console.warn('Firestore quota reached. Disabling cloud sync until page refresh.');
-            isQuotaExhaustedRef.current = true;
+            setIsQuotaExhausted(true);
           } else {
             console.warn('Error syncing fleetData to cloud:', err);
           }
@@ -2360,13 +2360,20 @@ export default function App() {
     setTimeout(() => setDeleteToastMsg(null), 3000);
 
     // 2. Delete from Firestore collections in background (parallel)
-    Promise.allSettled([
-      deleteDoc(doc(db, 'completedVistorias', id)),
-      reqToken ? deleteDoc(doc(db, 'completedVistorias', reqToken)) : Promise.resolve(),
-      reqToken ? deleteDoc(doc(db, 'vistoriaRequests', reqToken)) : Promise.resolve(),
-      reqToken ? deleteDoc(doc(db, 'completedVistorias', `requested-${reqToken}`)) : Promise.resolve(),
-      deleteDoc(doc(db, 'vehicleDocuments', `doc-vist-${id}`))
-    ]).catch(() => {});
+    if (!isQuotaExhausted) {
+        Promise.allSettled([
+          deleteDoc(doc(db, 'completedVistorias', id)),
+          reqToken ? deleteDoc(doc(db, 'completedVistorias', reqToken)) : Promise.resolve(),
+          reqToken ? deleteDoc(doc(db, 'vistoriaRequests', reqToken)) : Promise.resolve(),
+          reqToken ? deleteDoc(doc(db, 'completedVistorias', `requested-${reqToken}`)) : Promise.resolve(),
+          deleteDoc(doc(db, 'vehicleDocuments', `doc-vist-${id}`))
+        ]).catch((err) => {
+          if (err?.message?.includes('quota') || err?.code === 'resource-exhausted') {
+            setIsQuotaExhausted(true);
+            console.warn('Quota exhausted, further writes disabled.');
+          }
+        });
+    }
   };
 
   const handleDeleteAllVistoriasForVehicle = (vehicleId: string) => {
@@ -2419,20 +2426,27 @@ export default function App() {
     setTimeout(() => setDeleteToastMsg(null), 3000);
 
     // 2. Delete all matching docs from Firestore in background IN PARALLEL
-    const deletePromises: Promise<any>[] = [];
-    targetVistorias.forEach((v) => {
-      const docKey = v.id;
-      const reqToken = v.reqId || (v.id.startsWith('requested-') ? v.id.replace('requested-', '') : '');
-      deletePromises.push(deleteDoc(doc(db, 'completedVistorias', docKey)).catch(() => {}));
-      if (reqToken) {
-        deletePromises.push(deleteDoc(doc(db, 'completedVistorias', reqToken)).catch(() => {}));
-        deletePromises.push(deleteDoc(doc(db, 'vistoriaRequests', reqToken)).catch(() => {}));
-        deletePromises.push(deleteDoc(doc(db, 'completedVistorias', `requested-${reqToken}`)).catch(() => {}));
-      }
-      deletePromises.push(deleteDoc(doc(db, 'vehicleDocuments', `doc-vist-${docKey}`)).catch(() => {}));
-    });
+    if (!isQuotaExhausted) {
+        const deletePromises: Promise<any>[] = [];
+        targetVistorias.forEach((v) => {
+          const docKey = v.id;
+          const reqToken = v.reqId || (v.id.startsWith('requested-') ? v.id.replace('requested-', '') : '');
+          deletePromises.push(deleteDoc(doc(db, 'completedVistorias', docKey)).catch(() => {}));
+          if (reqToken) {
+            deletePromises.push(deleteDoc(doc(db, 'completedVistorias', reqToken)).catch(() => {}));
+            deletePromises.push(deleteDoc(doc(db, 'vistoriaRequests', reqToken)).catch(() => {}));
+            deletePromises.push(deleteDoc(doc(db, 'completedVistorias', `requested-${reqToken}`)).catch(() => {}));
+          }
+          deletePromises.push(deleteDoc(doc(db, 'vehicleDocuments', `doc-vist-${docKey}`)).catch(() => {}));
+        });
 
-    Promise.allSettled(deletePromises).catch(() => {});
+        Promise.allSettled(deletePromises).catch((err) => {
+          if (err?.message?.includes('quota') || err?.code === 'resource-exhausted') {
+            setIsQuotaExhausted(true);
+            console.warn('Quota exhausted, further writes disabled.');
+          }
+        });
+    }
   };
 
   const handleClearAllVistorias = () => {
@@ -2469,20 +2483,27 @@ export default function App() {
     setTimeout(() => setDeleteToastMsg(null), 3000);
 
     // 2. Delete all matching docs from Firestore in background IN PARALLEL
-    const deletePromises: Promise<any>[] = [];
-    listToDelete.forEach((v) => {
-      const docKey = v.id;
-      const reqToken = v.reqId || (v.id.startsWith('requested-') ? v.id.replace('requested-', '') : '');
-      deletePromises.push(deleteDoc(doc(db, 'completedVistorias', docKey)).catch(() => {}));
-      if (reqToken) {
-        deletePromises.push(deleteDoc(doc(db, 'completedVistorias', reqToken)).catch(() => {}));
-        deletePromises.push(deleteDoc(doc(db, 'vistoriaRequests', reqToken)).catch(() => {}));
-        deletePromises.push(deleteDoc(doc(db, 'completedVistorias', `requested-${reqToken}`)).catch(() => {}));
-      }
-      deletePromises.push(deleteDoc(doc(db, 'vehicleDocuments', `doc-vist-${docKey}`)).catch(() => {}));
-    });
+    if (!isQuotaExhausted) {
+        const deletePromises: Promise<any>[] = [];
+        listToDelete.forEach((v) => {
+          const docKey = v.id;
+          const reqToken = v.reqId || (v.id.startsWith('requested-') ? v.id.replace('requested-', '') : '');
+          deletePromises.push(deleteDoc(doc(db, 'completedVistorias', docKey)).catch(() => {}));
+          if (reqToken) {
+            deletePromises.push(deleteDoc(doc(db, 'completedVistorias', reqToken)).catch(() => {}));
+            deletePromises.push(deleteDoc(doc(db, 'vistoriaRequests', reqToken)).catch(() => {}));
+            deletePromises.push(deleteDoc(doc(db, 'completedVistorias', `requested-${reqToken}`)).catch(() => {}));
+          }
+          deletePromises.push(deleteDoc(doc(db, 'vehicleDocuments', `doc-vist-${docKey}`)).catch(() => {}));
+        });
 
-    Promise.allSettled(deletePromises).catch(() => {});
+        Promise.allSettled(deletePromises).catch((err) => {
+          if (err?.message?.includes('quota') || err?.code === 'resource-exhausted') {
+            setIsQuotaExhausted(true);
+            console.warn('Quota exhausted, further writes disabled.');
+          }
+        });
+    }
   };
 
   // Agenda Handlers
@@ -3397,6 +3418,7 @@ export default function App() {
                   onSaveVistoria={handleSaveVistoria}
                   onApproveVistoria={handleApproveVistoria}
                   onDeleteVistoria={handleDeleteVistoria}
+                  isQuotaExhausted={isQuotaExhausted}
                   onDeleteAllVistorias={handleDeleteAllVistoriasForVehicle}
                   onOpenRentalContract={(v) => {
                     setSelectedContractVehicle(v);
