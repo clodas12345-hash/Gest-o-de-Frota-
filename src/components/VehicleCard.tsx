@@ -4964,7 +4964,7 @@ _Enviado via sistema de gestão de frota._`;
                       };
                       if (onShowDeleteConfirm) {
                         onShowDeleteConfirm("Excluir Todas as Vistorias?", `Tem certeza que deseja apagar permanentemente todas as ${vistorias.length} vistorias deste veículo?`, confirmAction);
-                      } else if (window.confirm("Deseja realmente excluir todas as vistorias?")) {
+                      } else {
                         confirmAction();
                       }
                     }}
@@ -5116,10 +5116,11 @@ _Enviado via sistema de gestão de frota._`;
                                   type="button"
                                   onClick={(e) => {
                                     e.stopPropagation();
+                                    const confirmAction = () => onDeleteVistoria(v.id);
                                     if (onShowDeleteConfirm) {
-                                      onShowDeleteConfirm("Excluir Vistoria?", `Deseja realmente excluir esta vistoria do dia ${new Date(v.date + 'T12:00:00').toLocaleDateString('pt-BR')}?`, () => onDeleteVistoria(v.id));
-                                    } else if (window.confirm("Deseja realmente excluir esta vistoria?")) {
-                                      onDeleteVistoria(v.id);
+                                      onShowDeleteConfirm("Excluir Vistoria?", `Deseja realmente excluir esta vistoria do dia ${new Date(v.date + 'T12:00:00').toLocaleDateString('pt-BR')}?`, confirmAction);
+                                    } else {
+                                      confirmAction();
                                     }
                                   }}
                                   className="px-2 py-0.5 text-rose-400 hover:text-white bg-rose-500/10 hover:bg-rose-500/30 border border-rose-500/20 rounded text-[10px] font-bold transition-all flex items-center gap-1 cursor-pointer"
@@ -5254,10 +5255,11 @@ _Enviado via sistema de gestão de frota._`;
                                     type="button"
                                     onClick={(e) => {
                                       e.stopPropagation();
+                                      const confirmAction = () => onDeleteVistoria(v.id);
                                       if (onShowDeleteConfirm) {
-                                        onShowDeleteConfirm("Excluir Vistoria?", `Deseja realmente excluir esta vistoria?`, () => onDeleteVistoria(v.id));
-                                      } else if (window.confirm("Deseja realmente excluir esta vistoria?")) {
-                                        onDeleteVistoria(v.id);
+                                        onShowDeleteConfirm("Excluir Vistoria?", `Deseja realmente excluir esta vistoria?`, confirmAction);
+                                      } else {
+                                        confirmAction();
                                       }
                                     }}
                                     className="px-3 py-1 bg-rose-500/15 hover:bg-rose-500/30 border border-rose-500/30 text-rose-300 rounded-lg text-[11px] font-bold flex items-center gap-1.5 transition-all cursor-pointer shadow-xs"

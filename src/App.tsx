@@ -2281,29 +2281,12 @@ export default function App() {
   };
 
   const handleDeleteVistoria = async (id: string) => {
-    // 1. Find vistoria item to get reqId
     const targetVist = vistorias.find((v) => v.id === id);
-    const reqId = targetVist?.reqId;
+    const reqToken = targetVist?.reqId || (id.startsWith('requested-') ? id.replace('requested-', '') : '');
 
-    // 2. Delete from Firestore completedVistorias, vistoriaRequests, and vehicleDocuments
-    try {
-      await deleteDoc(doc(db, 'completedVistorias', id));
-    } catch (err) {}
-    if (reqId) {
-      try {
-        await deleteDoc(doc(db, 'completedVistorias', reqId));
-      } catch (err) {}
-      try {
-        await deleteDoc(doc(db, 'vistoriaRequests', reqId));
-      } catch (err) {}
-    }
-    try {
-      await deleteDoc(doc(db, 'vehicleDocuments', `doc-vist-${id}`));
-    } catch (err) {}
-
-    // 3. Update local state and fleetData/main cloud document
+    // 1. Instantly update React state so UI responds immediately
     setVistorias((prev) => {
-      const next = prev.filter((v) => v.id !== id && (!reqId || v.reqId !== reqId));
+      const next = prev.filter((v) => v.id !== id && (!reqToken || v.reqId !== reqToken) && v.id !== `requested-${reqToken}`);
       saveToCloud('vistorias', next);
       return next;
     });
@@ -2323,36 +2306,41 @@ export default function App() {
 
     setDeleteToastMsg('Vistoria excluída com sucesso.');
     setTimeout(() => setDeleteToastMsg(null), 3000);
+
+    // 2. Delete from Firestore collections in background
+    try { await deleteDoc(doc(db, 'completedVistorias', id)); } catch (err) {}
+    if (reqToken) {
+      try { await deleteDoc(doc(db, 'completedVistorias', reqToken)); } catch (err) {}
+      try { await deleteDoc(doc(db, 'vistoriaRequests', reqToken)); } catch (err) {}
+      try { await deleteDoc(doc(db, 'completedVistorias', `requested-${reqToken}`)); } catch (err) {}
+    }
+    try { await deleteDoc(doc(db, 'vehicleDocuments', `doc-vist-${id}`)); } catch (err) {}
   };
 
   const handleDeleteAllVistoriasForVehicle = async (vehicleId: string) => {
-    // 1. Find all matching vistorias
-    const targetVistorias = vistorias.filter((v) => v.vehicleId === vehicleId);
+    const veh = vehicles.find(v => v.id === vehicleId);
+    const targetPlate = veh?.plate ? veh.plate.replace(/[^A-Z0-9]/gi, '').toUpperCase() : '';
 
-    // 2. Delete all matching docs from Firestore
-    for (const v of targetVistorias) {
-      try {
-        await deleteDoc(doc(db, 'completedVistorias', v.id));
-      } catch (err) {}
-      if (v.reqId) {
-        try { await deleteDoc(doc(db, 'completedVistorias', v.reqId)); } catch (err) {}
-        try { await deleteDoc(doc(db, 'vistoriaRequests', v.reqId)); } catch (err) {}
-      }
-      try {
-        await deleteDoc(doc(db, 'vehicleDocuments', `doc-vist-${v.id}`));
-      } catch (err) {}
-    }
+    const targetVistorias = vistorias.filter((v) => {
+      if (v.vehicleId === vehicleId) return true;
+      if (targetPlate && v.vehiclePlate && v.vehiclePlate.replace(/[^A-Z0-9]/gi, '').toUpperCase() === targetPlate) return true;
+      return false;
+    });
 
-    // 3. Update local state and cloud
+    // 1. Instantly update UI state
     setVistorias((prev) => {
-      const next = prev.filter((v) => v.vehicleId !== vehicleId);
+      const next = prev.filter((v) => {
+        if (v.vehicleId === vehicleId) return false;
+        if (targetPlate && v.vehiclePlate && v.vehiclePlate.replace(/[^A-Z0-9]/gi, '').toUpperCase() === targetPlate) return false;
+        return true;
+      });
       saveToCloud('vistorias', next);
       return next;
     });
 
     setVehicles((prev) => {
       const next = prev.map((v) =>
-        v.id === vehicleId
+        (v.id === vehicleId || (targetPlate && v.plate.replace(/[^A-Z0-9]/gi, '').toUpperCase() === targetPlate))
           ? {
               ...v,
               nextVistoriaDate: undefined,
@@ -2366,24 +2354,24 @@ export default function App() {
 
     setDeleteToastMsg('Todas as vistorias deste veículo foram excluídas com sucesso.');
     setTimeout(() => setDeleteToastMsg(null), 3000);
+
+    // 2. Delete all matching docs from Firestore in background
+    for (const v of targetVistorias) {
+      const docKey = v.id;
+      const reqToken = v.reqId || (v.id.startsWith('requested-') ? v.id.replace('requested-', '') : '');
+      try { await deleteDoc(doc(db, 'completedVistorias', docKey)); } catch (err) {}
+      if (reqToken) {
+        try { await deleteDoc(doc(db, 'completedVistorias', reqToken)); } catch (err) {}
+        try { await deleteDoc(doc(db, 'vistoriaRequests', reqToken)); } catch (err) {}
+      }
+      try { await deleteDoc(doc(db, 'vehicleDocuments', `doc-vist-${docKey}`)); } catch (err) {}
+    }
   };
 
   const handleClearAllVistorias = async () => {
-    // 1. Delete all vistorias from Firestore
-    for (const v of vistorias) {
-      try {
-        await deleteDoc(doc(db, 'completedVistorias', v.id));
-      } catch (err) {}
-      if (v.reqId) {
-        try { await deleteDoc(doc(db, 'completedVistorias', v.reqId)); } catch (err) {}
-        try { await deleteDoc(doc(db, 'vistoriaRequests', v.reqId)); } catch (err) {}
-      }
-      try {
-        await deleteDoc(doc(db, 'vehicleDocuments', `doc-vist-${v.id}`));
-      } catch (err) {}
-    }
+    const listToDelete = [...vistorias];
 
-    // 2. Clear state and cloud
+    // 1. Instantly update UI state
     setVistorias([]);
     saveToCloud('vistorias', []);
 
@@ -2399,6 +2387,18 @@ export default function App() {
 
     setDeleteToastMsg('Todas as vistorias da frota foram excluídas com sucesso.');
     setTimeout(() => setDeleteToastMsg(null), 3000);
+
+    // 2. Delete from Firestore in background
+    for (const v of listToDelete) {
+      const docKey = v.id;
+      const reqToken = v.reqId || (v.id.startsWith('requested-') ? v.id.replace('requested-', '') : '');
+      try { await deleteDoc(doc(db, 'completedVistorias', docKey)); } catch (err) {}
+      if (reqToken) {
+        try { await deleteDoc(doc(db, 'completedVistorias', reqToken)); } catch (err) {}
+        try { await deleteDoc(doc(db, 'vistoriaRequests', reqToken)); } catch (err) {}
+      }
+      try { await deleteDoc(doc(db, 'vehicleDocuments', `doc-vist-${docKey}`)); } catch (err) {}
+    }
   };
 
   // Agenda Handlers
