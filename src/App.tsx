@@ -9,7 +9,7 @@ import {
   INITIAL_VISTORIAS
 } from './mockData';
 import { db } from './firebase';
-import { doc, getDoc, setDoc, onSnapshot, collection } from 'firebase/firestore';
+import { doc, getDoc, setDoc, deleteDoc, onSnapshot, collection } from 'firebase/firestore';
 import { Capacitor, registerPlugin } from '@capacitor/core';
 import { App as CapApp } from '@capacitor/app';
 const Filesystem = registerPlugin<any>('Filesystem');
@@ -2280,26 +2280,78 @@ export default function App() {
     setTimeout(() => setDeleteToastMsg(null), 5000);
   };
 
-  const handleDeleteVistoria = (id: string) => {
-    setVistorias((prev) => prev.filter((v) => v.id !== id));
-    setVehicles((prev) =>
-      prev.map((v) => ({
+  const handleDeleteVistoria = async (id: string) => {
+    // 1. Find vistoria item to get reqId
+    const targetVist = vistorias.find((v) => v.id === id);
+    const reqId = targetVist?.reqId;
+
+    // 2. Delete from Firestore completedVistorias, vistoriaRequests, and vehicleDocuments
+    try {
+      await deleteDoc(doc(db, 'completedVistorias', id));
+    } catch (err) {}
+    if (reqId) {
+      try {
+        await deleteDoc(doc(db, 'completedVistorias', reqId));
+      } catch (err) {}
+      try {
+        await deleteDoc(doc(db, 'vistoriaRequests', reqId));
+      } catch (err) {}
+    }
+    try {
+      await deleteDoc(doc(db, 'vehicleDocuments', `doc-vist-${id}`));
+    } catch (err) {}
+
+    // 3. Update local state and fleetData/main cloud document
+    setVistorias((prev) => {
+      const next = prev.filter((v) => v.id !== id && (!reqId || v.reqId !== reqId));
+      saveToCloud('vistorias', next);
+      return next;
+    });
+
+    setVehicles((prev) => {
+      const next = prev.map((v) => ({
         ...v,
         documents: (v.documents || []).filter((d) => {
           if (d.category === 'Vistoria' && (d.id.includes(id) || d.id === id)) return false;
           if (d.id === `doc-vist-${id}` || d.id === id) return false;
           return true;
         })
-      }))
-    );
+      }));
+      saveToCloud('vehicles', next);
+      return next;
+    });
+
     setDeleteToastMsg('Vistoria excluída com sucesso.');
     setTimeout(() => setDeleteToastMsg(null), 3000);
   };
 
-  const handleDeleteAllVistoriasForVehicle = (vehicleId: string) => {
-    setVistorias((prev) => prev.filter((v) => v.vehicleId !== vehicleId));
-    setVehicles((prev) =>
-      prev.map((v) =>
+  const handleDeleteAllVistoriasForVehicle = async (vehicleId: string) => {
+    // 1. Find all matching vistorias
+    const targetVistorias = vistorias.filter((v) => v.vehicleId === vehicleId);
+
+    // 2. Delete all matching docs from Firestore
+    for (const v of targetVistorias) {
+      try {
+        await deleteDoc(doc(db, 'completedVistorias', v.id));
+      } catch (err) {}
+      if (v.reqId) {
+        try { await deleteDoc(doc(db, 'completedVistorias', v.reqId)); } catch (err) {}
+        try { await deleteDoc(doc(db, 'vistoriaRequests', v.reqId)); } catch (err) {}
+      }
+      try {
+        await deleteDoc(doc(db, 'vehicleDocuments', `doc-vist-${v.id}`));
+      } catch (err) {}
+    }
+
+    // 3. Update local state and cloud
+    setVistorias((prev) => {
+      const next = prev.filter((v) => v.vehicleId !== vehicleId);
+      saveToCloud('vistorias', next);
+      return next;
+    });
+
+    setVehicles((prev) => {
+      const next = prev.map((v) =>
         v.id === vehicleId
           ? {
               ...v,
@@ -2307,21 +2359,44 @@ export default function App() {
               documents: (v.documents || []).filter((d) => d.category !== 'Vistoria' && !d.id.startsWith('doc-vist-'))
             }
           : v
-      )
-    );
+      );
+      saveToCloud('vehicles', next);
+      return next;
+    });
+
     setDeleteToastMsg('Todas as vistorias deste veículo foram excluídas com sucesso.');
     setTimeout(() => setDeleteToastMsg(null), 3000);
   };
 
-  const handleClearAllVistorias = () => {
+  const handleClearAllVistorias = async () => {
+    // 1. Delete all vistorias from Firestore
+    for (const v of vistorias) {
+      try {
+        await deleteDoc(doc(db, 'completedVistorias', v.id));
+      } catch (err) {}
+      if (v.reqId) {
+        try { await deleteDoc(doc(db, 'completedVistorias', v.reqId)); } catch (err) {}
+        try { await deleteDoc(doc(db, 'vistoriaRequests', v.reqId)); } catch (err) {}
+      }
+      try {
+        await deleteDoc(doc(db, 'vehicleDocuments', `doc-vist-${v.id}`));
+      } catch (err) {}
+    }
+
+    // 2. Clear state and cloud
     setVistorias([]);
-    setVehicles((prev) =>
-      prev.map((v) => ({
+    saveToCloud('vistorias', []);
+
+    setVehicles((prev) => {
+      const next = prev.map((v) => ({
         ...v,
         nextVistoriaDate: undefined,
         documents: (v.documents || []).filter((d) => d.category !== 'Vistoria' && !d.id.startsWith('doc-vist-'))
-      }))
-    );
+      }));
+      saveToCloud('vehicles', next);
+      return next;
+    });
+
     setDeleteToastMsg('Todas as vistorias da frota foram excluídas com sucesso.');
     setTimeout(() => setDeleteToastMsg(null), 3000);
   };
