@@ -9,7 +9,7 @@ import {
   INITIAL_VISTORIAS
 } from './mockData';
 import { db } from './firebase';
-import { doc, getDoc, setDoc, onSnapshot } from 'firebase/firestore';
+import { doc, getDoc, setDoc, onSnapshot, collection } from 'firebase/firestore';
 import { Capacitor, registerPlugin } from '@capacitor/core';
 import { App as CapApp } from '@capacitor/app';
 const Filesystem = registerPlugin<any>('Filesystem');
@@ -170,6 +170,24 @@ function cleanVehiclesForCloud(vehiclesList: Vehicle[]): Vehicle[] {
     return {
       ...v,
       documents: cleanDocs
+    };
+  });
+}
+
+function cleanVistoriasForCloud(vistoriasList: Vistoria[]): Vistoria[] {
+  if (!Array.isArray(vistoriasList)) return [];
+  return vistoriasList.map(v => {
+    const cleanPhotos = (v.photos || []).map(p => {
+      // Truncate excessively long base64 data URLs in the monolithic fleetData/main document
+      // (Full photos are safely stored in completedVistorias collection)
+      if (typeof p === 'string' && p.length > 150000) {
+        return '';
+      }
+      return p;
+    }).filter(Boolean);
+    return {
+      ...v,
+      photos: cleanPhotos
     };
   });
 }
@@ -735,10 +753,13 @@ export default function App() {
     if (!isCloudLoadedRef.current || isRemoteUpdateRef.current) return;
     
     try {
-      // Clean data if field is vehicles to prevent Firestore 1MB document limit rejection
-      const cleanData = (field === 'vehicles' && Array.isArray(data))
-        ? cleanVehiclesForCloud(data)
-        : data;
+      // Clean data if field is vehicles or vistorias to prevent Firestore 1MB document limit rejection
+      let cleanData = data;
+      if (field === 'vehicles' && Array.isArray(data)) {
+        cleanData = cleanVehiclesForCloud(data);
+      } else if (field === 'vistorias' && Array.isArray(data)) {
+        cleanData = cleanVistoriasForCloud(data);
+      }
 
       pendingCloudSyncRef.current[field] = sanitizeForCloud(cleanData);
 
@@ -807,78 +828,166 @@ export default function App() {
         isCloudLoadedRef.current = true;
       });
 
-      // Real-time listener for Android APK only (optional optimization, but good for reactivity)
-      if (Capacitor.isNativePlatform()) {
-        unsubscribe = onSnapshot(docRef, (snap) => {
-          if (snap.exists() && isCloudLoadedRef.current) {
-            const d = snap.data();
-            isRemoteUpdateRef.current = true;
+      // 1. Real-time listener for main fleetData document across all platforms
+      unsubscribe = onSnapshot(docRef, (snap) => {
+        if (snap.exists() && isCloudLoadedRef.current) {
+          const d = snap.data();
+          isRemoteUpdateRef.current = true;
 
-            const incomingVehicles: Vehicle[] = (d.vehicles && Array.isArray(d.vehicles))
-              ? ensureFuturePaymentsForVehicles(d.vehicles)
-              : [];
+          const incomingVehicles: Vehicle[] = (d.vehicles && Array.isArray(d.vehicles))
+            ? ensureFuturePaymentsForVehicles(d.vehicles)
+            : [];
 
-            if (d.vistorias && Array.isArray(d.vistorias)) {
-              const incomingVistorias: Vistoria[] = d.vistorias;
-              incomingVistorias.forEach((vist) => {
-                if (!knownVistoriaIdsRef.current.has(vist.id)) {
-                  knownVistoriaIdsRef.current.add(vist.id);
-                  const cleanPlate = (vist.vehiclePlate || '').replace(/[^A-Z0-9]/gi, '').toUpperCase();
-                  const matchedVeh = incomingVehicles.find(
-                    (v) =>
-                      v.id === vist.vehicleId ||
-                      (cleanPlate && v.plate.replace(/[^A-Z0-9]/gi, '').toUpperCase() === cleanPlate)
-                  );
-                  const vehTitle = matchedVeh
-                    ? `${matchedVeh.brand} ${matchedVeh.model} (${matchedVeh.plate})`
-                    : (vist.vehiclePlate || 'Veículo');
-                  const photosCount = vist.photos?.length || 0;
+          if (d.vistorias && Array.isArray(d.vistorias)) {
+            const incomingVistorias: Vistoria[] = d.vistorias;
+            setVistorias(prev => {
+              // Merge incoming vistorias preserving any full photos loaded locally or from completedVistorias
+              const mapRecord: Record<string, Vistoria> = {};
+              prev.forEach(v => { mapRecord[v.id] = v; });
+              incomingVistorias.forEach(v => {
+                const existing = mapRecord[v.id];
+                if (existing) {
+                  mapRecord[v.id] = {
+                    ...v,
+                    photos: (existing.photos && existing.photos.length > (v.photos?.length || 0)) ? existing.photos : (v.photos || [])
+                  };
+                } else {
+                  mapRecord[v.id] = v;
+                }
+              });
+              return Object.values(mapRecord);
+            });
+          }
 
-                  sendAppNotification(`📋 Nova Vistoria Recebida: ${vehTitle}`, {
-                    body: `O motorista enviou a vistoria (${vist.type || 'periódica'}) com ${photosCount} foto(s)${vist.km ? ` e odômetro em ${vist.km.toLocaleString('pt-BR')} KM` : ''}.`,
-                    eventKey: 'vistoria_completed',
+          if (incomingVehicles.length > 0) {
+            incomingVehicles.forEach((veh) => {
+              (veh.pendingReceipts || []).forEach((rec) => {
+                if (!knownReceiptIdsRef.current.has(rec.id)) {
+                  knownReceiptIdsRef.current.add(rec.id);
+                  sendAppNotification(`🧾 Novo Comprovante Recebido: ${veh.brand} (${veh.plate})`, {
+                    body: `O motorista ${rec.driverName || veh.driver || ''} enviou um comprovante de R$ ${(rec.amount || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })} para aprovação.`,
+                    eventKey: 'receipt_received',
                   });
                 }
               });
-              setVistorias(incomingVistorias);
-            }
-
-            if (incomingVehicles.length > 0) {
-              incomingVehicles.forEach((veh) => {
-                (veh.pendingReceipts || []).forEach((rec) => {
-                  if (!knownReceiptIdsRef.current.has(rec.id)) {
-                    knownReceiptIdsRef.current.add(rec.id);
-                    sendAppNotification(`🧾 Novo Comprovante Recebido: ${veh.brand} (${veh.plate})`, {
-                      body: `O motorista ${rec.driverName || veh.driver || ''} enviou um comprovante de R$ ${(rec.amount || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })} para aprovação.`,
-                      eventKey: 'receipt_received',
-                    });
-                  }
-                });
-              });
-              setVehicles(incomingVehicles);
-            }
-
-            if (d.contacts && Array.isArray(d.contacts)) setContacts(d.contacts);
-            if (d.fuelLogs && Array.isArray(d.fuelLogs)) setFuelLogs(d.fuelLogs);
-            if (d.maintenanceLogs && Array.isArray(d.maintenanceLogs)) setMaintenanceLogs(d.maintenanceLogs);
-            if (d.expenseLogs && Array.isArray(d.expenseLogs)) setExpenseLogs(d.expenseLogs);
-            if (d.finalizedContracts && Array.isArray(d.finalizedContracts)) setFinalizedContracts(d.finalizedContracts);
-            setTimeout(() => {
-              isRemoteUpdateRef.current = false;
-            }, 150);
+            });
+            setVehicles(incomingVehicles);
           }
-        }, (err) => {
-          console.warn('Firestore snapshot error:', err);
+
+          if (d.contacts && Array.isArray(d.contacts)) setContacts(d.contacts);
+          if (d.fuelLogs && Array.isArray(d.fuelLogs)) setFuelLogs(d.fuelLogs);
+          if (d.maintenanceLogs && Array.isArray(d.maintenanceLogs)) setMaintenanceLogs(d.maintenanceLogs);
+          if (d.expenseLogs && Array.isArray(d.expenseLogs)) setExpenseLogs(d.expenseLogs);
+          if (d.finalizedContracts && Array.isArray(d.finalizedContracts)) setFinalizedContracts(d.finalizedContracts);
+          setTimeout(() => {
+            isRemoteUpdateRef.current = false;
+          }, 150);
+        }
+      }, (err) => {
+        console.warn('Firestore snapshot error:', err);
+      });
+
+      // 2. Real-time listener for completedVistorias collection (contains full driver photo submissions)
+      const unsubCompletedVistorias = onSnapshot(collection(db, 'completedVistorias'), (snapshot) => {
+        if (!snapshot || snapshot.empty) return;
+        const completedList: Vistoria[] = [];
+        snapshot.forEach((docSnap) => {
+          const vistData = docSnap.data() as Vistoria;
+          if (vistData && vistData.id) {
+            completedList.push(vistData);
+          }
         });
-      }
+
+        if (completedList.length === 0) return;
+
+        setVistorias((prev) => {
+          let hasChanges = false;
+          let nextList = [...prev];
+
+          completedList.forEach((completed) => {
+            const cleanCompletedPlate = (completed.vehiclePlate || '').replace(/[^A-Z0-9]/gi, '').toUpperCase();
+            
+            // Look for existing item by ID, reqId, or placeholder with status 'requested'
+            const existingIdx = nextList.findIndex((v) =>
+              v.id === completed.id ||
+              (completed.reqId && v.reqId === completed.reqId) ||
+              (v.id.startsWith('requested-') && (
+                v.vehicleId === completed.vehicleId ||
+                (cleanCompletedPlate && v.vehiclePlate && v.vehiclePlate.replace(/[^A-Z0-9]/gi, '').toUpperCase() === cleanCompletedPlate)
+              ))
+            );
+
+            if (existingIdx >= 0) {
+              const existing = nextList[existingIdx];
+              const existingPhotos = existing.photos || [];
+              const completedPhotos = completed.photos || [];
+
+              if (existing.status === 'requested' || completedPhotos.length >= existingPhotos.length || existingPhotos.length === 0) {
+                nextList[existingIdx] = {
+                  ...existing,
+                  ...completed,
+                  photos: completedPhotos.length > 0 ? completedPhotos : existingPhotos
+                };
+                hasChanges = true;
+              }
+            } else {
+              nextList.unshift(completed);
+              hasChanges = true;
+            }
+
+            if (!knownVistoriaIdsRef.current.has(completed.id)) {
+              knownVistoriaIdsRef.current.add(completed.id);
+              sendAppNotification(`📋 Nova Vistoria Recebida`, {
+                body: `Vistoria (${completed.type || 'periódica'}) recebida com ${completed.photos?.length || 0} foto(s).`,
+                eventKey: 'vistoria_completed',
+              });
+            }
+          });
+
+          return hasChanges ? nextList : prev;
+        });
+      }, (err) => {
+        console.warn('completedVistorias snapshot error:', err);
+      });
+
+      // 3. Real-time listener for vehicleDocuments collection
+      const unsubVehicleDocs = onSnapshot(collection(db, 'vehicleDocuments'), (snapshot) => {
+        if (!snapshot || snapshot.empty) return;
+        snapshot.forEach((docSnap) => {
+          const docData = docSnap.data() as any;
+          if (docData && docData.vehicleId && docData.id) {
+            setVehicles((prev) => {
+              return prev.map((v) => {
+                if (
+                  v.id === docData.vehicleId ||
+                  (v.plate && docData.plate && v.plate.replace(/[^A-Z0-9]/gi, '').toUpperCase() === docData.plate.replace(/[^A-Z0-9]/gi, '').toUpperCase())
+                ) {
+                  const existingDocs = v.documents || [];
+                  if (!existingDocs.some((d) => d.id === docData.id || d.name === docData.name)) {
+                    return {
+                      ...v,
+                      documents: [docData, ...existingDocs]
+                    };
+                  }
+                }
+                return v;
+              });
+            });
+          }
+        });
+      }, (err) => {
+        console.warn('vehicleDocuments snapshot error:', err);
+      });
+
+      return () => {
+        try { unsubscribe(); } catch (e) {}
+        try { unsubCompletedVistorias(); } catch (e) {}
+        try { unsubVehicleDocs(); } catch (e) {}
+      };
     } catch (err) {
       console.warn('Error setting up Firestore listener:', err);
       isCloudLoadedRef.current = true;
     }
-
-    return () => {
-      try { unsubscribe(); } catch (e) {}
-    };
   }, []);
 
   useEffect(() => {
@@ -2857,7 +2966,7 @@ export default function App() {
 
             await setDoc(mainDocRef, sanitizeForCloud({
               vehicles: cleanVehiclesForCloud(cloudVehicles),
-              vistorias: cloudVistorias.slice(0, 40),
+              vistorias: cleanVistoriasForCloud(cloudVistorias.slice(0, 40)),
               updatedAt: new Date().toISOString()
             }), { merge: true });
           } catch (syncErr) {
