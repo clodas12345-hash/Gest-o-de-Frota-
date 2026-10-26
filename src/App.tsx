@@ -2024,15 +2024,19 @@ export default function App() {
     const enrichedVistoria: Vistoria = {
       ...vistoria,
       vehicleId: targetVehicle ? targetVehicle.id : vistoria.vehicleId,
-      vehiclePlate: targetVehicle ? targetVehicle.plate : vistoria.vehiclePlate
+      vehiclePlate: targetVehicle ? targetVehicle.plate : vistoria.vehiclePlate,
+      status: 'pending'
     };
 
     setVistorias((prev) => {
-      const exists = prev.some((v) => v.id === enrichedVistoria.id);
-      if (exists) {
-        return prev.map((v) => (v.id === enrichedVistoria.id ? enrichedVistoria : v));
-      }
-      return [enrichedVistoria, ...prev];
+      // Remove any requested placeholder matching reqId or vehicle
+      const filtered = prev.filter(v => {
+        if (enrichedVistoria.reqId && v.reqId === enrichedVistoria.reqId) return false;
+        if (v.id.startsWith('requested-') && v.vehicleId === enrichedVistoria.vehicleId) return false;
+        if (v.id === enrichedVistoria.id) return false;
+        return true;
+      });
+      return [enrichedVistoria, ...filtered];
     });
 
     if (!targetVehicle) return;
@@ -2727,7 +2731,7 @@ export default function App() {
             return nextVehicles;
           });
         }}
-        onSaveVistoria={(newVistoria, pdfDataUrl, pdfFileName) => {
+        onSaveVistoria={async (newVistoria, pdfDataUrl, pdfFileName) => {
           knownVistoriaIdsRef.current.add(newVistoria.id);
           const plateSanitized = (newVistoria.vehiclePlate || targetVehicle?.plate || '').replace(/[^A-Z0-9]/gi, '').toUpperCase();
           const matchedRealVehicle = vehicles.find(
@@ -2746,67 +2750,114 @@ export default function App() {
             eventKey: 'vistoria_completed',
           });
 
-          setVistorias(prev => {
-            const nextVistorias = [finalVistoria, ...prev];
-            setDoc(doc(db, 'fleetData', 'main'), sanitizeForCloud({
-              vistorias: nextVistorias,
-              updatedAt: new Date().toISOString()
-            }), { merge: true }).catch(err => console.warn('Direct vistoria cloud sync error:', err));
-            return nextVistorias;
-          });
-          
+          // 1. Salvar vistoria imediatamente no Firestore em documento individual (sem limite de 1MB)
+          try {
+            await setDoc(doc(db, 'completedVistorias', finalVistoria.id), sanitizeForCloud(finalVistoria));
+          } catch (cErr) {
+            console.warn('Erro ao salvar em completedVistorias:', cErr);
+          }
+
+          // 2. Atualizar estado local de vistorias (removendo placeholders "requested-")
+          setVistorias(prev => [finalVistoria, ...prev.filter(v => 
+            v.id !== finalVistoria.id && 
+            (!finalVistoria.reqId || v.reqId !== finalVistoria.reqId) &&
+            !v.id.startsWith('requested-')
+          )]);
+
           const docName = pdfFileName || `Vistoria (${finalVistoria.type}) - ${new Date(finalVistoria.date + 'T12:00:00').toLocaleDateString('pt-BR')}.pdf`;
-          
-          const attachDoc = (url?: string, size?: string, type?: string) => {
-            const vistoriaDoc = {
-              id: `doc-vist-${Date.now()}`,
-              name: docName,
-              category: 'Vistoria',
-              uploadDate: finalVistoria.date,
-              fileSize: size || 'Documento PDF',
-              fileType: type || 'pdf',
-              contentUrl: url
-            };
-            const kmUpdate = (finalVistoria.km && finalVistoria.km > 0) ? {
-              currentKm: finalVistoria.km,
-              preventiveMaintCurrentKm: finalVistoria.km
-            } : {};
 
-            setVehicles(prev => {
-              const targetPlateSanitized = activeVehicle.plate.replace(/[^A-Z0-9]/gi, '').toUpperCase();
-              const found = prev.some(v => v.id === activeVehicle.id || v.plate.replace(/[^A-Z0-9]/gi, '').toUpperCase() === targetPlateSanitized);
-              const nextVehicles = !found
-                ? [{ ...activeVehicle, ...kmUpdate, documents: [vistoriaDoc, ...(activeVehicle.documents || [])] }, ...prev]
-                : prev.map(v => {
-                    if (v.id === activeVehicle.id || v.plate.replace(/[^A-Z0-9]/gi, '').toUpperCase() === targetPlateSanitized) {
-                      return {
-                        ...v,
-                        ...kmUpdate,
-                        nextVistoriaDate: undefined,
-                        documents: [vistoriaDoc, ...(v.documents || []).filter(d => d.id !== vistoriaDoc.id)]
-                      };
-                    }
-                    return v;
-                  });
+          const kmUpdate = (finalVistoria.km && finalVistoria.km > 0) ? {
+            currentKm: finalVistoria.km,
+            preventiveMaintCurrentKm: finalVistoria.km
+          } : {};
 
-                setDoc(doc(db, 'fleetData', 'main'), sanitizeForCloud({
-                  vehicles: cleanVehiclesForCloud(nextVehicles),
-                  updatedAt: new Date().toISOString()
-                }), { merge: true }).catch(err => console.warn('Direct vehicle vistoria cloud sync error:', err));
-
-              return nextVehicles;
-            });
+          const vistoriaDoc = {
+            id: `doc-vist-${Date.now()}`,
+            name: docName,
+            category: 'Vistoria',
+            uploadDate: finalVistoria.date,
+            fileSize: 'Documento PDF',
+            fileType: 'pdf',
+            contentUrl: pdfDataUrl || ''
           };
 
+          // 3. Salvar documento em vehicleDocuments no Firestore (para acesso permanente com fotos)
           if (pdfDataUrl) {
-            attachDoc(pdfDataUrl, 'Documento PDF', 'pdf');
-          } else {
-            generateVistoriaPDF(activeVehicle, finalVistoria).then(({ pdfDataUrl: generatedUrl }) => {
-              attachDoc(generatedUrl, 'Documento PDF', 'pdf');
-            }).catch(err => {
-              console.error("Erro ao gerar PDF da Vistoria", err);
-              attachDoc(finalVistoria.photos.length > 0 ? finalVistoria.photos[0] : undefined, finalVistoria.photos.length > 0 ? `${finalVistoria.photos.length} foto(s)` : 'Checklist', finalVistoria.photos.length > 0 ? 'image' : 'pdf');
-            });
+            try {
+              await setDoc(doc(db, 'vehicleDocuments', vistoriaDoc.id), sanitizeForCloud({
+                ...vistoriaDoc,
+                vehicleId: activeVehicle.id,
+                plate: activeVehicle.plate
+              }));
+            } catch (dErr) {
+              console.warn('Erro ao salvar documento da vistoria em vehicleDocuments:', dErr);
+            }
+          }
+
+          // 4. Atualizar veículos no estado local
+          setVehicles(prev => {
+            const targetPlateSanitized = activeVehicle.plate.replace(/[^A-Z0-9]/gi, '').toUpperCase();
+            const found = prev.some(v => v.id === activeVehicle.id || v.plate.replace(/[^A-Z0-9]/gi, '').toUpperCase() === targetPlateSanitized);
+            const nextVehicles = !found
+              ? [{ ...activeVehicle, ...kmUpdate, documents: [vistoriaDoc, ...(activeVehicle.documents || [])] }, ...prev]
+              : prev.map(v => {
+                  if (v.id === activeVehicle.id || v.plate.replace(/[^A-Z0-9]/gi, '').toUpperCase() === targetPlateSanitized) {
+                    return {
+                      ...v,
+                      ...kmUpdate,
+                      nextVistoriaDate: undefined,
+                      documents: [vistoriaDoc, ...(v.documents || []).filter(d => d.id !== vistoriaDoc.id)]
+                    };
+                  }
+                  return v;
+                });
+            return nextVehicles;
+          });
+
+          // 5. Sincronizar com o documento central fleetData/main no Firestore buscando a frota real do gestor
+          try {
+            const mainDocRef = doc(db, 'fleetData', 'main');
+            const mainSnap = await getDoc(mainDocRef);
+            let cloudVehicles: Vehicle[] = [];
+            let cloudVistorias: Vistoria[] = [];
+
+            if (mainSnap.exists()) {
+              const d = mainSnap.data();
+              if (Array.isArray(d.vehicles)) cloudVehicles = d.vehicles;
+              if (Array.isArray(d.vistorias)) cloudVistorias = d.vistorias;
+            }
+
+            const targetPlateSanitized = activeVehicle.plate.replace(/[^A-Z0-9]/gi, '').toUpperCase();
+            const vehicleIdx = cloudVehicles.findIndex(
+              v => v.id === activeVehicle.id || (v.plate && v.plate.replace(/[^A-Z0-9]/gi, '').toUpperCase() === targetPlateSanitized)
+            );
+
+            if (vehicleIdx >= 0) {
+              const currentV = cloudVehicles[vehicleIdx];
+              cloudVehicles[vehicleIdx] = {
+                ...currentV,
+                ...kmUpdate,
+                nextVistoriaDate: undefined,
+                documents: [vistoriaDoc, ...(currentV.documents || []).filter(d => d.name !== vistoriaDoc.name)]
+              };
+            } else {
+              cloudVehicles.unshift({
+                ...activeVehicle,
+                ...kmUpdate,
+                nextVistoriaDate: undefined,
+                documents: [vistoriaDoc, ...(activeVehicle.documents || [])]
+              });
+            }
+
+            cloudVistorias = [finalVistoria, ...cloudVistorias.filter(v => v.id !== finalVistoria.id)];
+
+            await setDoc(mainDocRef, sanitizeForCloud({
+              vehicles: cleanVehiclesForCloud(cloudVehicles),
+              vistorias: cloudVistorias.slice(0, 40),
+              updatedAt: new Date().toISOString()
+            }), { merge: true });
+          } catch (syncErr) {
+            console.error('Erro na sincronização da vistoria com fleetData:', syncErr);
           }
         }}
         onExit={() => {

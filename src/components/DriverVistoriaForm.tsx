@@ -289,21 +289,68 @@ export function DriverVistoriaForm({
     }));
   };
 
-  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (file) {
+  const [submittedVistoria, setSubmittedVistoria] = useState<Vistoria | null>(null);
+  const [submittedPdfDataUrl, setSubmittedPdfDataUrl] = useState<string | null>(null);
+  const [submittedFileName, setSubmittedFileName] = useState<string | null>(null);
+
+  const compressImageFile = (file: File): Promise<string> => {
+    return new Promise((resolve) => {
       const reader = new FileReader();
       reader.onload = (ev) => {
-        if (ev.target?.result) {
-          const dataUrl = ev.target.result as string;
-          if (targetPhotoItem) {
-             setChecklist(prev => ({ ...prev, [targetPhotoItem]: { ...prev[targetPhotoItem], photoUrl: dataUrl }}));
-          } else {
-             setPhotos(prev => [...prev, dataUrl]);
+        const rawUrl = ev.target?.result as string;
+        if (!rawUrl) return resolve('');
+        const img = new Image();
+        img.onload = () => {
+          try {
+            const canvas = document.createElement('canvas');
+            const MAX_DIM = 900;
+            let width = img.naturalWidth || img.width;
+            let height = img.naturalHeight || img.height;
+            if (width > height) {
+              if (width > MAX_DIM) {
+                height = Math.round((height * MAX_DIM) / width);
+                width = MAX_DIM;
+              }
+            } else {
+              if (height > MAX_DIM) {
+                width = Math.round((width * MAX_DIM) / height);
+                height = MAX_DIM;
+              }
+            }
+            canvas.width = width;
+            canvas.height = height;
+            const ctx = canvas.getContext('2d');
+            if (ctx) {
+              ctx.fillStyle = '#FFFFFF';
+              ctx.fillRect(0, 0, width, height);
+              ctx.drawImage(img, 0, 0, width, height);
+              resolve(canvas.toDataURL('image/jpeg', 0.72));
+              return;
+            }
+          } catch (e) {
+            console.warn('Compression error:', e);
           }
-        }
+          resolve(rawUrl);
+        };
+        img.onerror = () => resolve(rawUrl);
+        img.src = rawUrl;
       };
+      reader.onerror = () => resolve('');
       reader.readAsDataURL(file);
+    });
+  };
+
+  const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      const dataUrl = await compressImageFile(file);
+      if (dataUrl) {
+        if (targetPhotoItem) {
+          setChecklist(prev => ({ ...prev, [targetPhotoItem]: { ...prev[targetPhotoItem], photoUrl: dataUrl }}));
+        } else {
+          setPhotos(prev => [...prev, dataUrl]);
+        }
+      }
     }
   };
 
@@ -315,8 +362,60 @@ export function DriverVistoriaForm({
     setPreviewEnlargedPhoto({ photos: [photo], index: 0, title });
   };
 
-  const handleSendWhatsAppConfirmation = () => {
-    // Logic to send confirmation
+  const handleSendWhatsAppConfirmation = async () => {
+    if (!vehicle) return;
+
+    const totalPhotos = (submittedVistoria?.photos || photos).length;
+    const dateFormatted = new Date().toLocaleDateString('pt-BR');
+    const shareText = `🚗 *VISTORIA CONCLUÍDA - GESTÃO DE FROTA*
+
+📋 *Tipo:* ${vistoriaType.toUpperCase()}
+🚘 *Veículo:* ${vehicle.brand} ${vehicle.model}
+🔤 *Placa:* ${vehicle.plate}
+👤 *Motorista:* ${vehicle.driver || 'Não informado'}
+📅 *Data:* ${dateFormatted}
+${kmOdometer ? `⏱️ *KM Registrado:* ${kmOdometer} km\n` : ''}${fuelLevel !== undefined ? `⛽ *Combustível:* ${fuelLevel}%\n` : ''}📸 *Fotos Registradas:* ${totalPhotos} foto(s)
+${notes.trim() ? `📝 *Observações:* ${notes.trim()}\n` : ''}
+✅ Relatório da vistoria com fotos salvo com sucesso no sistema da frota!`;
+
+    // 1. Tentar compartilhar nativamente com o arquivo PDF (Web Share API no Android Chrome)
+    if (submittedPdfDataUrl && typeof navigator !== 'undefined' && navigator.canShare) {
+      try {
+        const response = await fetch(submittedPdfDataUrl);
+        const blob = await response.blob();
+        const file = new File([blob], submittedFileName || `Vistoria_${vehicle.plate}.pdf`, { type: 'application/pdf' });
+        
+        if (navigator.canShare({ files: [file] })) {
+          await navigator.share({
+            title: `Vistoria ${vehicle.brand} (${vehicle.plate})`,
+            text: shareText,
+            files: [file]
+          });
+          return;
+        }
+      } catch (err: any) {
+        if (err?.name === 'AbortError') return;
+        console.warn('Native file share failed, falling back to WhatsApp link:', err);
+      }
+    }
+
+    // 2. Se não suportar envio direto de arquivo por share, baixar o PDF para o motorista
+    if (submittedPdfDataUrl) {
+      try {
+        const link = document.createElement('a');
+        link.href = submittedPdfDataUrl;
+        link.download = submittedFileName || `Vistoria_${vehicle.plate}.pdf`;
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+      } catch (dlErr) {
+        console.warn('Download trigger error:', dlErr);
+      }
+    }
+
+    // 3. Abrir WhatsApp com o texto completo da confirmação
+    const waUrl = `https://api.whatsapp.com/send?text=${encodeURIComponent(shareText)}`;
+    window.open(waUrl, '_blank');
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -341,11 +440,16 @@ export function DriverVistoriaForm({
         notes: notes.trim(),
         km: kmOdometer ? parseInt(kmOdometer, 10) : undefined,
         fuelLevel: fuelLevel,
-        status: 'pending'
+        status: 'pending',
+        reqId: requestToken || (vistoriaRequest?.reqId || undefined)
       };
 
       const { pdfDataUrl, fileName } = await generateVistoriaPDF(vehicle, newVistoria);
       
+      setSubmittedVistoria(newVistoria);
+      setSubmittedPdfDataUrl(pdfDataUrl);
+      setSubmittedFileName(fileName);
+
       if (requestToken) {
         localStorage.setItem(getSubmissionStorageKey(), 'true');
       }
