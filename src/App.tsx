@@ -743,6 +743,7 @@ export default function App() {
 
   const isCloudLoadedRef = useRef(false);
   const isRemoteUpdateRef = useRef(false);
+  const lastSyncedJsonRef = useRef<Record<string, string>>({});
   const pendingCloudSyncRef = useRef<Record<string, any>>({});
   const cloudSyncTimerRef = useRef<NodeJS.Timeout | null>(null);
 
@@ -761,6 +762,12 @@ export default function App() {
         cleanData = cleanVistoriasForCloud(data);
       }
 
+      const serialized = JSON.stringify(cleanData);
+      // Skip write if exact content was already synced to prevent write loops & quota exhaustion
+      if (lastSyncedJsonRef.current[field] === serialized) {
+        return;
+      }
+
       pendingCloudSyncRef.current[field] = sanitizeForCloud(cleanData);
 
       if (cloudSyncTimerRef.current) clearTimeout(cloudSyncTimerRef.current);
@@ -772,10 +779,15 @@ export default function App() {
           });
           pendingCloudSyncRef.current = {};
           await setDoc(doc(db, 'fleetData', 'main'), payload, { merge: true });
-        } catch (err) {
-          console.warn('Error syncing fleetData to cloud:', err);
+          lastSyncedJsonRef.current[field] = serialized;
+        } catch (err: any) {
+          if (err?.message?.includes('quota') || err?.code === 'resource-exhausted' || err?.message?.includes('Quota')) {
+            console.warn('Firestore quota reached. Data saved locally in localStorage.');
+          } else {
+            console.warn('Error syncing fleetData to cloud:', err);
+          }
         }
-      }, 400);
+      }, 2000);
     } catch (err) {
       console.warn('Error preparing saveToCloud:', err);
     }
@@ -874,17 +886,43 @@ export default function App() {
             setVehicles(incomingVehicles);
           }
 
-          if (d.contacts && Array.isArray(d.contacts)) setContacts(d.contacts);
-          if (d.fuelLogs && Array.isArray(d.fuelLogs)) setFuelLogs(d.fuelLogs);
-          if (d.maintenanceLogs && Array.isArray(d.maintenanceLogs)) setMaintenanceLogs(d.maintenanceLogs);
-          if (d.expenseLogs && Array.isArray(d.expenseLogs)) setExpenseLogs(d.expenseLogs);
-          if (d.finalizedContracts && Array.isArray(d.finalizedContracts)) setFinalizedContracts(d.finalizedContracts);
+          if (d.contacts && Array.isArray(d.contacts)) {
+            setContacts(d.contacts);
+            lastSyncedJsonRef.current['contacts'] = JSON.stringify(d.contacts);
+          }
+          if (d.fuelLogs && Array.isArray(d.fuelLogs)) {
+            setFuelLogs(d.fuelLogs);
+            lastSyncedJsonRef.current['fuelLogs'] = JSON.stringify(d.fuelLogs);
+          }
+          if (d.maintenanceLogs && Array.isArray(d.maintenanceLogs)) {
+            setMaintenanceLogs(d.maintenanceLogs);
+            lastSyncedJsonRef.current['maintenanceLogs'] = JSON.stringify(d.maintenanceLogs);
+          }
+          if (d.expenseLogs && Array.isArray(d.expenseLogs)) {
+            setExpenseLogs(d.expenseLogs);
+            lastSyncedJsonRef.current['expenseLogs'] = JSON.stringify(d.expenseLogs);
+          }
+          if (d.finalizedContracts && Array.isArray(d.finalizedContracts)) {
+            setFinalizedContracts(d.finalizedContracts);
+            lastSyncedJsonRef.current['finalizedContracts'] = JSON.stringify(d.finalizedContracts);
+          }
+          if (incomingVehicles.length > 0) {
+            lastSyncedJsonRef.current['vehicles'] = JSON.stringify(cleanVehiclesForCloud(incomingVehicles));
+          }
+          if (d.vistorias && Array.isArray(d.vistorias)) {
+            lastSyncedJsonRef.current['vistorias'] = JSON.stringify(cleanVistoriasForCloud(d.vistorias));
+          }
+
           setTimeout(() => {
             isRemoteUpdateRef.current = false;
-          }, 150);
+          }, 3000);
         }
-      }, (err) => {
-        console.warn('Firestore snapshot error:', err);
+      }, (err: any) => {
+        if (err?.message?.includes('quota') || err?.code === 'resource-exhausted') {
+          console.warn('Firestore quota limit reached. Operating in offline cached mode.');
+        } else {
+          console.warn('Firestore snapshot error:', err);
+        }
       });
 
       // 2. Real-time listener for completedVistorias collection (contains full driver photo submissions)
