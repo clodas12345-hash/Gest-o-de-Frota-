@@ -11,6 +11,7 @@ import { PdfViewer } from './PdfViewer';
 import { encodeVistoriaParams } from '../utils/vistoriaUrl';
 import { db } from '../firebase';
 import { doc, setDoc } from 'firebase/firestore';
+import { formatWhatsAppPhone, openWhatsAppUrl } from '../utils/whatsapp';
 import { 
   Calendar, 
   User, 
@@ -1484,30 +1485,8 @@ export const VehicleCard: React.FC<VehicleCardProps> = ({
 
   const handleSendWhatsAppSubmit = () => {
     if (!sharingDoc) return;
-    
-    let cleanPhone = whatsappPhone.replace(/\D/g, '');
-    if (cleanPhone.length > 0 && !cleanPhone.startsWith('55')) {
-      cleanPhone = '55' + cleanPhone;
-    }
-    
-    const waUrl = cleanPhone 
-      ? `https://api.whatsapp.com/send?phone=${cleanPhone}&text=${encodeURIComponent(customMsgText)}`
-      : `https://api.whatsapp.com/send?text=${encodeURIComponent(customMsgText)}`;
-      
+    openWhatsAppUrl(whatsappPhone || vehicle.driverPhone, customMsgText);
     handleDownloadDoc(sharingDoc);
-    
-
-    const newTab = window.open(waUrl, '_blank', 'noopener,noreferrer');
-    if (!newTab) {
-      const link = document.createElement('a');
-      link.href = waUrl;
-      link.target = '_blank';
-      link.rel = 'noopener noreferrer';
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
-    }
-    
     setSharingDoc(null);
   };
 
@@ -1554,18 +1533,13 @@ export const VehicleCard: React.FC<VehicleCardProps> = ({
     }
   };
 
-  const handleSendVistoriaWhatsAppSubmit = async () => {
-    let cleanPhone = whatsappVistoriaPhone.replace(/\D/g, '');
-    if (cleanPhone.length > 0 && !cleanPhone.startsWith('55')) {
-      cleanPhone = '55' + cleanPhone;
-    }
-    
+  const handleSendVistoriaWhatsAppSubmit = () => {
     const targetType = requestVistoriaType === 'devolução' ? 'entrega' : requestVistoriaType;
     const itemsToUse = selectedRequestItems.length > 0 
       ? selectedRequestItems 
       : getChecklistForVistoriaType(targetType, checklistConfig);
     
-    // Save request details to Firestore (safely avoiding undefined values)
+    // Save request details to Firestore in background without awaiting before launching WhatsApp
     const pendingRequest = JSON.parse(JSON.stringify({
       vehicleId: vehicle.id || '',
       plate: vehicle.plate || '',
@@ -1579,19 +1553,13 @@ export const VehicleCard: React.FC<VehicleCardProps> = ({
       createdAt: new Date().toISOString()
     }));
     
-    // Use the firebase firestore client to save
-    try {
-      await setDoc(doc(db, 'vistoriaRequests', vistoriaRequestToken), pendingRequest);
-    } catch (err) {
-      console.error('Error saving vistoria request:', err);
-    }
+    setDoc(doc(db, 'vistoriaRequests', vistoriaRequestToken), pendingRequest).catch(() => {});
     
     // Use the complete long URL with all vehicle details and checklist items
     let finalMsg = (customVistoriaMsgText && customVistoriaMsgText.trim() && customVistoriaMsgText.includes('&placa='))
       ? customVistoriaMsgText.trim()
       : formatTemplateText(DEFAULT_REQUEST_TEMPLATE, !!sharingVistoria, sharingVistoria, targetType, itemsToUse, vistoriaRequestToken);
 
-    // If link is missing, ensure the complete long link is included
     if (!finalMsg.includes('http://') && !finalMsg.includes('https://')) {
       const safeBaseLink = (vistoriaReturnLink && !vistoriaReturnLink.includes('localhost') && !vistoriaReturnLink.includes('127.0.0.1'))
         ? vistoriaReturnLink
@@ -1604,24 +1572,12 @@ export const VehicleCard: React.FC<VehicleCardProps> = ({
       finalMsg += `\n\n🔗 *Link de Acesso / Retorno:*\n${longUrl}`;
     }
 
-    const waUrl = cleanPhone 
-      ? `https://api.whatsapp.com/send?phone=${cleanPhone}&text=${encodeURIComponent(finalMsg)}`
-      : `https://api.whatsapp.com/send?text=${encodeURIComponent(finalMsg)}`;
-
     localStorage.setItem('fleet_vistoria_return_link', vistoriaReturnLink);
 
-    const newTab = window.open(waUrl, '_blank', 'noopener,noreferrer');
-    if (!newTab) {
-      const link = document.createElement('a');
-      link.href = waUrl;
-      link.target = '_blank';
-      link.rel = 'noopener noreferrer';
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
-    }
-    
-    // Salvar vistoria pendente para controle do gestor
+    // Launch WhatsApp immediately synchronously
+    openWhatsAppUrl(whatsappVistoriaPhone || vehicle.driverPhone, finalMsg);
+
+    // Save requested vistoria placeholder
     if (onSaveVistoria && !sharingVistoria) {
       const pendingVistoria: Vistoria = {
         id: `requested-${vistoriaRequestToken}`,
@@ -1744,9 +1700,7 @@ ${checklistText}
 ---
 _Enviado via sistema de gestão de frota._`;
 
-    const phone = vehicle.driverPhone?.replace(/\D/g, '') || '';
-    const encodedMessage = encodeURIComponent(message);
-    window.open(`https://wa.me/${phone ? `55${phone}` : ''}?text=${encodedMessage}`, '_blank');
+    openWhatsAppUrl(vehicle.driverPhone, message);
   };
 
   const handleDownloadVistoriaPdf = async (v: Vistoria) => {

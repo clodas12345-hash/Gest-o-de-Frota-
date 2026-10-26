@@ -2271,9 +2271,12 @@ export default function App() {
     setVistorias(prev => {
       const nextVistorias = prev.map(v => v.id === vistoria.id ? approvedVistoria : v);
       setDoc(doc(db, 'fleetData', 'main'), sanitizeForCloud({
-        vistorias: nextVistorias,
+        vistorias: cleanVistoriasForCloud(nextVistorias),
         updatedAt: new Date().toISOString()
-      }), { merge: true }).catch(err => console.warn('Direct approved vistoria cloud sync error:', err));
+      }), { merge: true }).catch((err: any) => {
+        if (err?.message?.includes('quota') || err?.code === 'resource-exhausted') return;
+        console.warn('Direct approved vistoria cloud sync error:', err);
+      });
       return nextVistorias;
     });
 
@@ -2303,7 +2306,10 @@ export default function App() {
         setDoc(doc(db, 'fleetData', 'main'), sanitizeForCloud({
           vehicles: cleanVehiclesForCloud(nextVehicles),
           updatedAt: new Date().toISOString()
-        }), { merge: true }).catch(err => console.warn('Direct vehicle vistoria approval cloud sync error:', err));
+        }), { merge: true }).catch((err: any) => {
+          if (err?.message?.includes('quota') || err?.code === 'resource-exhausted') return;
+          console.warn('Direct vehicle vistoria approval cloud sync error:', err);
+        });
 
         return nextVehicles;
       });
@@ -2948,7 +2954,10 @@ export default function App() {
             setDoc(doc(db, 'fleetData', 'main'), sanitizeForCloud({
               vehicles: cleanVehiclesForCloud(nextVehicles),
               updatedAt: new Date().toISOString()
-            }), { merge: true }).catch(err => console.warn('Direct receipt cloud sync error:', err));
+            }), { merge: true }).catch((err: any) => {
+              if (err?.message?.includes('quota') || err?.code === 'resource-exhausted') return;
+              console.warn('Direct receipt cloud sync error:', err);
+            });
 
             return nextVehicles;
           });
@@ -2975,8 +2984,10 @@ export default function App() {
           // 1. Salvar vistoria imediatamente no Firestore em documento individual (sem limite de 1MB)
           try {
             await setDoc(doc(db, 'completedVistorias', finalVistoria.id), sanitizeForCloud(finalVistoria));
-          } catch (cErr) {
-            console.warn('Erro ao salvar em completedVistorias:', cErr);
+          } catch (cErr: any) {
+            if (!cErr?.message?.includes('quota') && cErr?.code !== 'resource-exhausted') {
+              console.warn('Erro ao salvar em completedVistorias:', cErr);
+            }
           }
 
           // 2. Atualizar estado local de vistorias (removendo placeholders "requested-")
@@ -3011,8 +3022,10 @@ export default function App() {
                 vehicleId: activeVehicle.id,
                 plate: activeVehicle.plate
               }));
-            } catch (dErr) {
-              console.warn('Erro ao salvar documento da vistoria em vehicleDocuments:', dErr);
+            } catch (dErr: any) {
+              if (!dErr?.message?.includes('quota') && dErr?.code !== 'resource-exhausted') {
+                console.warn('Erro ao salvar documento da vistoria em vehicleDocuments:', dErr);
+              }
             }
           }
 
@@ -3082,8 +3095,10 @@ export default function App() {
               vistorias: cleanVistoriasForCloud(cloudVistorias.slice(0, 40)),
               updatedAt: new Date().toISOString()
             }), { merge: true });
-          } catch (syncErr) {
-            console.error('Erro na sincronização da vistoria com fleetData:', syncErr);
+          } catch (syncErr: any) {
+            if (!syncErr?.message?.includes('quota') && syncErr?.code !== 'resource-exhausted') {
+              console.error('Erro na sincronização da vistoria com fleetData:', syncErr);
+            }
           }
         }}
         onExit={() => {

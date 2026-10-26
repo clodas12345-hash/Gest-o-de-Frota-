@@ -2,6 +2,7 @@ import React, { useState, useRef, useEffect } from 'react';
 import { Camera, Check, X, ShieldCheck, FileCheck2, Trash2, Send, Info, ZoomIn, Gauge, Sparkles, Radio, HardDrive, Video } from 'lucide-react';
 import { Vehicle, Vistoria } from '../types';
 import { generateVistoriaPDF } from '../utils/pdfGenerator';
+import { openWhatsAppUrl } from '../utils/whatsapp';
 import { LogoViewerModal } from './LogoViewerModal';
 import logoImg from '../assets/logo.png';
 
