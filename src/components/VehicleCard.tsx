@@ -1111,7 +1111,10 @@ export const VehicleCard: React.FC<VehicleCardProps> = ({
 
   const revCountdown = getRevisionCountdown();
 
-  const vehicleVistorias = vistorias;
+  const vehicleVistorias = vistorias.filter(v => 
+    v.vehicleId === vehicle.id || 
+    (v.vehiclePlate && v.vehiclePlate.replace(/[^A-Z0-9]/gi, '').toUpperCase() === vehicle.plate.replace(/[^A-Z0-9]/gi, '').toUpperCase())
+  );
   const hasCompletedVistoria = vehicleVistorias.length > 0 || (vehicle.documents || []).some((d) => d.category === 'Vistoria');
 
   // Derived documents filtered list
@@ -1563,7 +1566,7 @@ export const VehicleCard: React.FC<VehicleCardProps> = ({
       : getChecklistForVistoriaType(targetType, checklistConfig);
     
     // Save request details to Firestore (safely avoiding undefined values)
-    const pendingRequest = {
+    const pendingRequest = JSON.parse(JSON.stringify({
       vehicleId: vehicle.id || '',
       plate: vehicle.plate || '',
       brand: vehicle.brand || '',
@@ -1574,7 +1577,7 @@ export const VehicleCard: React.FC<VehicleCardProps> = ({
       deadline: vehicle.nextVistoriaDate || '',
       reqId: vistoriaRequestToken || '',
       createdAt: new Date().toISOString()
-    };
+    }));
     
     // Use the firebase firestore client to save
     try {
