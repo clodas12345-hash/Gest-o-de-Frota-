@@ -2849,7 +2849,11 @@ export default function App() {
               });
             }
 
-            cloudVistorias = [finalVistoria, ...cloudVistorias.filter(v => v.id !== finalVistoria.id)];
+            cloudVistorias = [finalVistoria, ...cloudVistorias.filter(v => 
+              v.id !== finalVistoria.id && 
+              (!finalVistoria.reqId || v.reqId !== finalVistoria.reqId) &&
+              !v.id.startsWith('requested-')
+            )];
 
             await setDoc(mainDocRef, sanitizeForCloud({
               vehicles: cleanVehiclesForCloud(cloudVehicles),
