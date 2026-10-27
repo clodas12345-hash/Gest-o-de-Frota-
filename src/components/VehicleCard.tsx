@@ -401,7 +401,8 @@ Por favor, clique no link abaixo para preencher a vistoria e enviar as fotos:
 const DEFAULT_PAYMENT_TEMPLATES = {
   lembrete: `Olá, *{driver}*! Tudo bem? 😊\n\nPassando para lembrar do pagamento semanal referente ao veículo *{brand} {model}* ({plate}).\n\n💵 *Valor:* R$ {valor}\n📅 *Vencimento:* {data_vencimento}\n\n(👉 *Caso a mensagem esteja cortada, clique em "LER MAIS" para que o link esteja todo disponível*)\nEnvie o comprovante de pagamento pelo link:\n🔗 {link_comprovante}\n\nAbraços!`,
   hoje: `Olá, *{driver}*! Tudo bem?\n\nLembrete: *Hoje* é o dia do pagamento semanal referente ao veículo *{brand} {model}* ({plate}).\n\n💵 *Valor:* R$ {valor}\n🗓️ *Vencimento:* Hoje ({data_vencimento})\n\n(👉 *Caso a mensagem esteja cortada, clique em "LER MAIS" para que o link esteja todo disponível*)\nEnvie o comprovante pelo link:\n🔗 {link_comprovante}\n\nAgradeço a parceria! 👍`,
-  atrasado: `Olá, *{driver}*.\n\nIdentificamos que o pagamento semanal referente ao veículo *{brand} {model}* ({plate}) com vencimento em *{data_vencimento}* consta em **atraso**.\n\n⚠️ *Valor em aberto:* R$ {valor}\n\n(👉 *Caso a mensagem esteja cortada, clique em "LER MAIS" para que o link esteja todo disponível*)\nRegularize e envie o comprovante pelo link:\n🔗 {link_comprovante}\n\nFicamos no aguardo. Obrigado!`
+  atrasado: `Olá, *{driver}*.\n\nIdentificamos que o pagamento semanal referente ao veículo *{brand} {model}* ({plate}) com vencimento em *{data_vencimento}* consta em **atraso**.\n\n⚠️ *Valor em aberto:* R$ {valor}\n\n(👉 *Caso a mensagem esteja cortada, clique em "LER MAIS" para que o link esteja todo disponível*)\nRegularize e envie o comprovante pelo link:\n🔗 {link_comprovante}\n\nFicamos no aguardo. Obrigado!`,
+  atrasado_com_juros: `Olá, *{driver}*.\n\nIdentificamos que o pagamento semanal do veículo *{brand} {model}* ({plate}) está em **atraso**.\n\n⚠️ *Valor original:* R$ {valor}\n➕ *Juros/Multa:* R$ {juros}\n💰 *Total com Juros:* R$ {total_com_juros}\n\n(👉 *Caso a mensagem esteja cortada, clique em "LER MAIS" para que o link esteja todo disponível*)\nRegularize e envie o comprovante pelo link:\n🔗 {link_comprovante}\n\nFicamos no aguardo. Obrigado!`
 };
 
 const PUBLIC_WEB_ORIGIN = 'https://ais-dev-nxg4lixniko7ymx3t5cstw-473118395752.us-west2.run.app';
@@ -425,9 +426,15 @@ const formatPaymentTemplateText = (
   amount: number,
   dueDateStr: string,
   returnLink?: string,
-  vehicleId?: string
+  vehicleId?: string,
+  juros?: number
 ) => {
   const formattedAmount = amount ? amount.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : '0,00';
+  const jurosVal = juros || 0;
+  const totalComJurosVal = amount + jurosVal;
+  const formattedJuros = jurosVal.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  const formattedTotal = totalComJurosVal.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  
   let formattedDate = 'Hoje';
   if (dueDateStr) {
     const parts = dueDateStr.split('-');
@@ -448,6 +455,8 @@ const formatPaymentTemplateText = (
     .replace(/\{model\}/g, model || '')
     .replace(/\{plate\}/g, plate || '')
     .replace(/\{valor\}/g, formattedAmount)
+    .replace(/\{juros\}/g, formattedJuros)
+    .replace(/\{total_com_juros\}/g, formattedTotal)
     .replace(/\{data_vencimento\}/g, formattedDate)
     .replace(/\{link_comprovante\}/g, `${baseLink}${sep}mode=pagamento${vehParam}&placa=${encodeURIComponent(plate)}&reqId=${Date.now().toString(36)}`);
 };
@@ -595,12 +604,15 @@ export const VehicleCard: React.FC<VehicleCardProps> = ({
 
   // Payment WhatsApp Reminder State
   const [showPaymentWhatsApp, setShowPaymentWhatsApp] = useState(false);
-  const [paymentWhatsAppType, setPaymentWhatsAppType] = useState<'lembrete' | 'hoje' | 'atrasado'>('lembrete');
+  const [paymentWhatsAppType, setPaymentWhatsAppType] = useState<'lembrete' | 'hoje' | 'atrasado' | 'atrasado_com_juros'>('lembrete');
   const [paymentWhatsAppPhone, setPaymentWhatsAppPhone] = useState(() => vehicle.driverPhone || '');
   const [paymentWhatsAppAmount, setPaymentWhatsAppAmount] = useState<number>(() => vehicle.valorSemanal || vehicle.valorRecebido || 0);
   const [paymentWhatsAppDueDate, setPaymentWhatsAppDueDate] = useState<string>(() => {
     return vehicle.startDate ? getNextWeekDate(vehicle.startDate) : new Date().toISOString().split('T')[0];
   });
+  const [jurosMoraPercentage, setJurosMoraPercentage] = useState<number>(10);
+  const [jurosMoratoriosPercentage, setJurosMoratoriosPercentage] = useState<number>(1);
+  const [diasAtraso, setDiasAtraso] = useState<number>(1);
 
   // State for Promise Payment Form
   const [showAddPromise, setShowAddPromise] = useState(false);
@@ -3638,7 +3650,7 @@ _Enviado via sistema de gestão de frota._`;
                     <label className="text-[10px] text-emerald-300 block mb-1 font-bold uppercase tracking-wider">
                       Selecione o Tipo de Mensagem *
                     </label>
-                    <div className="grid grid-cols-3 gap-1.5">
+                    <div className="grid grid-cols-4 gap-1.5">
                       <button
                         type="button"
                         onClick={() => {
@@ -3719,8 +3731,37 @@ _Enviado via sistema de gestão de frota._`;
                             : 'bg-black/40 text-gray-400 border-white/10 hover:border-white/20 hover:text-white'
                         }`}
                       >
-                        <span>⚠️ Pagamento Atrasado</span>
-                        <span className="text-[8px] opacity-70 font-normal">Cobrança de Atraso</span>
+                        <span>⚠️ Atraso</span>
+                        <span className="text-[8px] opacity-70 font-normal">Simples</span>
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setPaymentWhatsAppType('atrasado_com_juros');
+                          const rawTpl = localStorage.getItem('fleet_payment_msg_atrasado_com_juros') || DEFAULT_PAYMENT_TEMPLATES.atrasado_com_juros;
+                          const text = formatPaymentTemplateText(
+                            rawTpl,
+                            vehicle.driver || '',
+                            vehicle.brand || '',
+                            vehicle.model || '',
+                            vehicle.plate || '',
+                            paymentWhatsAppAmount || vehicle.valorRecebido || 0,
+                            paymentWhatsAppDueDate,
+                            undefined,
+                            vehicle.id,
+                            (paymentWhatsAppAmount || vehicle.valorRecebido || 0) * 0.11 // 11% (10% mora + 1% juros)
+                          );
+                          setCustomPaymentMsgText(text);
+                        }}
+                        className={`py-1.5 px-2 rounded-lg border text-[10px] font-bold transition-all flex flex-col items-center justify-center gap-0.5 cursor-pointer ${
+                          paymentWhatsAppType === 'atrasado_com_juros'
+                            ? 'bg-rose-700/20 text-rose-200 border-rose-700/40 shadow-xs'
+                            : 'bg-black/40 text-gray-400 border-white/10 hover:border-white/20 hover:text-white'
+                        }`}
+                      >
+                        <span>📈 Atraso</span>
+                        <span className="text-[8px] opacity-70 font-normal">C/ Juros</span>
                       </button>
                     </div>
                   </div>
@@ -3751,31 +3792,132 @@ _Enviado via sistema de gestão de frota._`;
                       </div>
                     </div>
 
-                    <div>
-                      <label className="text-[9px] text-gray-300 block mb-0.5 font-semibold uppercase tracking-wider">
-                        Valor Semanal (R$)
-                      </label>
-                      <CurrencyInput
-                        value={paymentWhatsAppAmount}
-                        onChange={(newAmt) => {
-                          setPaymentWhatsAppAmount(newAmt);
-                          const rawTpl = localStorage.getItem(`fleet_payment_msg_${paymentWhatsAppType}`) || DEFAULT_PAYMENT_TEMPLATES[paymentWhatsAppType];
-                          const text = formatPaymentTemplateText(
-                            rawTpl,
-                            vehicle.driver || '',
-                            vehicle.brand || '',
-                            vehicle.model || '',
-                            vehicle.plate || '',
-                            newAmt,
-                            paymentWhatsAppDueDate,
-                            undefined,
-                            vehicle.id
-                          );
-                          setCustomPaymentMsgText(text);
-                        }}
-                        placeholder="0,00"
-                        className="w-full text-xs bg-black border border-white/15 rounded-lg px-2.5 py-1.5 text-white focus:outline-hidden focus:border-emerald-500 font-mono"
-                      />
+                    <div className={paymentWhatsAppType === 'atrasado_com_juros' ? "grid grid-cols-2 gap-2" : "grid grid-cols-1"}>
+                      <div>
+                        <label className="text-[9px] text-gray-300 block mb-0.5 font-semibold uppercase tracking-wider">
+                          Valor Semanal (R$)
+                        </label>
+                        <CurrencyInput
+                          value={paymentWhatsAppAmount}
+                          onChange={(newAmt) => {
+                            setPaymentWhatsAppAmount(newAmt);
+                            const rawTpl = localStorage.getItem(`fleet_payment_msg_${paymentWhatsAppType}`) || DEFAULT_PAYMENT_TEMPLATES[paymentWhatsAppType];
+                            const calculatedJuros = (paymentWhatsAppType === 'atrasado_com_juros') ? (newAmt * (jurosPercentage / 100)) : 0;
+                            const text = formatPaymentTemplateText(
+                              rawTpl,
+                              vehicle.driver || '',
+                              vehicle.brand || '',
+                              vehicle.model || '',
+                              vehicle.plate || '',
+                              newAmt,
+                              paymentWhatsAppDueDate,
+                              undefined,
+                              vehicle.id,
+                              calculatedJuros
+                            );
+                            setCustomPaymentMsgText(text);
+                          }}
+                          placeholder="0,00"
+                          className="w-full text-xs bg-black border border-white/15 rounded-lg px-2.5 py-1.5 text-white focus:outline-hidden focus:border-emerald-500 font-mono"
+                        />
+                      </div>
+                      {paymentWhatsAppType === 'atrasado_com_juros' && (
+                        <div className="grid grid-cols-3 gap-2">
+                          <div>
+                            <label className="text-[9px] text-gray-300 block mb-0.5 font-semibold uppercase tracking-wider">
+                              Multa Mora (%)
+                            </label>
+                            <input
+                              type="number"
+                              value={jurosMoraPercentage}
+                              onChange={(e) => {
+                                const newPct = Number(e.target.value);
+                                setJurosMoraPercentage(newPct);
+                                const rawTpl = localStorage.getItem(`fleet_payment_msg_${paymentWhatsAppType}`) || DEFAULT_PAYMENT_TEMPLATES[paymentWhatsAppType];
+                                const jurosMora = (paymentWhatsAppAmount * (newPct / 100));
+                                const jurosMoratorios = (paymentWhatsAppAmount * (jurosMoratoriosPercentage / 100 / 30) * diasAtraso);
+                                const calculatedJuros = jurosMora + jurosMoratorios;
+                                const text = formatPaymentTemplateText(
+                                  rawTpl,
+                                  vehicle.driver || '',
+                                  vehicle.brand || '',
+                                  vehicle.model || '',
+                                  vehicle.plate || '',
+                                  paymentWhatsAppAmount,
+                                  paymentWhatsAppDueDate,
+                                  undefined,
+                                  vehicle.id,
+                                  calculatedJuros
+                                );
+                                setCustomPaymentMsgText(text);
+                              }}
+                              className="w-full text-xs bg-black border border-white/15 rounded-lg px-2.5 py-1.5 text-white focus:outline-hidden focus:border-emerald-500 font-mono"
+                            />
+                          </div>
+                          <div>
+                            <label className="text-[9px] text-gray-300 block mb-0.5 font-semibold uppercase tracking-wider">
+                              Juros Mensal (%)
+                            </label>
+                            <input
+                              type="number"
+                              value={jurosMoratoriosPercentage}
+                              onChange={(e) => {
+                                const newPct = Number(e.target.value);
+                                setJurosMoratoriosPercentage(newPct);
+                                const rawTpl = localStorage.getItem(`fleet_payment_msg_${paymentWhatsAppType}`) || DEFAULT_PAYMENT_TEMPLATES[paymentWhatsAppType];
+                                const jurosMora = (paymentWhatsAppAmount * (jurosMoraPercentage / 100));
+                                const jurosMoratorios = (paymentWhatsAppAmount * (newPct / 100 / 30) * diasAtraso);
+                                const calculatedJuros = jurosMora + jurosMoratorios;
+                                const text = formatPaymentTemplateText(
+                                  rawTpl,
+                                  vehicle.driver || '',
+                                  vehicle.brand || '',
+                                  vehicle.model || '',
+                                  vehicle.plate || '',
+                                  paymentWhatsAppAmount,
+                                  paymentWhatsAppDueDate,
+                                  undefined,
+                                  vehicle.id,
+                                  calculatedJuros
+                                );
+                                setCustomPaymentMsgText(text);
+                              }}
+                              className="w-full text-xs bg-black border border-white/15 rounded-lg px-2.5 py-1.5 text-white focus:outline-hidden focus:border-emerald-500 font-mono"
+                            />
+                          </div>
+                          <div>
+                            <label className="text-[9px] text-gray-300 block mb-0.5 font-semibold uppercase tracking-wider">
+                              Dias Atraso
+                            </label>
+                            <input
+                              type="number"
+                              value={diasAtraso}
+                              onChange={(e) => {
+                                const newDias = Number(e.target.value);
+                                setDiasAtraso(newDias);
+                                const rawTpl = localStorage.getItem(`fleet_payment_msg_${paymentWhatsAppType}`) || DEFAULT_PAYMENT_TEMPLATES[paymentWhatsAppType];
+                                const jurosMora = (paymentWhatsAppAmount * (jurosMoraPercentage / 100));
+                                const jurosMoratorios = (paymentWhatsAppAmount * (jurosMoratoriosPercentage / 100 / 30) * newDias);
+                                const calculatedJuros = jurosMora + jurosMoratorios;
+                                const text = formatPaymentTemplateText(
+                                  rawTpl,
+                                  vehicle.driver || '',
+                                  vehicle.brand || '',
+                                  vehicle.model || '',
+                                  vehicle.plate || '',
+                                  paymentWhatsAppAmount,
+                                  paymentWhatsAppDueDate,
+                                  undefined,
+                                  vehicle.id,
+                                  calculatedJuros
+                                );
+                                setCustomPaymentMsgText(text);
+                              }}
+                              className="w-full text-xs bg-black border border-white/15 rounded-lg px-2.5 py-1.5 text-white focus:outline-hidden focus:border-emerald-500 font-mono"
+                            />
+                          </div>
+                        </div>
+                      )}
                     </div>
 
                     <div>
@@ -3789,16 +3931,18 @@ _Enviado via sistema de gestão de frota._`;
                           const newDate = e.target.value;
                           setPaymentWhatsAppDueDate(newDate);
                           const rawTpl = localStorage.getItem(`fleet_payment_msg_${paymentWhatsAppType}`) || DEFAULT_PAYMENT_TEMPLATES[paymentWhatsAppType];
+                          const calculatedJuros = (paymentWhatsAppType === 'atrasado_com_juros') ? (paymentWhatsAppAmount * (jurosPercentage / 100)) : 0;
                           const text = formatPaymentTemplateText(
                             rawTpl,
                             vehicle.driver || '',
                             vehicle.brand || '',
                             vehicle.model || '',
                             vehicle.plate || '',
-                            paymentWhatsAppAmount || vehicle.valorRecebido || 0,
+                            paymentWhatsAppAmount,
                             newDate,
                             undefined,
-                            vehicle.id
+                            vehicle.id,
+                            calculatedJuros
                           );
                           setCustomPaymentMsgText(text);
                         }}
