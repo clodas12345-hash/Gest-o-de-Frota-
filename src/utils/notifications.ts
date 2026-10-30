@@ -400,6 +400,7 @@ export async function scheduleAppNotification(
     body?: string;
     id?: number;
     at?: Date;
+    every?: 'week' | 'day';
     extra?: Record<string, any>;
     eventKey?: NotificationEventKey;
     force?: boolean;
@@ -427,10 +428,12 @@ export async function scheduleAppNotification(
         extra: options?.extra,
         schedule: {
           at: targetDate,
+          every: options?.every,
           allowWhileIdle: true
         },
         trigger: {
           at: targetDate,
+          every: options?.every,
           allowWhileIdle: true
         }
       };
@@ -600,6 +603,7 @@ export async function scheduleVistoriaReminders() {
       id: slot.id,
       body: slot.body,
       at: nextDate,
+      every: 'week',
       eventKey: 'vistoria_friday',
       extra: {
         slotId: slot.id,

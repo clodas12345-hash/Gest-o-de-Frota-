@@ -43,14 +43,7 @@ export const InterestCalculatorModal: React.FC<InterestCalculatorModalProps> = (
   const [earlyTotalPaid, setEarlyTotalPaid] = useState<number>(0);
 
   // Rates (%)
-  const [fineRate, setFineRate] = useState<number>(() => {
-    const saved = localStorage.getItem('fleet_fine_rate_default');
-    return saved ? Number(saved) : 2.0; // 2% multa padrão
-  });
-  const [dailyInterestRate, setDailyInterestRate] = useState<number>(() => {
-    const saved = localStorage.getItem('fleet_daily_interest_rate_default');
-    return saved ? Number(saved) : 0.33; // 0.33% ao dia (~10% ao mês)
-  });
+  const [fineRate] = useState<number>(10);
   
   const [savedSettingsToast, setSavedSettingsToast] = useState<string | null>(null);
 
@@ -83,32 +76,9 @@ export const InterestCalculatorModal: React.FC<InterestCalculatorModalProps> = (
         setDueDate(defaultDue);
         setPaymentDate(new Date().toISOString().split('T')[0]);
         setIsCustomDays(false);
-      } else {
-        setDriverName('');
-        setDriverPhone('');
-        setVehicleLabel('');
-        setPlate('');
-        setOriginalAmount(500);
-        setDueDate(new Date().toISOString().split('T')[0]);
-        setPaymentDate(new Date().toISOString().split('T')[0]);
       }
     }
   }, [isOpen, selectedVehicle]);
-
-  // Listen for settings-updated event
-  useEffect(() => {
-    const handleSettingsUpdated = () => {
-      const savedFine = localStorage.getItem('fleet_fine_rate_default');
-      if (savedFine) setFineRate(Number(savedFine));
-      const savedInterest = localStorage.getItem('fleet_daily_interest_rate_default');
-      if (savedInterest) setDailyInterestRate(Number(savedInterest));
-      const savedEarlyFine = localStorage.getItem('fleet_early_return_fine_rate_default');
-      if (savedEarlyFine) setEarlyFineRate(Number(savedEarlyFine));
-    };
-
-    window.addEventListener('settings-updated', handleSettingsUpdated);
-    return () => window.removeEventListener('settings-updated', handleSettingsUpdated);
-  }, []);
 
   // Recalculate days overdue when dueDate or paymentDate changes (if not custom)
   useEffect(() => {
@@ -142,8 +112,12 @@ export const InterestCalculatorModal: React.FC<InterestCalculatorModalProps> = (
   if (!isOpen) return null;
 
   // Calculations for Overdue Mode
-  const fineAmount = (originalAmount * (fineRate || 0)) / 100;
-  const interestAmount = (originalAmount * (dailyInterestRate || 0) * (daysOverdue || 0)) / 100;
+  // Multa Fixa (10%)
+  const fineAmount = (originalAmount * fineRate) / 100;
+  // Juros Moratórios (1% ao mês -> 1% / 30 dias ao dia)
+  const monthlyInterestRate = 1.0;
+  const dailyInterestRate = (monthlyInterestRate / 30) / 100;
+  const interestAmount = originalAmount * dailyInterestRate * daysOverdue;
   const totalAmount = originalAmount + fineAmount + interestAmount;
 
   // Early Return Calculations (30 days minimum contract rule)
@@ -188,13 +162,6 @@ export const InterestCalculatorModal: React.FC<InterestCalculatorModalProps> = (
     return dateStr;
   };
 
-  const handleSaveDefaultRates = () => {
-    localStorage.setItem('fleet_fine_rate_default', String(fineRate));
-    localStorage.setItem('fleet_daily_interest_rate_default', String(dailyInterestRate));
-    setSavedSettingsToast('Taxas de juros salvas!');
-    setTimeout(() => setSavedSettingsToast(null), 2500);
-  };
-
   const generateWhatsAppMessage = () => {
     let cleanPhone = driverPhone.replace(/\D/g, '');
     if (cleanPhone.length > 0 && !cleanPhone.startsWith('55')) {
@@ -204,7 +171,7 @@ export const InterestCalculatorModal: React.FC<InterestCalculatorModalProps> = (
     const returnBase = getPublicWebBaseUrl();
     const returnUrl = `${returnBase}?placa=${encodeURIComponent(vehiclePlate)}&brand=${encodeURIComponent(vehicleLabel)}&driver=${encodeURIComponent(driverName)}`;
 
-    const text = `🚨 *AVISO DE ATRASO E COBRANÇA COM JUROS* 🚨\n\nOlá, *${driverName || 'Locatário'}*!\nConstatamos pendência no pagamento do aluguel referente ao veículo *${vehicleLabel}* (Placa: *${vehiclePlate}*).\n\n💵 *Valor Original:* ${formatBRL(originalAmount)}\n📅 *Data de Vencimento:* ${formatDateBR(dueDate)}\n⏱️ *Dias em Atraso:* ${daysOverdue} dia(s)\n\n➕ *Multa por Atraso (${fineRate}%):* ${formatBRL(fineAmount)}\n➕ *Juros de Mora (${dailyInterestRate}%/dia):* ${formatBRL(interestAmount)}\n\n💰 *VALOR TOTAL ATUALIZADO:* *${formatBRL(totalAmount)}*\n\nPor favor, efetue o pagamento do valor atualizado e envie o comprovante clicando no link abaixo:\n🔗 ${returnUrl}\n\nFicamos no aguardo da quitação. Obrigado!`;
+    const text = `🚨 *AVISO DE ATRASO E COBRANÇA COM JUROS* 🚨\n\nOlá, *${driverName || 'Locatário'}*!\nConstatamos pendência no pagamento do aluguel referente ao veículo *${vehicleLabel}* (Placa: *${vehiclePlate}*).\n\n💵 *Valor Original:* ${formatBRL(originalAmount)}\n📅 *Data de Vencimento:* ${formatDateBR(dueDate)}\n⏱️ *Dias em Atraso:* ${daysOverdue} dia(s)\n\n➕ *Multa por Atraso (Fixa 10%):* ${formatBRL(fineAmount)}\n➕ *Juros de Mora (1% ao mês):* ${formatBRL(interestAmount)}\n\n💰 *VALOR TOTAL ATUALIZADO:* *${formatBRL(totalAmount)}*\n\nPor favor, efetue o pagamento do valor atualizado e envie o comprovante clicando no link abaixo:\n🔗 ${returnUrl}\n\nFicamos no aguardo da quitação. Obrigado!`;
 
     return { text, cleanPhone };
   };
@@ -440,59 +407,41 @@ export const InterestCalculatorModal: React.FC<InterestCalculatorModalProps> = (
                 <div className="bg-white/[0.02] border border-white/10 p-3 rounded-xl space-y-2 col-span-1 sm:col-span-2">
                   <div className="flex justify-between items-center pb-1 border-b border-white/5">
                     <span className="text-[10px] font-bold text-amber-400 uppercase tracking-wider flex items-center gap-1">
-                      <Percent className="w-3 h-3 text-amber-400" /> Taxas Aplicadas (Multa + Juros Diários)
+                      <Percent className="w-3 h-3 text-amber-400" /> Taxas Aplicadas
                     </span>
-                    <button
-                      type="button"
-                      onClick={handleSaveDefaultRates}
-                      className="text-[9px] bg-amber-500/10 hover:bg-amber-500/20 text-amber-300 border border-amber-500/20 px-2 py-0.5 rounded font-bold transition-colors cursor-pointer flex items-center gap-1"
-                    >
-                      <Save className="w-2.5 h-2.5" />
-                      <span>Salvar como Padrão</span>
-                    </button>
                   </div>
 
                   <div className="grid grid-cols-2 gap-2.5 pt-1">
                     <div>
                       <label className="text-[10px] text-gray-400 block mb-1 font-semibold">
-                        Multa Fixa por Atraso (%)
+                        Multa Fixa (10%)
                       </label>
                       <div className="relative flex items-center">
                         <input
                           type="number"
-                          step="0.1"
-                          min="0"
-                          value={fineRate}
-                          onChange={(e) => setFineRate(Number(e.target.value))}
-                          className="w-full text-xs bg-black border border-white/15 rounded-lg px-2.5 py-1.5 text-white font-mono pr-7"
+                          value="10"
+                          disabled
+                          className="w-full text-xs bg-black/50 border border-white/10 rounded-lg px-2.5 py-1.5 text-white/50 font-mono pr-7"
                         />
-                        <span className="absolute right-2.5 text-gray-400 text-xs font-bold">%</span>
+                        <span className="absolute right-2.5 text-gray-400/50 text-xs font-bold">%</span>
                       </div>
                     </div>
 
                     <div>
                       <label className="text-[10px] text-gray-400 block mb-1 font-semibold">
-                        Juros de Mora Diários (% ao dia)
+                        Juros de Mora (1% ao mês)
                       </label>
                       <div className="relative flex items-center">
                         <input
                           type="number"
-                          step="0.01"
-                          min="0"
-                          value={dailyInterestRate}
-                          onChange={(e) => setDailyInterestRate(Number(e.target.value))}
-                          className="w-full text-xs bg-black border border-white/15 rounded-lg px-2.5 py-1.5 text-white font-mono pr-7"
+                          value="1"
+                          disabled
+                          className="w-full text-xs bg-black/50 border border-white/10 rounded-lg px-2.5 py-1.5 text-white/50 font-mono pr-7"
                         />
-                        <span className="absolute right-2.5 text-gray-400 text-xs font-bold">%</span>
+                        <span className="absolute right-2.5 text-gray-400/50 text-xs font-bold">%</span>
                       </div>
                     </div>
                   </div>
-
-                  {savedSettingsToast && (
-                    <div className="text-[10px] text-emerald-400 font-bold bg-emerald-500/10 border border-emerald-500/20 px-2 py-1 rounded text-center animate-pulse">
-                      {savedSettingsToast}
-                    </div>
-                  )}
                 </div>
 
               </div>
@@ -511,12 +460,12 @@ export const InterestCalculatorModal: React.FC<InterestCalculatorModalProps> = (
                   </div>
 
                   <div className="bg-white/5 p-2 rounded-lg border border-white/5">
-                    <span className="text-[9px] text-gray-400 block font-semibold">Multa ({fineRate}%)</span>
+                    <span className="text-[9px] text-gray-400 block font-semibold">Multa (10%)</span>
                     <span className="text-xs font-bold font-mono text-amber-400">+{formatBRL(fineAmount)}</span>
                   </div>
 
                   <div className="bg-white/5 p-2 rounded-lg border border-white/5">
-                    <span className="text-[9px] text-gray-400 block font-semibold">Juros ({dailyInterestRate}%/dia)</span>
+                    <span className="text-[9px] text-gray-400 block font-semibold">Juros (1% ao mês)</span>
                     <span className="text-xs font-bold font-mono text-amber-400">+{formatBRL(interestAmount)}</span>
                   </div>
 

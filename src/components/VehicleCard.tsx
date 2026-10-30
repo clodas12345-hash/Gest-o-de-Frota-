@@ -949,7 +949,20 @@ export const VehicleCard: React.FC<VehicleCardProps> = ({
       ? `&items=${encodeURIComponent(itemsToUse.join(','))}`
       : '';
 
-    const returnUrlWithPlaca = `${safeBaseClean}/?mode=vistoria_retorno&vehicleId=${encodeURIComponent(vehicle.id)}&placa=${encodeURIComponent(vehicle.plate)}&brand=${encodeURIComponent(vehicle.brand)}&model=${encodeURIComponent(vehicle.model)}&driver=${encodeURIComponent(vehicle.driver || '')}&type=${encodeURIComponent(typeToUse)}&deadline=${encodeURIComponent(vehicle.nextVistoriaDate || '')}&reqId=${tokenToUse}${itemsQueryParam}`;
+    const url = new URL(safeBaseClean);
+    url.searchParams.set('mode', 'vistoria_retorno');
+    url.searchParams.set('vehicleId', vehicle.id);
+    url.searchParams.set('placa', vehicle.plate);
+    url.searchParams.set('brand', vehicle.brand);
+    url.searchParams.set('model', vehicle.model);
+    url.searchParams.set('driver', vehicle.driver || '');
+    url.searchParams.set('type', typeToUse);
+    url.searchParams.set('deadline', vehicle.nextVistoriaDate || '');
+    url.searchParams.set('reqId', tokenToUse);
+    if (itemsToUse && itemsToUse.length > 0) {
+      url.searchParams.set('items', itemsToUse.join(','));
+    }
+    const returnUrlWithPlaca = url.toString();
 
     text = text.replace(/\{veiculo\}/g, veiculoStr);
     text = text.replace(/\{placa\}/g, plateStr);
@@ -3802,7 +3815,7 @@ _Enviado via sistema de gestão de frota._`;
                           onChange={(newAmt) => {
                             setPaymentWhatsAppAmount(newAmt);
                             const rawTpl = localStorage.getItem(`fleet_payment_msg_${paymentWhatsAppType}`) || DEFAULT_PAYMENT_TEMPLATES[paymentWhatsAppType];
-                            const calculatedJuros = (paymentWhatsAppType === 'atrasado_com_juros') ? (newAmt * (jurosPercentage / 100)) : 0;
+                            const calculatedJuros = (paymentWhatsAppType === 'atrasado_com_juros') ? (newAmt * (jurosMoraPercentage / 100)) : 0;
                             const text = formatPaymentTemplateText(
                               rawTpl,
                               vehicle.driver || '',
@@ -3931,7 +3944,7 @@ _Enviado via sistema de gestão de frota._`;
                           const newDate = e.target.value;
                           setPaymentWhatsAppDueDate(newDate);
                           const rawTpl = localStorage.getItem(`fleet_payment_msg_${paymentWhatsAppType}`) || DEFAULT_PAYMENT_TEMPLATES[paymentWhatsAppType];
-                          const calculatedJuros = (paymentWhatsAppType === 'atrasado_com_juros') ? (paymentWhatsAppAmount * (jurosPercentage / 100)) : 0;
+                          const calculatedJuros = (paymentWhatsAppType === 'atrasado_com_juros') ? (paymentWhatsAppAmount * (jurosMoraPercentage / 100)) : 0;
                           const text = formatPaymentTemplateText(
                             rawTpl,
                             vehicle.driver || '',
