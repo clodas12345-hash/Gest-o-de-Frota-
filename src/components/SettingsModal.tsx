@@ -20,7 +20,9 @@ import {
   PieChart,
   History,
   BarChart3,
-  FileText
+  FileText,
+  Edit2,
+  Mail
 } from 'lucide-react';
 import { Vehicle, FuelLog, MaintenanceLog, ExpenseLog, Vistoria } from '../types';
 import { DashboardCalendar } from './DashboardCalendar';
@@ -37,6 +39,7 @@ import {
   setNotificationPreferences,
   DEFAULT_NOTIFICATION_PREFERENCES
 } from '../utils/notifications';
+import { ContractClause, getSavedContractClauses, saveContractClauses, resetContractClauses } from '../utils/contractClauses';
 
 interface SettingsModalProps {
   isOpen: boolean;
@@ -69,7 +72,7 @@ interface SettingsModalProps {
   onSwitchMaintToExpense?: (log: MaintenanceLog, originalLog?: MaintenanceLog) => void;
   onSwitchExpenseToMaint?: (log: ExpenseLog, originalLog?: ExpenseLog) => void;
   onShowDeleteConfirm?: (title: string, description: string, onConfirm: () => void) => void;
-  initialTab?: 'settings' | 'calendar' | 'charts' | 'history';
+  initialTab?: 'settings' | 'calendar' | 'charts' | 'history' | 'contract';
 }
 
 export function SettingsModal({
@@ -106,7 +109,7 @@ export function SettingsModal({
   const [permissionState, setPermissionState] = useState<'granted' | 'denied' | 'default'>('default');
   const [notifPrefs, setNotifPrefs] = useState<Record<NotificationEventKey, boolean>>(() => getNotificationPreferences());
   const [selectedCategory, setSelectedCategory] = useState<string>('Todas');
-  const [mainTab, setMainTab] = useState<'settings' | 'calendar' | 'charts' | 'history'>(initialTab);
+  const [mainTab, setMainTab] = useState<'settings' | 'calendar' | 'charts' | 'history' | 'contract'>(initialTab as any);
 
   // Default contract / landlord settings
   const [landlordName, setLandlordName] = useState(() => localStorage.getItem('fleet_landlord_name') || 'Cláudio Oliveira da Silva');
@@ -166,8 +169,39 @@ export function SettingsModal({
       setInterestRate(savedInterest ? Number(savedInterest) : 1.0);
       const savedEarlyFine = localStorage.getItem('fleet_early_return_fine_rate_default');
       setEarlyFineRate(savedEarlyFine ? Number(savedEarlyFine) : 20.0);
+      
+      setContractClauses(getSavedContractClauses());
     }
   }, [isOpen, initialTab]);
+
+  const [contractClauses, setContractClauses] = useState<ContractClause[]>([]);
+  const [editingClauseId, setEditingClauseId] = useState<string | null>(null);
+  const [editingClauseText, setEditingClauseText] = useState('');
+
+  const handleStartEditClause = (clause: ContractClause) => {
+    setEditingClauseId(clause.id);
+    setEditingClauseText(clause.text);
+  };
+
+  const handleSaveClause = () => {
+    if (!editingClauseId) return;
+    const updated = contractClauses.map(c => 
+      c.id === editingClauseId ? { ...c, text: editingClauseText } : c
+    );
+    setContractClauses(updated);
+    saveContractClauses(updated);
+    setEditingClauseId(null);
+    setEditingClauseText('');
+    alert('Cláusula atualizada com sucesso! Ela será aplicada nos novos contratos gerados.');
+  };
+
+  const handleResetClauses = () => {
+    if (window.confirm('Deseja realmente resetar todas as cláusulas para o padrão original do sistema? Suas alterações serão perdidas.')) {
+      const defaults = resetContractClauses();
+      setContractClauses(defaults);
+      alert('Cláusulas resetadas para o padrão.');
+    }
+  };
 
   if (!isOpen) return null;
 
@@ -314,6 +348,19 @@ export function SettingsModal({
           >
             <History className="w-3.5 h-3.5" />
             <span>Histórico Geral & Tabelas</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setMainTab('contract' as any)}
+            className={`flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer border shrink-0 ${
+              (mainTab as any) === 'contract'
+                ? 'bg-rose-600 text-white border-rose-400/50 shadow-md shadow-rose-500/20'
+                : 'bg-white/5 text-gray-400 hover:text-white hover:bg-white/10 border-white/5'
+            }`}
+          >
+            <FileText className="w-3.5 h-3.5" />
+            <span>Editar Cláusulas do Contrato</span>
           </button>
         </div>
 
@@ -850,6 +897,103 @@ export function SettingsModal({
                     <span>Abrir Suporte no WhatsApp</span>
                   </button>
                 </div>
+              </div>
+            </div>
+          )}
+
+          {/* TAB 5: EDIÇÃO DE CLÁUSULAS DO CONTRATO */}
+          {(mainTab as any) === 'contract' && (
+            <div className="space-y-6 animate-in fade-in duration-150 pb-8">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-rose-500/10 border border-rose-500/20 p-4 rounded-2xl shadow-lg">
+                <div className="flex items-center gap-3">
+                  <div className="p-2.5 bg-rose-600/20 text-rose-400 rounded-xl border border-rose-500/20">
+                    <FileText className="w-5 h-5" />
+                  </div>
+                  <div>
+                    <h3 className="text-sm font-bold text-white uppercase tracking-wider">Editor de Cláusulas do Contrato</h3>
+                    <p className="text-[11px] text-gray-400">Personalize os termos jurídicos e condições de locação para novos contratos.</p>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={handleResetClauses}
+                  className="px-4 py-2 bg-white/5 hover:bg-white/10 text-gray-300 border border-white/10 rounded-xl text-[10px] font-bold uppercase tracking-widest transition-all cursor-pointer"
+                >
+                  Resetar para Padrão
+                </button>
+              </div>
+
+              <div className="bg-amber-950/20 border border-amber-500/20 p-3 rounded-xl">
+                <p className="text-[10px] text-amber-300 leading-relaxed flex items-start gap-2">
+                  <AlertTriangle className="w-3.5 h-3.5 shrink-0" />
+                  <span>
+                    <strong>Dica de Variáveis:</strong> Você pode usar variáveis como <strong>{"{MARCA_MODELO}"}</strong>, <strong>{"{PLACA}"}</strong>, <strong>{"{VALOR_SEMANAL}"}</strong>, etc. O sistema substituirá automaticamente pelos dados reais do carro e do motorista no momento da geração do PDF.
+                  </span>
+                </p>
+              </div>
+
+              <div className="space-y-4">
+                {contractClauses.map((clause) => (
+                  <div 
+                    key={clause.id} 
+                    className={`p-4 rounded-2xl border transition-all ${
+                      editingClauseId === clause.id 
+                        ? 'bg-rose-500/[0.08] border-rose-500/40 shadow-xl' 
+                        : 'bg-white/[0.03] border-white/10 hover:border-white/20'
+                    }`}
+                  >
+                    <div className="flex items-center justify-between gap-3 mb-3">
+                      <div className="flex items-center gap-2">
+                        <span className="text-[10px] font-mono font-bold bg-white/10 px-2 py-0.5 rounded text-gray-400">
+                          {clause.clauseLabel}
+                        </span>
+                        <h4 className="text-xs font-bold text-white uppercase tracking-tight">{clause.title}</h4>
+                      </div>
+                      
+                      {editingClauseId !== clause.id ? (
+                        <button
+                          type="button"
+                          onClick={() => handleStartEditClause(clause)}
+                          className="p-1.5 bg-blue-600/20 text-blue-400 hover:bg-blue-600 hover:text-white rounded-lg transition-all border border-blue-500/30"
+                          title="Editar esta cláusula"
+                        >
+                          <Edit2 className="w-3.5 h-3.5" />
+                        </button>
+                      ) : (
+                        <div className="flex items-center gap-2">
+                          <button
+                            type="button"
+                            onClick={() => { setEditingClauseId(null); setEditingClauseText(''); }}
+                            className="px-2.5 py-1 text-[10px] font-bold text-gray-400 hover:text-white"
+                          >
+                            Cancelar
+                          </button>
+                          <button
+                            type="button"
+                            onClick={handleSaveClause}
+                            className="px-3 py-1 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg text-[10px] font-bold flex items-center gap-1.5 transition-all shadow-md shadow-emerald-500/10"
+                          >
+                            <Check className="w-3.5 h-3.5" />
+                            Salvar Alteração
+                          </button>
+                        </div>
+                      )}
+                    </div>
+
+                    {editingClauseId === clause.id ? (
+                      <textarea
+                        value={editingClauseText}
+                        onChange={(e) => setEditingClauseText(e.target.value)}
+                        className="w-full bg-black/60 border border-white/20 rounded-xl px-4 py-3 text-xs text-white focus:outline-hidden focus:border-rose-500/50 min-h-[120px] leading-relaxed font-sans resize-y"
+                        placeholder="Escreva o texto da cláusula..."
+                      />
+                    ) : (
+                      <p className="text-[11px] text-gray-400 leading-relaxed italic bg-black/20 p-3 rounded-lg border border-white/5">
+                        "{clause.text}"
+                      </p>
+                    )}
+                  </div>
+                ))}
               </div>
             </div>
           )}

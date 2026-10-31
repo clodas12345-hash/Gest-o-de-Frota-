@@ -1,6 +1,6 @@
 import { jsPDF } from 'jspdf';
 import { Vehicle, MaintenanceLog, ExpenseLog, Vistoria, FuelLog } from '../types';
-import { getSavedContractClauses, replaceClauseVariables } from './contractClauses';
+import { getSavedContractClauses, replaceClauseVariables, getFullContractTextTemplate } from './contractClauses';
 
 export async function urlToDataUrl(url: string): Promise<{ dataUrl: string; format: 'PNG' | 'JPEG' } | null> {
   if (!url) return null;
@@ -838,16 +838,49 @@ export async function generateRentalContractPDF(
     return { label, text };
   };
 
-  // 2. DO OBJETO
-  addSectionTitle('2. DO OBJETO');
-  const c1 = getClause(
-    'clausula_1_objeto',
-    'Cláusula 1ª',
-    `O objeto deste contrato é a locação do veículo de propriedade do LOCADOR, com as seguintes características: Marca/Modelo: {MARCA_MODELO} | Ano/Modelo: {ANO_MODELO} | Placa: {PLACA} | Cor: {COR}. O veículo é entregue com tanque cheio (álcool/gasolina) e quilometragem inicial de {KM_INICIAL} km.`
-  );
-  addClause(c1.label, c1.text);
+  let sectionIndex = 12;
+  const customFullText = getFullContractTextTemplate();
+  if (customFullText && customFullText.trim().length > 0) {
+    const replacedFullText = replaceClauseVariables(customFullText, variables);
+    const lines = replacedFullText.split(/\r?\n/);
+    let currentParagraph = '';
 
-  // 3. DA FINALIDADE EXCLUSIVA
+    for (const rawLine of lines) {
+      const line = rawLine.trim();
+      if (!line) {
+        if (currentParagraph) {
+          addClause('', currentParagraph);
+          currentParagraph = '';
+        }
+        continue;
+      }
+      if (line.startsWith('---') || line.startsWith('===') || line.startsWith('CONTRATO DE LOCAÇÃO')) {
+        continue;
+      }
+      if (/^[0-9]+\.\s+[A-ZÀ-ÿ\s/()\-]+$/.test(line) || (/^[A-ZÀ-ÿ\s/()\-]{4,}$/.test(line) && !line.includes(':') && line.length < 50)) {
+        if (currentParagraph) {
+          addClause('', currentParagraph);
+          currentParagraph = '';
+        }
+        addSectionTitle(line);
+      } else {
+        currentParagraph = currentParagraph ? `${currentParagraph} ${line}` : line;
+      }
+    }
+    if (currentParagraph) {
+      addClause('', currentParagraph);
+    }
+  } else {
+    // 2. DO OBJETO
+    addSectionTitle('2. DO OBJETO');
+    const c1 = getClause(
+      'clausula_1_objeto',
+      'Cláusula 1ª',
+      `O objeto deste contrato é a locação do veículo de propriedade do LOCADOR, com as seguintes características: Marca/Modelo: {MARCA_MODELO} | Ano/Modelo: {ANO_MODELO} | Placa: {PLACA} | Cor: {COR}. O veículo é entregue com tanque cheio (álcool/gasolina) e quilometragem inicial de {KM_INICIAL} km.`
+    );
+    addClause(c1.label, c1.text);
+
+    // 3. DA FINALIDADE EXCLUSIVA
   addSectionTitle('3. DA FINALIDADE EXCLUSIVA');
   const c2 = getClause(
     'clausula_2_finalidade',
@@ -1100,11 +1133,12 @@ export async function generateRentalContractPDF(
   }
 
   // Cláusulas especiais informadas no formulário (opcional)
-  let sectionIndex = 12;
+  sectionIndex = 12;
   if (contract.customClauses && contract.customClauses.trim().length > 0) {
     addSectionTitle(`${sectionIndex}. OBSERVAÇÕES E CONDIÇÕES ESPECÍFICAS`);
     addClause('', contract.customClauses.trim());
     sectionIndex++;
+  }
   }
 
   // DO FORO E DISPOSIÇÕES FINAIS

@@ -58,6 +58,8 @@ interface RentalContractModalProps {
   onSaveVistoria?: (v: Vistoria, pdfDataUrl?: string, pdfFileName?: string) => void;
   contacts?: AgendaContact[];
   onSaveContact?: (contact: AgendaContact) => void;
+  onOpenContractSettings?: () => void;
+  onOpenContractEditor?: () => void;
 }
 
 export const RentalContractModal: React.FC<RentalContractModalProps> = ({
@@ -69,7 +71,9 @@ export const RentalContractModal: React.FC<RentalContractModalProps> = ({
   checklistConfig = [],
   onSaveVistoria,
   contacts = [],
-  onSaveContact
+  onSaveContact,
+  onOpenContractSettings,
+  onOpenContractEditor
 }) => {
   const [selectedVehicleId, setSelectedVehicleId] = useState<string>('');
   const [showVistoriaForm, setShowVistoriaForm] = useState(false);
@@ -98,13 +102,16 @@ export const RentalContractModal: React.FC<RentalContractModalProps> = ({
   const [quickManualName, setQuickManualName] = useState('');
   const [quickManualPhone, setQuickManualPhone] = useState('');
 
-  const handleSelectContactForTenant = (contact: { name: string; phone: string }) => {
+  const handleSelectContactForTenant = (contact: AgendaContact) => {
     setTenantName(contact.name);
     let cleanPhone = contact.phone.replace(/\D/g, '');
     if (cleanPhone.length > 0 && !cleanPhone.startsWith('55')) {
       cleanPhone = '55' + cleanPhone;
     }
     setTenantPhone(cleanPhone || contact.phone);
+    if (contact.email) {
+      setTenantEmail(contact.email);
+    }
     setShowContactPicker(false);
   };
 
@@ -124,24 +131,27 @@ export const RentalContractModal: React.FC<RentalContractModalProps> = ({
 
     if ('contacts' in navigator && 'select' in (navigator as any).contacts) {
       try {
-        const props = ['name', 'tel'];
+        const props = ['name', 'tel', 'email'];
         const opts = { multiple: false };
         const selected = await (navigator as any).contacts.select(props, opts);
         if (selected && selected.length > 0) {
           const item = selected[0];
           const name = item.name?.[0] || '';
           const rawPhone = item.tel?.[0] || '';
+          const email = item.email?.[0] || '';
           let cleanPhone = rawPhone.replace(/\D/g, '');
           if (cleanPhone.length > 0 && !cleanPhone.startsWith('55')) {
             cleanPhone = '55' + cleanPhone;
           }
           if (name) setTenantName(name);
           if (cleanPhone) setTenantPhone(cleanPhone);
+          if (email) setTenantEmail(email);
           if (onSaveContact && name && cleanPhone) {
             onSaveContact({
               id: `contact-${Date.now()}`,
               name,
               phone: cleanPhone,
+              email: email || '',
               region: 'Geral'
             });
           }
@@ -937,13 +947,26 @@ O contrato oficial em PDF já foi gerado e está arquivado nos documentos do ve�
               <p className="text-[11px] text-gray-400">Preencha os dados do locatário e gere o PDF oficial para o carro</p>
             </div>
           </div>
-          <button
-            type="button"
-            onClick={onClose}
-            className="p-1.5 hover:bg-white/10 rounded-xl text-gray-400 hover:text-white transition-colors cursor-pointer"
-          >
-            <X className="w-5 h-5" />
-          </button>
+          <div className="flex items-center gap-2">
+            {(onOpenContractEditor || onOpenContractSettings) && (
+              <button
+                type="button"
+                onClick={onOpenContractEditor || onOpenContractSettings}
+                className="flex items-center gap-1.5 px-3 py-1.5 bg-rose-600/20 text-rose-300 hover:bg-rose-600/30 border border-rose-500/30 rounded-xl text-[10px] sm:text-xs font-bold transition-all cursor-pointer"
+                title="Personalizar cláusulas jurídicas ou editar todo o contrato"
+              >
+                <Edit3 className="w-3.5 h-3.5" />
+                <span>Editar Contrato / Cláusulas</span>
+              </button>
+            )}
+            <button
+              type="button"
+              onClick={onClose}
+              className="p-1.5 hover:bg-white/10 rounded-xl text-gray-400 hover:text-white transition-colors cursor-pointer"
+            >
+              <X className="w-5 h-5" />
+            </button>
+          </div>
         </div>
 
         {/* Modal Content / Form */}

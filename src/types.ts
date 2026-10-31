@@ -305,6 +305,7 @@ export interface AgendaContact {
   cpfCnpj?: string;
   rg?: string;
   cnh?: string;
+  cnhCategory?: string;
   cnhExpiration?: string;
   cnhPhotoUrl?: string;
   addressProofUrl?: string;

@@ -1,7 +1,9 @@
 import React, { useState, useEffect } from 'react';
 import { AgendaContact, Vehicle } from '../types';
-import { X, Plus, Trash2, Search, MapPin, Phone, User, Save, Edit2, MessageCircle, Send, Car, Upload, CheckCircle2 } from 'lucide-react';
+import { X, Plus, Trash2, Search, MapPin, Phone, User, Save, Edit2, MessageCircle, Send, Car, Upload, CheckCircle2, Mail, Smartphone, CreditCard } from 'lucide-react';
 import { ImportContactsModal } from './ImportContactsModal';
+import { Capacitor, registerPlugin } from '@capacitor/core';
+const Contacts = registerPlugin<any>('Contacts');
 
 export const toTitleCase = (str: string): string => {
   if (!str) return '';
@@ -22,7 +24,8 @@ interface AgendaModalProps {
   onSaveContact: (contact: AgendaContact) => void;
   onSaveMultipleContacts?: (contacts: AgendaContact[]) => void;
   onDeleteContact: (id: string) => void;
-  preFill?: { name: string; phone: string } | null;
+  onUpdateVehicle?: (vehicle: Vehicle) => void;
+  preFill?: { name: string; phone: string; email?: string } | null;
 }
 
 export const AgendaModal: React.FC<AgendaModalProps> = ({
@@ -33,6 +36,7 @@ export const AgendaModal: React.FC<AgendaModalProps> = ({
   onSaveContact,
   onSaveMultipleContacts,
   onDeleteContact,
+  onUpdateVehicle,
   preFill,
 }) => {
   const [searchTerm, setSearchTerm] = useState('');
@@ -44,7 +48,11 @@ export const AgendaModal: React.FC<AgendaModalProps> = ({
   // Form states
   const [name, setName] = useState('');
   const [phone, setPhone] = useState('');
-  const [region, setRegion] = useState('');
+  const [email, setEmail] = useState('');
+  const [region, setRegion] = useState('Locatário');
+  const [cpf, setCpf] = useState('');
+  const [cnh, setCnh] = useState('');
+  const [selectedVehiclePlate, setSelectedVehiclePlate] = useState('');
 
   useEffect(() => {
     if (isOpen) {
@@ -57,12 +65,14 @@ export const AgendaModal: React.FC<AgendaModalProps> = ({
           p = p.substring(2);
         }
         setPhone(p);
+        setEmail(preFill.email || '');
         setRegion('Locatário');
       } else {
         setIsAdding(false);
         setEditingId(null);
         setName('');
         setPhone('');
+        setEmail('');
         setRegion('');
       }
     }
@@ -115,7 +125,11 @@ export const AgendaModal: React.FC<AgendaModalProps> = ({
     setEditingId(null);
     setName('');
     setPhone('');
-    setRegion('');
+    setEmail('');
+    setRegion('Locatário');
+    setCpf('');
+    setCnh('');
+    setSelectedVehiclePlate('');
     setActiveMessageContactId(null);
   };
 
@@ -128,8 +142,68 @@ export const AgendaModal: React.FC<AgendaModalProps> = ({
       rawPhone = rawPhone.substring(2);
     }
     setPhone(rawPhone);
-    setRegion(contact.region);
+    setEmail(contact.email || '');
+    setRegion(contact.region || 'Locatário');
+    setCpf(contact.cpfCnpj || '');
+    setCnh(contact.cnh || '');
+    setSelectedVehiclePlate(contact.activeVehiclePlate || '');
     setActiveMessageContactId(null);
+  };
+
+  const handlePickDeviceContact = async () => {
+    if (Capacitor.isNativePlatform()) {
+      try {
+        const perm = await Contacts.requestPermissions();
+        if (perm.contacts === 'granted') {
+          const res = await Contacts.getContacts({
+            projection: { name: true, phones: true, emails: true }
+          });
+          if (res && res.contacts && res.contacts.length > 0) {
+            const first = res.contacts[0];
+            const cName = first.name?.display || first.name?.given || '';
+            const cPhone = first.phones?.[0]?.number || first.phones?.[0] || '';
+            const cEmail = first.emails?.[0]?.address || first.emails?.[0] || '';
+
+            if (cName) setName(toTitleCase(cName));
+            let clean = cPhone.replace(/\D/g, '');
+            if (clean.startsWith('55') && clean.length > 2) clean = clean.substring(2);
+            if (clean) setPhone(clean);
+            if (cEmail) setEmail(cEmail);
+
+            setSuccessToast(`📱 Contato "${cName || clean}" carregado do celular!`);
+            setTimeout(() => setSuccessToast(null), 3000);
+            return;
+          }
+        }
+      } catch (err) {
+        console.warn('Capacitor contacts error:', err);
+      }
+    }
+
+    if ('contacts' in navigator && 'select' in (navigator as any).contacts) {
+      try {
+        const props = ['name', 'tel', 'email'];
+        const selected = await (navigator as any).contacts.select(props, { multiple: false });
+        if (selected && selected.length > 0) {
+          const item = selected[0];
+          const cName = item.name?.[0] || '';
+          const cTel = item.tel?.[0] || '';
+          const cEmail = item.email?.[0] || '';
+
+          if (cName) setName(toTitleCase(cName));
+          let clean = cTel.replace(/\D/g, '');
+          if (clean.startsWith('55') && clean.length > 2) clean = clean.substring(2);
+          if (clean) setPhone(clean);
+          if (cEmail) setEmail(cEmail);
+
+          setSuccessToast(`📱 Contato "${cName || clean}" carregado da agenda!`);
+          setTimeout(() => setSuccessToast(null), 3000);
+          return;
+        }
+      } catch (err) {
+        console.warn('Web Contact Picker error:', err);
+      }
+    }
   };
 
   const handleCancel = () => {
@@ -139,30 +213,66 @@ export const AgendaModal: React.FC<AgendaModalProps> = ({
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!name.trim() || !phone.trim() || !region.trim()) {
-      alert('Por favor, preencha todos os campos.');
+    if (!name.trim()) {
+      alert('Por favor, informe o Nome Completo.');
+      return;
+    }
+    const cleanDigits = phone.replace(/\D/g, '');
+    if (!cleanDigits) {
+      alert('Por favor, informe o Telefone / WhatsApp.');
       return;
     }
 
     // Clean phone number
-    let cleanPhone = phone.replace(/\D/g, '');
+    let cleanPhone = cleanDigits;
     // Ensure we prepend '55' (Brazil code) if not already present
-    if (cleanPhone.length > 0 && !cleanPhone.startsWith('55')) {
+    if (!cleanPhone.startsWith('55')) {
       cleanPhone = '55' + cleanPhone;
     }
 
-    onSaveContact({
+    const formattedName = toTitleCase(name.trim());
+    const finalRegion = region.trim() || 'Locatário';
+
+    const contactToSave: AgendaContact = {
       id: editingId || `contact-${Date.now()}`,
-      name: toTitleCase(name.trim()),
+      name: formattedName,
       phone: cleanPhone,
-      region: toTitleCase(region.trim()),
-    });
+      email: email.trim(),
+      region: toTitleCase(finalRegion),
+      cpfCnpj: cpf.trim() || undefined,
+      cnh: cnh.trim() || undefined,
+      activeVehiclePlate: selectedVehiclePlate || undefined
+    };
+
+    onSaveContact(contactToSave);
+
+    // If vehicle selected and onUpdateVehicle provided, update vehicle
+    if (selectedVehiclePlate && onUpdateVehicle) {
+      const veh = vehicles.find(v => v.plate.toUpperCase() === selectedVehiclePlate.toUpperCase());
+      if (veh) {
+        onUpdateVehicle({
+          ...veh,
+          driver: formattedName,
+          driverPhone: cleanPhone,
+          tenantEmail: email.trim() || veh.tenantEmail,
+          tenantCpfCnpj: cpf.trim() || veh.tenantCpfCnpj,
+          tenantCnh: cnh.trim() || veh.tenantCnh
+        });
+      }
+    }
+
+    setSuccessToast(`✅ Contato "${formattedName}" salvo com sucesso!`);
+    setTimeout(() => setSuccessToast(null), 3500);
 
     setIsAdding(false);
     setEditingId(null);
     setName('');
     setPhone('');
-    setRegion('');
+    setEmail('');
+    setRegion('Locatário');
+    setCpf('');
+    setCnh('');
+    setSelectedVehiclePlate('');
   };
 
   // Prepares the template message when contact or vehicle changes
@@ -295,9 +405,21 @@ export const AgendaModal: React.FC<AgendaModalProps> = ({
         {/* Form to Add/Edit Contact */}
         {isAdding && (
           <form onSubmit={handleSubmit} className="p-4 bg-[#141414] border-b border-white/10 space-y-3 animate-in slide-in-from-top duration-150">
-            <h3 className="text-xs font-bold text-emerald-400 uppercase tracking-wider">
-              {editingId ? 'Editar Contato' : 'Adicionar Novo Contato'}
-            </h3>
+            <div className="flex items-center justify-between">
+              <h3 className="text-xs font-bold text-emerald-400 uppercase tracking-wider">
+                {editingId ? 'Editar Contato / Motorista' : 'Adicionar Novo Contato / Motorista'}
+              </h3>
+
+              <button
+                type="button"
+                onClick={handlePickDeviceContact}
+                className="px-2.5 py-1 bg-blue-600/20 hover:bg-blue-600/30 text-blue-300 border border-blue-500/30 rounded-lg text-[11px] font-bold flex items-center gap-1.5 transition-all cursor-pointer"
+                title="Puxar contato da agenda do telefone"
+              >
+                <Smartphone className="w-3.5 h-3.5 text-blue-400" />
+                <span>Buscar Agenda do Celular</span>
+              </button>
+            </div>
             
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
               <div className="space-y-1 sm:col-span-2">
@@ -344,18 +466,76 @@ export const AgendaModal: React.FC<AgendaModalProps> = ({
 
               <div className="space-y-1">
                 <label className="text-gray-400 font-semibold flex items-center gap-1">
-                  <MapPin className="w-3 h-3" /> Região/Cidade *
+                  <CreditCard className="w-3 h-3" /> CPF (Opcional)
                 </label>
                 <input
                   type="text"
-                  placeholder="Ex: São Paulo - SP"
+                  placeholder="Ex: 341.892.108-44"
+                  value={cpf}
+                  onChange={(e) => setCpf(e.target.value)}
+                  className="w-full bg-[#1e1e1e] border border-white/10 rounded-xl px-3 py-2 text-white focus:outline-hidden focus:border-emerald-500/50 font-mono text-xs"
+                />
+              </div>
+
+              <div className="space-y-1">
+                <label className="text-gray-400 font-semibold flex items-center gap-1">
+                  <CreditCard className="w-3 h-3" /> Número CNH (Opcional)
+                </label>
+                <input
+                  type="text"
+                  placeholder="Ex: 08912347101"
+                  value={cnh}
+                  onChange={(e) => setCnh(e.target.value)}
+                  className="w-full bg-[#1e1e1e] border border-white/10 rounded-xl px-3 py-2 text-white focus:outline-hidden focus:border-emerald-500/50 font-mono text-xs"
+                />
+              </div>
+
+              <div className="space-y-1">
+                <label className="text-gray-400 font-semibold flex items-center gap-1">
+                  <MapPin className="w-3 h-3" /> Região / Categoria
+                </label>
+                <input
+                  type="text"
+                  placeholder="Ex: Locatário ou São Paulo - SP"
                   value={region}
                   onChange={(e) => setRegion(e.target.value)}
                   onBlur={(e) => setRegion(toTitleCase(e.target.value))}
-                  className="w-full bg-[#1e1e1e] border border-white/10 rounded-xl px-3 py-2 text-white focus:outline-hidden focus:border-emerald-500/50"
-                  required
+                  className="w-full bg-[#1e1e1e] border border-white/10 rounded-xl px-3 py-2 text-white focus:outline-hidden focus:border-emerald-500/50 text-xs"
                 />
               </div>
+
+              <div className="space-y-1 sm:col-span-2">
+                <label className="text-gray-400 font-semibold flex items-center gap-1">
+                  <Mail className="w-3 h-3" /> E-mail do Motorista
+                </label>
+                <input
+                  type="email"
+                  placeholder="Ex: carlos@email.com"
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  className="w-full bg-[#1e1e1e] border border-white/10 rounded-xl px-3 py-2 text-white focus:outline-hidden focus:border-emerald-500/50 text-xs"
+                />
+              </div>
+
+              {vehicles && vehicles.length > 0 && (
+                <div className="space-y-1 sm:col-span-2">
+                  <label className="text-gray-400 font-semibold flex items-center gap-1">
+                    <Car className="w-3 h-3 text-blue-400" /> Vincular a um Veículo da Frota (Opcional)
+                  </label>
+                  <select
+                    value={selectedVehiclePlate}
+                    onChange={(e) => setSelectedVehiclePlate(e.target.value)}
+                    className="w-full bg-[#1e1e1e] border border-white/10 rounded-xl px-3 py-2 text-white focus:outline-hidden focus:border-emerald-500/50 text-xs cursor-pointer font-medium"
+                  >
+                    <option value="">-- Não vincular agora --</option>
+                    {vehicles.map(v => (
+                      <option key={v.id} value={v.plate}>
+                        🚗 {v.brand} {v.model} ({v.plate}) {v.driver ? `[Motorista: ${v.driver}]` : ''}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              )}
             </div>
 
             <div className="flex justify-end gap-2 pt-2">
@@ -436,6 +616,12 @@ export const AgendaModal: React.FC<AgendaModalProps> = ({
                           <MapPin className="w-3 h-3 text-emerald-400" />
                           {toTitleCase(contact.region)}
                         </span>
+                        {contact.email && (
+                          <span className="flex items-center gap-1">
+                            <Mail className="w-3 h-3 text-emerald-400" />
+                            {contact.email}
+                          </span>
+                        )}
                       </div>
                     </div>
                     

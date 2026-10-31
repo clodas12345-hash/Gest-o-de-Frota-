@@ -44,6 +44,8 @@ import { LogoViewerModal } from './components/LogoViewerModal';
 import { GlobalVoiceAssistant } from './components/GlobalVoiceAssistant';
 import { BatchOdometerModal } from './components/BatchOdometerModal';
 import { InterestCalculatorModal } from './components/InterestCalculatorModal';
+import { RegisterDriverModal } from './components/RegisterDriverModal';
+import { ContractEditorModal } from './components/ContractEditorModal';
 import { generateVehiclePDF, generateVistoriaPDF, generateExecutiveMonthlyPDF } from './utils/pdfGenerator';
 import { sendAppNotification, requestNotificationPermission, scheduleVistoriaReminders, VISTORIA_REMINDER_SLOTS, isNotificationEventEnabled } from './utils/notifications';
 import logoImg from './assets/logo.png';
@@ -320,6 +322,7 @@ export default function App() {
     return localStorage.getItem('fleet_maint_notif_enabled') === 'true';
   });
   const [isSettingsOpen, setIsSettingsOpen] = useState<boolean>(false);
+  const [settingsInitialTab, setSettingsInitialTab] = useState<'settings' | 'calendar' | 'charts' | 'history' | 'contract'>('settings');
   const [isNotificationCenterOpen, setIsNotificationCenterOpen] = useState<boolean>(false);
   const [isChecklistConfigOpen, setIsChecklistConfigOpen] = useState<boolean>(false);
   const [isRentalContractOpen, setIsRentalContractOpen] = useState<boolean>(false);
@@ -332,6 +335,10 @@ export default function App() {
   const [vehiclePendingFinalize, setVehiclePendingFinalize] = useState<Vehicle | null>(null);
   const [isInterestCalcOpen, setIsInterestCalcOpen] = useState<boolean>(false);
   const [interestCalcVehicle, setInterestCalcVehicle] = useState<Vehicle | null>(null);
+  const [isRegisterDriverOpen, setIsRegisterDriverOpen] = useState<boolean>(false);
+  const [driverToEdit, setDriverToEdit] = useState<AgendaContact | null>(null);
+  const [preSelectedVehicleIdForDriver, setPreSelectedVehicleIdForDriver] = useState<string>('');
+  const [isContractEditorOpen, setIsContractEditorOpen] = useState<boolean>(false);
 
   const [checklistConfig, setChecklistConfig] = useState<string[]>(() => {
     const defaultList = [
@@ -3242,6 +3249,14 @@ export default function App() {
 
             <HeaderActionsMenu
               onAddVehicle={() => handleOpenForm('vehicle')}
+              onOpenRegisterDriver={() => {
+                setDriverToEdit(null);
+                setPreSelectedVehicleIdForDriver(sortedVehicles[0]?.id || '');
+                setIsRegisterDriverOpen(true);
+              }}
+              onOpenContractEditor={() => {
+                setIsContractEditorOpen(true);
+              }}
               onOpenRentalContract={() => {
                 setSelectedContractVehicle(null);
                 setIsRentalContractOpen(true);
@@ -3537,7 +3552,29 @@ export default function App() {
         onSaveContact={handleSaveContact}
         onSaveMultipleContacts={handleSaveMultipleContacts}
         onDeleteContact={handleDeleteContact}
+        onUpdateVehicle={handleUpdateVehicle}
         preFill={agendaPreFill}
+      />
+
+      {/* Cadastrar / Editar Motorista Modal */}
+      <RegisterDriverModal
+        isOpen={isRegisterDriverOpen}
+        onClose={() => {
+          setIsRegisterDriverOpen(false);
+          setDriverToEdit(null);
+        }}
+        vehicles={sortedVehicles}
+        onSaveContact={handleSaveContact}
+        onUpdateVehicle={handleUpdateVehicle}
+        preSelectedVehicleId={preSelectedVehicleIdForDriver}
+        driverToEdit={driverToEdit}
+      />
+
+      {/* Editor de Contrato Completo e Cláusulas */}
+      <ContractEditorModal
+        isOpen={isContractEditorOpen}
+        onClose={() => setIsContractEditorOpen(false)}
+        vehicles={sortedVehicles}
       />
 
       {/* Global Document Upload Modal */}
@@ -3612,6 +3649,7 @@ export default function App() {
         onSwitchExpenseToMaint={handleSwitchExpenseToMaint}
         onShowDeleteConfirm={handleShowDeleteConfirm}
         onOpenBatchOdometer={() => setIsBatchOdometerOpen(true)}
+        initialTab={settingsInitialTab}
       />
 
       {/* Centro de Notificações Modal */}
@@ -3640,6 +3678,15 @@ export default function App() {
         onSaveVistoria={handleSaveVistoria}
         contacts={contacts}
         onSaveContact={handleSaveContact}
+        onOpenContractSettings={() => {
+          setIsRentalContractOpen(false);
+          setSettingsInitialTab('contract');
+          setIsSettingsOpen(true);
+        }}
+        onOpenContractEditor={() => {
+          setIsRentalContractOpen(false);
+          setIsContractEditorOpen(true);
+        }}
       />
 
       <ReportsAndHistoryModal

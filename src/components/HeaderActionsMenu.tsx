@@ -20,11 +20,15 @@ import {
   Fuel,
   BellRing,
   Gauge,
-  FileDown
+  FileDown,
+  User,
+  Edit3
 } from 'lucide-react';
 
 interface HeaderActionsMenuProps {
   onAddVehicle: () => void;
+  onOpenRegisterDriver?: () => void;
+  onOpenContractEditor?: () => void;
   onOpenRentalContract?: () => void;
   onOpenFinalizedContracts: () => void;
   finalizedContractsCount: number;
@@ -47,6 +51,8 @@ interface HeaderActionsMenuProps {
 
 export function HeaderActionsMenu({
   onAddVehicle,
+  onOpenRegisterDriver,
+  onOpenContractEditor,
   onOpenRentalContract,
   onOpenFinalizedContracts,
   finalizedContractsCount,
@@ -160,6 +166,40 @@ export function HeaderActionsMenu({
                 <p className="text-[10px] text-gray-400">Cadastrar novo carro na frota</p>
               </div>
             </button>
+
+            {/* Option: Cadastrar Motorista */}
+            {onOpenRegisterDriver && (
+              <button
+                type="button"
+                onClick={() => handleAction(onOpenRegisterDriver)}
+                className="w-full flex items-center gap-3 p-3 rounded-xl bg-indigo-500/10 hover:bg-indigo-500/20 text-left group transition-all cursor-pointer border border-indigo-500/20 hover:border-indigo-500/40"
+              >
+                <div className="p-2 bg-indigo-600 text-white rounded-lg group-hover:scale-105 transition-transform shadow-md shadow-indigo-500/20">
+                  <User className="w-4 h-4" />
+                </div>
+                <div>
+                  <p className="text-xs font-bold text-white group-hover:text-indigo-300">Cadastrar Motorista</p>
+                  <p className="text-[10px] text-gray-400">Puxar do celular e vincular a um veículo</p>
+                </div>
+              </button>
+            )}
+
+            {/* Option: Editor de Contrato & Cláusulas */}
+            {onOpenContractEditor && (
+              <button
+                type="button"
+                onClick={() => handleAction(onOpenContractEditor)}
+                className="w-full flex items-center gap-3 p-3 rounded-xl bg-purple-500/10 hover:bg-purple-500/20 text-left group transition-all cursor-pointer border border-purple-500/20 hover:border-purple-500/40"
+              >
+                <div className="p-2 bg-purple-600 text-white rounded-lg group-hover:scale-105 transition-transform shadow-md shadow-purple-500/20">
+                  <Edit3 className="w-4 h-4" />
+                </div>
+                <div>
+                  <p className="text-xs font-bold text-white group-hover:text-purple-300">Editor de Contrato</p>
+                  <p className="text-[10px] text-gray-400">Editar 1 cláusula ou todo o contrato</p>
+                </div>
+              </button>
+            )}
 
             {/* Option: Nova Manutenção */}
             <button

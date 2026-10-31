@@ -274,6 +274,115 @@ export function resetContractClauses(): ContractClause[] {
   return DEFAULT_CONTRACT_CLAUSES;
 }
 
+export const FULL_TEXT_STORAGE_KEY = 'fleet_contract_full_text_custom';
+
+export interface ContractVariableMeta {
+  key: string;
+  label: string;
+  example: string;
+}
+
+export const CONTRACT_VARIABLES: ContractVariableMeta[] = [
+  { key: 'LOCADOR_NOME', label: 'Nome do Locador', example: 'Guilherme K. Dias' },
+  { key: 'LOCADOR_CPF', label: 'CPF do Locador', example: '381.892.108-44' },
+  { key: 'LOCADOR_RG', label: 'RG do Locador', example: '39.508.321-7' },
+  { key: 'LOCADOR_ENDERECO', label: 'Endereço do Locador', example: 'Rua Manuel Leiroz, 230 - São Paulo/SP' },
+  { key: 'LOCATARIO_NOME', label: 'Nome do Motorista/Locatário', example: 'Carlos Eduardo Silva' },
+  { key: 'LOCATARIO_CPF', label: 'CPF do Motorista', example: '341.892.108-44' },
+  { key: 'LOCATARIO_RG', label: 'RG do Motorista', example: '44.123.456-7' },
+  { key: 'LOCATARIO_CNH', label: 'CNH do Motorista', example: '08912347101' },
+  { key: 'LOCATARIO_ENDERECO', label: 'Endereço do Motorista', example: 'Av. Paulista, 1000 - São Paulo/SP' },
+  { key: 'LOCATARIO_FONE', label: 'Telefone do Motorista', example: '(11) 98765-4321' },
+  { key: 'MARCA_MODELO', label: 'Marca / Modelo do Carro', example: 'Chevrolet Onix Plus' },
+  { key: 'ANO_MODELO', label: 'Ano de Fabricação / Modelo', example: '2022/2023' },
+  { key: 'PLACA', label: 'Placa do Veículo', example: 'TDD-5I76' },
+  { key: 'COR', label: 'Cor do Veículo', example: 'Branco' },
+  { key: 'KM_INICIAL', label: 'Quilometragem Inicial', example: '18.601' },
+  { key: 'VALOR_SEMANAL', label: 'Valor do Aluguel Semanal', example: '650,00' },
+  { key: 'VALOR_SEMANAL_EXTENSO', label: 'Aluguel Semanal por Extenso', example: 'seiscentos e cinquenta reais' },
+  { key: 'VALOR_CAUCAO', label: 'Valor da Caução', example: '1.200,00' },
+  { key: 'VALOR_CAUCAO_EXTENSO', label: 'Caução por Extenso', example: 'mil e duzentos reais' },
+  { key: 'DATA_INICIO', label: 'Data de Início da Locação', example: '01/11/2026' },
+  { key: 'DIA_VENCIMENTO', label: 'Dia do Vencimento Semanal', example: 'toda segunda-feira até às 23h59' },
+  { key: 'CHAVE_PIX', label: 'Chave Pix para Pagamento', example: '11953292570' },
+  { key: 'TAXA_MULTA', label: 'Percentual de Multa por Atraso', example: '10' },
+  { key: 'TAXA_MULTA_EXTENSO', label: 'Multa por Extenso', example: 'dez por cento' },
+  { key: 'TAXA_JUROS', label: 'Taxa de Juros Moratórios ao Mês', example: '1' },
+  { key: 'LIMITE_KM', label: 'Limite Mensal de KM', example: '6.000 km' },
+  { key: 'OFICINA_NOME', label: 'Oficina Credenciada', example: 'Oficina Central GKD' },
+  { key: 'SEGURADORA_NOME', label: 'Nome da Seguradora', example: 'Loovi Seguros' },
+  { key: 'SEGURADORA_FONES', label: 'Telefones da Seguradora', example: '0800 591 0422 / WhatsApp 0800 000 0000' },
+  { key: 'DATA_ATUAL', label: 'Data Atual Formatada', example: '31 de outubro de 2026' }
+];
+
+export function buildDefaultFullContractText(clauses: ContractClause[] = DEFAULT_CONTRACT_CLAUSES): string {
+  const sections: Record<string, ContractClause[]> = {};
+  clauses.forEach((c) => {
+    const sec = c.section || 'DISPOSIÇÕES GERAIS';
+    if (!sections[sec]) sections[sec] = [];
+    sections[sec].push(c);
+  });
+
+  let full = `CONTRATO DE LOCAÇÃO DE VEÍCULO AUTOMOTOR PARA APLICATIVO
+
+1. DAS PARTES
+LOCADOR: {LOCADOR_NOME}, inscrito no CPF sob nº {LOCADOR_CPF}, RG nº {LOCADOR_RG}, residente e domiciliado em {LOCADOR_ENDERECO}.
+LOCATÁRIO: {LOCATARIO_NOME}, inscrito no CPF sob nº {LOCATARIO_CPF}, RG nº {LOCATARIO_RG}, portador da CNH nº {LOCATARIO_CNH}, residente e domiciliado em {LOCATARIO_ENDERECO}, telefone/WhatsApp: {LOCATARIO_FONE}.
+
+As partes acima qualificadas têm, entre si, justo e acordado o presente Contrato de Locação de Veículo Automotor, que se regerá pelas seguintes cláusulas e condições:
+\n`;
+
+  for (const [secTitle, secClauses] of Object.entries(sections)) {
+    full += `--------------------------------------------------\n`;
+    full += `${secTitle.toUpperCase()}\n`;
+    full += `--------------------------------------------------\n\n`;
+
+    secClauses.forEach((c) => {
+      full += `${c.clauseLabel}${c.title ? ` - ${c.title}` : ''}\n`;
+      full += `${c.text}\n\n`;
+    });
+  }
+
+  full += `--------------------------------------------------\n`;
+  full += `DO FORO E ASSINATURAS\n`;
+  full += `--------------------------------------------------\n\n`;
+  full += `Para dirimir quaisquer controvérsias oriundas do presente contrato, as partes elegem o Foro da Comarca de São Paulo/SP.\n\n`;
+  full += `São Paulo/SP, {DATA_ATUAL}.\n\n\n`;
+  full += `_______________________________________\nLOCADOR: {LOCADOR_NOME}\n\n`;
+  full += `_______________________________________\nLOCATÁRIO: {LOCATARIO_NOME}\n`;
+
+  return full;
+}
+
+export function getFullContractTextTemplate(): string | null {
+  try {
+    return localStorage.getItem(FULL_TEXT_STORAGE_KEY);
+  } catch (e) {
+    console.warn('Erro ao ler texto completo do contrato:', e);
+    return null;
+  }
+}
+
+export function saveFullContractTextTemplate(text: string | null): void {
+  try {
+    if (text === null || text.trim() === '') {
+      localStorage.removeItem(FULL_TEXT_STORAGE_KEY);
+    } else {
+      localStorage.setItem(FULL_TEXT_STORAGE_KEY, text);
+    }
+  } catch (e) {
+    console.warn('Erro ao salvar texto completo do contrato:', e);
+  }
+}
+
+export function resetFullContractTextTemplate(): void {
+  try {
+    localStorage.removeItem(FULL_TEXT_STORAGE_KEY);
+  } catch (e) {
+    console.warn('Erro ao resetar texto completo do contrato:', e);
+  }
+}
+
 export function replaceClauseVariables(template: string, variables: Record<string, string>): string {
   let result = template;
   for (const [key, value] of Object.entries(variables)) {
@@ -282,3 +391,4 @@ export function replaceClauseVariables(template: string, variables: Record<strin
   }
   return result;
 }
+

@@ -20,7 +20,12 @@ import {
   Trash2,
   CheckCircle2,
   Download,
-  Upload
+  Upload,
+  User,
+  Gauge,
+  Bell,
+  Calculator,
+  FileDown
 } from 'lucide-react';
 import { GoogleGenAI } from '@google/genai';
 
@@ -93,6 +98,34 @@ export const HelpModal: React.FC<HelpModalProps> = ({
   // Local knowledge-base fallback answer generator
   const getSmartLocalAnswer = (query: string): string => {
     const q = query.toLowerCase();
+
+    if (q.includes('editor de contrato') || q.includes('editar contrato') || q.includes('clausula') || q.includes('cláusula') || q.includes('mudar contrato') || q.includes('texto completo')) {
+      return `📝 *Editor de Contrato (Cláusula por Cláusula ou Todo o Contrato):*\n\n1. **Onde acessar:** No **Menu de Opções** (topo da tela) clique em **"Editor de Contrato"**, ou dentro do gerador de contrato no botão **"Editar Contrato / Cláusulas"**.\n2. **Modo 1 - Editar 1 Cláusula:** Pesquise termos jurídicos (ex: *multa, bloqueio, seguro, caução*), altere títulos ou o texto de qualquer cláusula individual e crie cláusulas novas.\n3. **Modo 2 - Editar Todo o Contrato:** Visualize e edite todo o documento em texto livre ou cole um contrato pronto. Use as tags automáticas ({LOCATARIO_NOME}, {VALOR_SEMANAL}, {PLACA}, etc.) para preenchimento automático.\n4. **PDF Oficial:** Todas as alterações salvas são aplicadas automaticamente nos novos contratos gerados em PDF!`;
+    }
+
+    if (q.includes('cadastrar motorista') || q.includes('novo motorista') || q.includes('agenda celular') || q.includes('buscar agenda') || q.includes('email') || (q.includes('motorista') && (q.includes('salvar') || q.includes('agenda') || q.includes('contato')))) {
+      return `👤 *Cadastrar Motorista & Busca na Agenda do Celular:*\n\n1. **Onde acessar:** No **Menu de Opções** clique em **"Cadastrar Motorista"** ou abra a **Agenda de Locatários**.\n2. **Buscar Agenda do Celular:** Clique no botão azul **"Buscar Agenda"** para abrir a lista de contatos do seu telefone (Android/Capacitor/Chrome) e preencher automaticamente Nome, Telefone e E-mail com 1 toque!\n3. **Campos Disponíveis:** Nome Completo, CPF, Telefone (+55), E-mail, Categoria CNH, Número da CNH, Vencimento e Veículo Vinculado.\n4. **Vínculo com Veículo:** Ao vincular um carro da frota, os dados do locatário são atualizados na hora no cartão do carro!`;
+    }
+
+    if (q.includes('odômetro') || q.includes('odometro') || q.includes('km em lote') || q.includes('quilometragem')) {
+      return `⚡ *Modo Odômetro (KM em Lote):*\n\n1. **Onde acessar:** No **Menu de Opções** clique em **"Modo Odômetro (KM em Lote)"**.\n2. **Como funciona:** Abre uma lista com todos os veículos da sua frota em uma única tela.\n3. **Atualização Rápida:** Digite a nova quilometragem de cada carro e salve todos com um único clique. O sistema recalcula os prazos de revisão e a média de uso automaticamente!`;
+    }
+
+    if (q.includes('juros') || q.includes('calculadora') || q.includes('atraso') || q.includes('mora')) {
+      return `💰 *Calculadora de Juros e Multas por Atraso:*\n\n1. **Onde acessar:** No **Menu de Opções** clique em **"Calculadora de Juros"** ou no cartão do carro na aba Pagamentos.\n2. **Como funciona:** Insira o valor da semana e os dias de atraso. O sistema aplica a multa fixa de 10% mais os juros diários pro-rata de 1% ao mês.\n3. **Cobrança WhatsApp:** Gera o valor total corrigido e permite copiar ou enviar uma mensagem pronta de cobrança pelo WhatsApp!`;
+    }
+
+    if (q.includes('relatório mensal') || q.includes('relatorio mensal') || q.includes('contador') || q.includes('contabilidade') || q.includes('balancete')) {
+      return `📑 *Relatório Mensal PDF (Contador / Balancete Executivo):*\n\n1. **Onde acessar:** No **Menu de Opções** clique em **"Relatório Mensal PDF"**.\n2. **O que contém:** Resumo financeiro consolidado do mês com receitas de aluguéis, cauções recebidas, gastos com combustível, manutenções, peças e despesas extras.\n3. **Exportação:** Gera um PDF executivo profissional com cabeçalho oficial da empresa, pronto para envio ao seu contador ou arquivamento fiscal!`;
+    }
+
+    if (q.includes('notificação') || q.includes('notificacoes') || q.includes('notificações') || q.includes('alerta') || q.includes('sino')) {
+      return `🔔 *Central de Notificações da Frota:*\n\n1. **Onde acessar:** Clique no ícone de **Sino** no topo da tela ou em **Notificações** no Menu de Opções.\n2. **Alertas Monitorados:**\n• Revisões e manutenções preventivas próximas ou vencidas\n• Vistorias pendentes da semana\n• Vencimento da CNH do locatário (alerta de 30 dias e vencida)\n• Vencimento do seguro e parcelas de IPVA\n3. Clique em qualquer alerta para abrir o cartão do veículo correspondente!`;
+    }
+
+    if (q.includes('menu') || q.includes('botão') || q.includes('botões') || q.includes('botoes') || q.includes('opções') || q.includes('opcoes')) {
+      return `🧭 *Guia Completo dos Botões do Menu de Opções:*\n\n• 🚗 **Adicionar Veículo:** Cadastrar novo carro na frota (com busca FIPE automática).\n• 👤 **Cadastrar Motorista:** Cadastro com importação da agenda do celular, CPF, CNH e E-mail.\n• 📝 **Editor de Contrato:** Alterar 1 cláusula ou todo o texto do contrato de locação.\n• 🔧 **Nova Manutenção:** Registrar oficinas, peças, ordens de serviço e notas fiscais.\n• 📑 **Histórico de Manutenções:** Detalhes de despesas organizados por carro.\n• 📄 **Gerar Contrato de Locação:** Emissão do contrato formal em PDF e link de entrega.\n• ⚡ **Modo Odômetro (KM em Lote):** Atualizar km de todos os carros de uma só vez.\n• 📊 **Relatório Mensal PDF:** Balancete contábil mensal executivo.\n• 🔔 **Central de Notificações:** Avisos de CNH, IPVA, Seguro e Revisões.\n• 💰 **Calculadora de Juros:** Simular semanas atrasadas com mora e multa.\n• 📞 **Agenda de Contatos:** Lista de locatários e mensagens rápidas de WhatsApp.\n• 📁 **Upload de Documentos:** Anexar documentos e CRLV de múltiplos carros.\n• 💾 **Backup & Restauração:** Salvar cópia dos dados em JSON ou reiniciar o app.`;
+    }
 
     if (q.includes('contrato finalizado') || q.includes('excluir carro') || q.includes('excluir veiculo') || q.includes('pasta') || q.includes('pdf')) {
       return `📄 *Pasta Contratos Finalizados e Relatórios em PDF:*\n\n1. Ao excluir qualquer veículo da frota, o sistema gera automaticamente um **Relatório Oficial em PDF** com o histórico completo (dados do veículo, motorista, pagamentos, vistorias e documentos).\n2. O PDF é baixado para seu dispositivo e uma cópia fica armazenada na pasta **Contratos Finalizados** (botão na barra superior).\n3. Na pasta, você pode pesquisar, visualizar em tela cheia e baixar o relatório em PDF quando quiser!`;
@@ -436,6 +469,49 @@ export const HelpModal: React.FC<HelpModalProps> = ({
                   Anexe CRLV, Contratos de Locação e fotos de comprovantes na aba <strong>Documentos</strong>. Ao selecionar a categoria <strong className="text-blue-300">"Outros"</strong>, um campo editável permite digitar o nome exato do documento (ex: <em>Transferência, Laudo do Inmetro, Seguro Auto</em>).
                 </p>
               </div>
+
+              {/* Novo Card: Cadastrar Motorista & Busca na Agenda */}
+              <div className="p-4 bg-white/[0.03] border border-white/10 rounded-xl space-y-3">
+                <h4 className="font-bold text-indigo-400 text-xs flex items-center gap-2">
+                  <User className="w-4 h-4 shrink-0" />
+                  <span>Cadastrar Motorista & Busca na Agenda do Celular</span>
+                </h4>
+                <p className="text-gray-300 text-xs leading-relaxed">
+                  No <strong>Menu de Opções</strong>, clique em <strong className="text-indigo-300">"Cadastrar Motorista"</strong> para registrar locatários com facilidade:
+                </p>
+                <ul className="list-disc list-inside space-y-1 text-gray-400 text-xs pl-1">
+                  <li><strong>Busca com 1 Toque:</strong> Toque no botão azul <em>"Buscar Agenda"</em> para carregar Nome, Telefone (+55) e E-mail diretamente da agenda do seu aparelho (Android/Capacitor/Chrome).</li>
+                  <li><strong>Dados Completos:</strong> Cadastre CPF, Categoria de CNH (A, B, AB, C, D, E), número da habilitação e data de vencimento.</li>
+                  <li><strong>Vínculo Imediato:</strong> Selecione o veículo da frota e os dados do motorista serão atualizados instantaneamente no cartão do carro e nos laudos!</li>
+                </ul>
+              </div>
+
+              {/* Novo Card: Editor de Contrato */}
+              <div className="p-4 bg-white/[0.03] border border-white/10 rounded-xl space-y-3">
+                <h4 className="font-bold text-rose-400 text-xs flex items-center gap-2">
+                  <FileText className="w-4 h-4 shrink-0" />
+                  <span>Editor de Contrato (Cláusulas Individuais ou Todo o Contrato)</span>
+                </h4>
+                <p className="text-gray-300 text-xs leading-relaxed">
+                  No <strong>Menu de Opções</strong> clique em <strong className="text-rose-300">"Editor de Contrato"</strong> (ou no botão <em>"Editar Contrato / Cláusulas"</em> dentro do gerador de contratos):
+                </p>
+                <ul className="list-disc list-inside space-y-1 text-gray-400 text-xs pl-1">
+                  <li><strong>Editar 1 Cláusula:</strong> Pesquise termos como <em>"multa"</em>, <em>"bloqueio"</em>, <em>"seguro"</em> ou <em>"caução"</em> e altere a redação de qualquer cláusula individual com rapidez. Você também pode criar novas cláusulas ou excluir adicionais.</li>
+                  <li><strong>Editar Todo o Contrato:</strong> Uma aba de texto contínuo permite visualizar e alterar todo o contrato de ponta a ponta, ou colar sua minuta personalizada completa.</li>
+                  <li><strong>Tags de Variáveis Automáticas:</strong> Clique nos atalhos como <code>{'{LOCATARIO_NOME}'}</code>, <code>{'{VALOR_SEMANAL}'}</code>, <code>{'{PLACA}'}</code> para que os dados reais do carro e motorista entrem no PDF automaticamente!</li>
+                </ul>
+              </div>
+
+              {/* Novo Card: Modo Odômetro */}
+              <div className="p-4 bg-white/[0.03] border border-white/10 rounded-xl space-y-3">
+                <h4 className="font-bold text-cyan-400 text-xs flex items-center gap-2">
+                  <Gauge className="w-4 h-4 shrink-0" />
+                  <span>Modo Odômetro (KM em Lote de Toda a Frota)</span>
+                </h4>
+                <p className="text-gray-300 text-xs leading-relaxed">
+                  No <strong>Menu de Opções</strong>, acesse <strong className="text-cyan-300">"Modo Odômetro (KM em Lote)"</strong> para atualizar a quilometragem atual de todos os carros de uma vez só em uma única lista, sem precisar abrir cartão por cartão!
+                </p>
+              </div>
             </div>
           )}
 
@@ -476,6 +552,36 @@ export const HelpModal: React.FC<HelpModalProps> = ({
                     O Histórico de lançamentos inicia oculto para não sobrecarregar a tela. Clique no botão <strong className="text-blue-400">"Expandir"</strong> no topo da seção para ver os filtros e buscas.
                   </p>
                 </div>
+              </div>
+
+              <div className="p-4 bg-white/[0.03] border border-white/10 rounded-xl space-y-2">
+                <h4 className="font-bold text-emerald-400 text-xs flex items-center gap-2">
+                  <Calculator className="w-4 h-4 shrink-0 text-emerald-400" />
+                  <span>Calculadora de Juros e Multas por Atraso</span>
+                </h4>
+                <p className="text-gray-300 text-xs leading-relaxed">
+                  No <strong>Menu de Opções</strong>, abra a <strong>Calculadora de Juros</strong> para simular semanas em aberto. O sistema aplica multa padrão de 10% e juros de mora proporcionais de 1% ao mês (pro-rata die), calculando o valor atualizado e gerando uma mensagem amigável pronta para enviar ao motorista no WhatsApp com 1 clique!
+                </p>
+              </div>
+
+              <div className="p-4 bg-white/[0.03] border border-white/10 rounded-xl space-y-2">
+                <h4 className="font-bold text-purple-400 text-xs flex items-center gap-2">
+                  <FileDown className="w-4 h-4 shrink-0 text-purple-400" />
+                  <span>Relatório Mensal PDF (Balancete Executivo para Contador)</span>
+                </h4>
+                <p className="text-gray-300 text-xs leading-relaxed">
+                  No <strong>Menu de Opções</strong>, clique em <strong>"Relatório Mensal PDF"</strong> para gerar um demonstrativo contábil e financeiro completo do mês. Contém receitas consolidadas de aluguel, cauções, manutenções, peças e combustível com cabeçalho oficial da empresa.
+                </p>
+              </div>
+
+              <div className="p-4 bg-white/[0.03] border border-white/10 rounded-xl space-y-2">
+                <h4 className="font-bold text-amber-400 text-xs flex items-center gap-2">
+                  <Bell className="w-4 h-4 shrink-0 text-amber-400" />
+                  <span>Central de Notificações e Monitoramento de Prazos</span>
+                </h4>
+                <p className="text-gray-300 text-xs leading-relaxed">
+                  Acesse pelo ícone de sino 🔔 no topo da tela ou pelo Menu de Opções. Monitora vencimento de CNH dos motoristas, manutenções preventivas, vistorias periódicas pendentes, IPVA e seguro veicular com direcionamento rápido para o cartão do carro.
+                </p>
               </div>
 
               <div className="p-4 bg-white/[0.03] border border-white/10 rounded-xl space-y-2">
@@ -537,6 +643,41 @@ export const HelpModal: React.FC<HelpModalProps> = ({
                 <h4 className="font-bold text-amber-400 text-xs">Como cancelar uma vistoria pendente?</h4>
                 <p className="text-gray-300">
                   No cartão do carro, clique na lixeira vermelha <strong className="text-rose-400">"Cancelar Agendamento"</strong>.
+                </p>
+              </div>
+
+              <div className="p-3.5 bg-white/[0.03] border border-white/10 rounded-xl space-y-1">
+                <h4 className="font-bold text-cyan-400 text-xs">👤 Como cadastrar motorista puxando da agenda do celular?</h4>
+                <p className="text-gray-300 text-xs leading-relaxed">
+                  No <strong>Menu de Opções</strong>, clique em <strong>"Cadastrar Motorista"</strong>. Dentro da tela, clique no botão azul <strong>"Buscar Agenda"</strong>. O sistema abre os contatos nativos do seu celular para você selecionar o motorista e preencher automaticamente o <strong>Nome Completo, Telefone (+55) e E-mail</strong> com um único toque! Depois, informe CPF e CNH e vincule a um carro da frota.
+                </p>
+              </div>
+
+              <div className="p-3.5 bg-white/[0.03] border border-white/10 rounded-xl space-y-1">
+                <h4 className="font-bold text-indigo-400 text-xs">📝 Como editar cláusulas ou todo o texto do Contrato de Locação?</h4>
+                <p className="text-gray-300 text-xs leading-relaxed">
+                  No <strong>Menu de Opções</strong>, clique em <strong>"Editor de Contrato"</strong>. Você pode navegar em <strong>"Editar Cláusulas"</strong> para modificar cláusulas específicas (como regras de atraso, seguro ou caução) ou em <strong>"Editar Todo o Contrato"</strong> para alterar o texto integral do contrato em formato contínuo. Use as variáveis automáticas como <code>{'{LOCATARIO_NOME}'}</code> e <code>{'{PLACA}'}</code> para que os dados reais entrem no PDF gerado.
+                </p>
+              </div>
+
+              <div className="p-3.5 bg-white/[0.03] border border-white/10 rounded-xl space-y-1">
+                <h4 className="font-bold text-amber-400 text-xs">⚡ Como funciona o Modo Odômetro (KM em Lote)?</h4>
+                <p className="text-gray-300 text-xs leading-relaxed">
+                  No <strong>Menu de Opções</strong>, clique em <strong>"Modo Odômetro"</strong>. Uma tabela exibe todos os carros da frota lado a lado. Você digita a quilometragem atual de cada um e clica em <strong>"Salvar Todos os Odômetros"</strong>. O sistema recalcula as médias de KM diário e atualiza os prazos de revisão na hora!
+                </p>
+              </div>
+
+              <div className="p-3.5 bg-white/[0.03] border border-white/10 rounded-xl space-y-1">
+                <h4 className="font-bold text-emerald-400 text-xs">💰 Como calcular juros e multa de aluguel atrasado?</h4>
+                <p className="text-gray-300 text-xs leading-relaxed">
+                  No <strong>Menu de Opções</strong>, clique em <strong>"Calculadora de Juros"</strong>. Informe o valor original da semana e os dias de atraso. O sistema aplica a multa contratual de 10% mais os juros moratórios de 1% ao mês (pro-rata die), calculando o valor final e disponibilizando o botão para enviar a cobrança detalhada no WhatsApp.
+                </p>
+              </div>
+
+              <div className="p-3.5 bg-white/[0.03] border border-white/10 rounded-xl space-y-1">
+                <h4 className="font-bold text-purple-400 text-xs">📊 Como gerar o Relatório Mensal em PDF para o contador?</h4>
+                <p className="text-gray-300 text-xs leading-relaxed">
+                  No <strong>Menu de Opções</strong>, clique em <strong>"Relatório Mensal PDF"</strong>. O sistema compila o balanço financeiro executivo do mês (aluguéis recebidos, cauções, manutenções, peças e combustível) em um documento PDF formal com o cabeçalho da sua empresa.
                 </p>
               </div>
 
@@ -627,6 +768,13 @@ export const HelpModal: React.FC<HelpModalProps> = ({
               {/* Quick Prompt Chips */}
               <div className="flex gap-1.5 overflow-x-auto pb-1 text-[10px] shrink-0 scrollbar-none">
                 {[
+                  'Como cadastrar motorista buscando na agenda do celular?',
+                  'Como editar cláusulas ou todo o contrato de locação?',
+                  'Como funciona o Modo Odômetro (KM em Lote)?',
+                  'Como calcular juros e multa de aluguel atrasado?',
+                  'Como gerar o Relatório Mensal PDF para o contador?',
+                  'O que monitora a Central de Notificações?',
+                  'Guia completo dos botões do Menu de Opções',
                   'Como funciona a pasta Contratos Finalizados (PDF)?',
                   'Como cancelar vistoria agendada?',
                   'Como enviar link de vistoria para o motorista?',

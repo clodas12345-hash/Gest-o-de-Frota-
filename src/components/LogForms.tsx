@@ -202,6 +202,7 @@ export function LogForms({
   const [fuelLevel, setFuelLevel] = useState(8);
   const [driver, setDriver] = useState('');
   const [driverPhone, setDriverPhone] = useState('');
+  const [tenantEmail, setTenantEmail] = useState('');
   const [driverCnhExpiration, setDriverCnhExpiration] = useState('');
   const [driverCnhPhotoUrl, setDriverCnhPhotoUrl] = useState('');
   const [driverCnhFileName, setDriverCnhFileName] = useState('');
@@ -380,13 +381,16 @@ export function LogForms({
   const [quickManualName, setQuickManualName] = useState('');
   const [quickManualPhone, setQuickManualPhone] = useState('');
 
-  const handleSelectContactForTenant = (contact: { name: string; phone: string }) => {
+  const handleSelectContactForTenant = (contact: AgendaContact) => {
     setDriver(toTitleCase(contact.name));
     let cleanPhone = contact.phone.replace(/\D/g, '');
     if (cleanPhone.length > 0 && !cleanPhone.startsWith('55')) {
       cleanPhone = '55' + cleanPhone;
     }
     setDriverPhone(cleanPhone || contact.phone);
+    if (contact.email) {
+      setTenantEmail(contact.email);
+    }
     setShowContactPicker(false);
   };
 
@@ -406,24 +410,27 @@ export function LogForms({
 
     if ('contacts' in navigator && 'select' in (navigator as any).contacts) {
       try {
-        const props = ['name', 'tel'];
+        const props = ['name', 'tel', 'email'];
         const opts = { multiple: false };
         const selected = await (navigator as any).contacts.select(props, opts);
         if (selected && selected.length > 0) {
           const item = selected[0];
           const name = item.name?.[0] || '';
           const rawPhone = item.tel?.[0] || '';
+          const email = item.email?.[0] || '';
           let cleanPhone = rawPhone.replace(/\D/g, '');
           if (cleanPhone.length > 0 && !cleanPhone.startsWith('55')) {
             cleanPhone = '55' + cleanPhone;
           }
           if (name) setDriver(toTitleCase(name));
           if (cleanPhone) setDriverPhone(cleanPhone);
+          if (email) setTenantEmail(email);
           if (onSaveContact && name && cleanPhone) {
             onSaveContact({
               id: `contact-${Date.now()}`,
               name: toTitleCase(name),
               phone: cleanPhone,
+              email: email || '',
               region: 'Geral'
             });
           }
@@ -540,6 +547,7 @@ export function LogForms({
     setFuelLevel(8);
     setDriver('');
     setDriverPhone('');
+    setTenantEmail('');
     setAttachedDocs([]);
     setCaucaoValor(1500);
     setCaucaoData(new Date().toISOString().split('T')[0]);
@@ -588,6 +596,7 @@ export function LogForms({
         if (extracted.fuelLevel !== undefined) setFuelLevel(extracted.fuelLevel);
         if (extracted.driver) setDriver(extracted.driver);
         if (extracted.driverPhone) setDriverPhone(extracted.driverPhone);
+        if (extracted.tenantEmail) setTenantEmail(extracted.tenantEmail);
         if (extracted.caucaoValor !== undefined) setCaucaoValor(extracted.caucaoValor);
         if (extracted.caucaoData) setCaucaoData(extracted.caucaoData);
         if (extracted.caucaoObservacoes) setCaucaoObservacoes(extracted.caucaoObservacoes);
@@ -656,6 +665,7 @@ export function LogForms({
         if (extracted.fuelLevel !== undefined) setFuelLevel(extracted.fuelLevel);
         if (extracted.driver) setDriver(extracted.driver);
         if (extracted.driverPhone) setDriverPhone(extracted.driverPhone);
+        if (extracted.tenantEmail) setTenantEmail(extracted.tenantEmail);
         if (extracted.caucaoValor !== undefined) setCaucaoValor(extracted.caucaoValor);
         if (extracted.caucaoData) setCaucaoData(extracted.caucaoData);
         if (extracted.caucaoObservacoes) setCaucaoObservacoes(extracted.caucaoObservacoes);
@@ -720,6 +730,7 @@ export function LogForms({
         setFuelLevel(vehicleToEdit.fuelLevel);
         setDriver(vehicleToEdit.driver);
         setDriverPhone(vehicleToEdit.driverPhone || '');
+        setTenantEmail(vehicleToEdit.tenantEmail || '');
         setCaucaoValor(vehicleToEdit.caucaoValor || 0);
         setCaucaoData(vehicleToEdit.caucaoData || '2026-08-01');
         setCaucaoObservacoes(vehicleToEdit.caucaoObservacoes || '');
@@ -770,6 +781,7 @@ export function LogForms({
             setFuelLevel(draft.fuelLevel ?? 8);
             setDriver(draft.driver ?? '');
             setDriverPhone(draft.driverPhone ?? '');
+            setTenantEmail(draft.tenantEmail ?? '');
             setDriverCnhExpiration(draft.driverCnhExpiration ?? '');
             setDriverCnhPhotoUrl(draft.driverCnhPhotoUrl ?? '');
             setDriverCnhFileName(draft.driverCnhPhotoUrl ? 'CNH Anexada' : '');
@@ -809,6 +821,7 @@ export function LogForms({
           setFuelLevel(8);
           setDriver('');
           setDriverPhone('');
+          setTenantEmail('');
           setCaucaoValor(0);
           setCaucaoData(new Date().toISOString().split('T')[0]);
           setCaucaoObservacoes('');
@@ -901,6 +914,7 @@ export function LogForms({
         fuelLevel,
         driver,
         driverPhone,
+        tenantEmail,
         caucaoValor,
         caucaoData,
         caucaoObservacoes,
@@ -915,7 +929,7 @@ export function LogForms({
     isOpen, formType, vehicleToEdit, brand, model, plate, color, yearFab, yearModel, rentalCompany,
     startDate, endDate, initialKm, contractNumber, valorRecebido, valorSemanal,
     financiamento, seguro, ipva, manutencaoPreventiva, currentKm, preventiveMaintNextKm, fuelLevel,
-    driver, driverPhone, caucaoValor, caucaoData, caucaoObservacoes, nextVistoriaDate, insuranceExpirationDate, extraExpenses
+    driver, driverPhone, tenantEmail, caucaoValor, caucaoData, caucaoObservacoes, nextVistoriaDate, insuranceExpirationDate, extraExpenses
   ]);
 
   // Handle FIPE Code change with debounce auto-fetching
@@ -1141,6 +1155,7 @@ export function LogForms({
         fuelLevel: Number(fuelLevel) || 100,
         driver: driver || '',
         driverPhone: driverPhone || '',
+        tenantEmail: tenantEmail || '',
         caucaoValor: Number(caucaoValor) || 0,
         caucaoData: caucaoData || getTodayStr(),
         caucaoObservacoes: caucaoObservacoes || '',
@@ -1210,6 +1225,7 @@ export function LogForms({
             ...existingContact,
             name: driver,
             phone: driverPhone || existingContact.phone,
+            email: tenantEmail || existingContact.email,
             cnhExpiration: driverCnhExpiration || existingContact.cnhExpiration,
             cnhPhotoUrl: driverCnhPhotoUrl || existingContact.cnhPhotoUrl,
             addressProofUrl: driverAddressProofUrl || existingContact.addressProofUrl,
@@ -1220,6 +1236,7 @@ export function LogForms({
             id: `cnt-${Date.now()}`,
             name: driver,
             phone: driverPhone || '',
+            email: tenantEmail || '',
             region: 'Locatário',
             cnhExpiration: driverCnhExpiration || '',
             cnhPhotoUrl: driverCnhPhotoUrl || '',
@@ -2101,6 +2118,7 @@ export function LogForms({
                           let p = c.phone || '';
                           if (p.startsWith('55')) p = p.substring(2);
                           setDriverPhone(p);
+                          if (c.email) setTenantEmail(c.email);
                           if (c.cnhExpiration) setDriverCnhExpiration(c.cnhExpiration);
                           if (c.cnhPhotoUrl) {
                             setDriverCnhPhotoUrl(c.cnhPhotoUrl);
@@ -2128,7 +2146,54 @@ export function LogForms({
                   <div className="space-y-1">
                     <div className="flex items-center justify-between min-h-[20px]">
                       <label className="font-semibold text-gray-400 text-xs">Nome do Locatário</label>
-                      <span className="text-[10px] text-gray-500">Editável</span>
+                      <button
+                        type="button"
+                        onClick={async () => {
+                          if (Capacitor.isNativePlatform()) {
+                            try {
+                              const perm = await Contacts.requestPermissions();
+                              if (perm.contacts === 'granted') {
+                                const res = await Contacts.getContacts({ projection: { name: true, phones: true, emails: true } });
+                                if (res?.contacts?.[0]) {
+                                  const c: any = res.contacts[0];
+                                  const cName = c.name?.display || c.name?.given || '';
+                                  const rawPhone = c.phones?.[0]?.number || c.phones?.[0] || '';
+                                  const rawMail = c.emails?.[0]?.address || c.emails?.[0] || '';
+                                  if (cName) setDriver(toTitleCase(cName));
+                                  let clean = String(rawPhone).replace(/\D/g, '');
+                                  if (clean.startsWith('55') && clean.length > 2) clean = clean.substring(2);
+                                  if (clean) setDriverPhone(clean);
+                                  if (rawMail) setTenantEmail(String(rawMail));
+                                  return;
+                                }
+                              }
+                            } catch (e) {}
+                          }
+                          if ('contacts' in navigator && 'select' in (navigator as any).contacts) {
+                            try {
+                              const sel = await (navigator as any).contacts.select(['name', 'tel', 'email'], { multiple: false });
+                              if (sel?.[0]) {
+                                const c = sel[0];
+                                const cName = c.name?.[0] || '';
+                                const cTel = c.tel?.[0] || '';
+                                const cMail = c.email?.[0] || '';
+                                if (cName) setDriver(toTitleCase(cName));
+                                let clean = cTel.replace(/\D/g, '');
+                                if (clean.startsWith('55') && clean.length > 2) clean = clean.substring(2);
+                                if (clean) setDriverPhone(clean);
+                                if (cMail) setTenantEmail(cMail);
+                                return;
+                              }
+                            } catch (e) {}
+                          }
+                          setShowContactPickerModal(true);
+                        }}
+                        className="text-[10px] font-bold text-blue-400 hover:text-blue-300 flex items-center gap-1 bg-blue-500/10 px-2 py-0.5 rounded-lg border border-blue-500/20 cursor-pointer"
+                        title="Buscar contato na agenda nativa do celular"
+                      >
+                        <Smartphone className="w-3 h-3" />
+                        <span>Agenda Celular</span>
+                      </button>
                     </div>
                     <input 
                       type="text" 
@@ -2152,6 +2217,20 @@ export function LogForms({
                       placeholder="Ex: 5511999991234"
                       className="w-full h-10 text-xs bg-black/40 border border-white/10 rounded-xl px-3 py-2 text-white placeholder-gray-500 focus:outline-hidden focus:border-blue-500/50 focus:bg-[#1a1a1a] font-mono"
                       id="input-driver-phone"
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <div className="flex items-center justify-between min-h-[20px]">
+                      <label className="font-semibold text-gray-400 text-xs">E-mail do Locatário</label>
+                      <span className="text-[10px] text-gray-500">Editável</span>
+                    </div>
+                    <input 
+                      type="email" 
+                      value={tenantEmail} 
+                      onChange={e => setTenantEmail(e.target.value)}
+                      placeholder="Ex: carlos@email.com"
+                      className="w-full h-10 text-xs bg-black/40 border border-white/10 rounded-xl px-3 py-2 text-white placeholder-gray-500 focus:outline-hidden focus:border-blue-500/50 focus:bg-[#1a1a1a]"
+                      id="input-driver-email"
                     />
                   </div>
                 </div>

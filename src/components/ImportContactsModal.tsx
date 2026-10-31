@@ -139,8 +139,10 @@ export const ImportContactsModal: React.FC<ImportContactsModalProps> = ({
           const clean = sanitizePhone(p);
           if (clean.length >= 10 && !phoneCandidate) {
             phoneCandidate = clean;
-          } else if (!nameCandidate && /[a-zA-ZÀ-ÿ]/.test(p)) {
+          } else if (!nameCandidate && /[a-zA-ZÀ-ÿ]/.test(p) && !p.includes('@')) {
             nameCandidate = p;
+          } else if (p.includes('@')) {
+            // potential email
           }
         }
 
@@ -297,13 +299,14 @@ export const ImportContactsModal: React.FC<ImportContactsModalProps> = ({
         const perm = await Contacts.requestPermissions();
         if (perm.contacts === 'granted') {
           const res = await Contacts.getContacts({
-            projection: { name: true, phones: true }
+            projection: { name: true, phones: true, emails: true }
           });
           if (res && res.contacts && res.contacts.length > 0) {
             const items: ParsedContactItem[] = [];
             res.contacts.forEach((c: any) => {
               const name = c.name?.display || c.name?.given || 'Contato';
               const phoneRaw = c.phones?.[0]?.number || c.phones?.[0] || '';
+              const emailRaw = c.emails?.[0]?.address || c.emails?.[0] || '';
               const clean = sanitizePhone(phoneRaw);
               if (clean && clean.length >= 10) {
                 items.push({
@@ -312,7 +315,8 @@ export const ImportContactsModal: React.FC<ImportContactsModalProps> = ({
                   phone: clean,
                   region: 'Agenda Celular',
                   selected: true,
-                });
+                  email: emailRaw as any
+                } as any);
               }
             });
 
@@ -333,7 +337,7 @@ export const ImportContactsModal: React.FC<ImportContactsModalProps> = ({
 
     if ('contacts' in navigator && 'select' in (navigator as any).contacts) {
       try {
-        const props = ['name', 'tel'];
+        const props = ['name', 'tel', 'email'];
         const opts = { multiple: true };
         const selectedContacts = await (navigator as any).contacts.select(props, opts);
 
@@ -342,6 +346,7 @@ export const ImportContactsModal: React.FC<ImportContactsModalProps> = ({
           selectedContacts.forEach((c: any) => {
             const name = c.name?.[0] || 'Contato';
             const phoneRaw = c.tel?.[0] || '';
+            const emailRaw = c.email?.[0] || '';
             const clean = sanitizePhone(phoneRaw);
             if (clean && clean.length >= 10) {
               items.push({
@@ -350,7 +355,8 @@ export const ImportContactsModal: React.FC<ImportContactsModalProps> = ({
                 phone: clean,
                 region: 'Agenda Celular',
                 selected: true,
-              });
+                email: emailRaw as any
+              } as any);
             }
           });
 
@@ -400,6 +406,7 @@ export const ImportContactsModal: React.FC<ImportContactsModalProps> = ({
       id: s.id,
       name: s.name,
       phone: s.phone,
+      email: (s as any).email || '',
       region: s.region || 'Importado',
     }));
 
