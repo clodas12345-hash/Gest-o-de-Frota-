@@ -3,7 +3,7 @@ import { Capacitor, registerPlugin } from '@capacitor/core';
 const Filesystem = registerPlugin<any>('Filesystem');
 const Share = registerPlugin<any>('Share');
 const Directory = { Cache: 'CACHE', Documents: 'DOCUMENTS', Data: 'DATA' };
-import { Vehicle, ExpenseLog, WeeklyPayment, Vistoria, VehicleDocument, MaintenanceLog, FuelLog, SinistroLog, PromisePayment } from '../types';
+import { Vehicle, ExpenseLog, WeeklyPayment, Vistoria, VehicleDocument, MaintenanceLog, FuelLog, SinistroLog, PromisePayment, TireState } from '../types';
 import { generateVistoriaPDF, generatePaymentReceiptPDF } from '../utils/pdfGenerator';
 import { sendAppNotification, requestNotificationPermission } from '../utils/notifications';
 import { syncVehicleFipe } from '../utils/fipeService';
@@ -664,6 +664,84 @@ export const VehicleCard: React.FC<VehicleCardProps> = ({
     });
     setBatchItems([]);
     setShowBatchPromise(false);
+  };
+
+  // Dedicated Tire Edit Modal state & handlers
+  const [editingTireModal, setEditingTireModal] = useState<{
+    position: 'Frontal Esquerdo' | 'Frontal Direito' | 'Traseiro Esquerdo' | 'Traseiro Direito' | 'Estepe';
+    brand: string;
+    model: string;
+    installedKm: number;
+    expectedLifeKm: number;
+    installedDate: string;
+    twiMm: number | '';
+  } | null>(null);
+
+  const handleOpenEditTire = (pos: TireState['position']) => {
+    const existing = (vehicle.tires || []).find(t => t.position === pos);
+    setEditingTireModal({
+      position: pos,
+      brand: existing?.brand || 'Pirelli',
+      model: existing?.model || '',
+      installedKm: existing?.installedKm !== undefined ? existing.installedKm : (vehicle.currentKm || 0),
+      expectedLifeKm: existing?.expectedLifeKm || 45000,
+      installedDate: existing?.installedDate || new Date().toISOString().split('T')[0],
+      twiMm: existing?.twiMm !== undefined ? existing.twiMm : 6.0
+    });
+  };
+
+  const handleSaveTireModal = (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
+    if (!editingTireModal) return;
+
+    const brand = editingTireModal.brand.trim() || 'Pirelli';
+    const installedKm = Number(editingTireModal.installedKm) || 0;
+    const expectedLifeKm = Number(editingTireModal.expectedLifeKm) || 45000;
+    const twiMm = editingTireModal.twiMm === '' ? undefined : Number(editingTireModal.twiMm);
+    const currentKm = vehicle.currentKm || 0;
+    const drivenKm = Math.max(0, currentKm - installedKm);
+    const lifeRemainingPct = Math.max(0, Math.min(100, Math.round(((expectedLifeKm - drivenKm) / expectedLifeKm) * 100)));
+
+    let status: 'Good' | 'Warning' | 'Replace' = 'Good';
+    if (lifeRemainingPct < 25 || (twiMm !== undefined && twiMm <= 2.0)) {
+      status = 'Replace';
+    } else if (lifeRemainingPct < 50 || (twiMm !== undefined && twiMm <= 3.5)) {
+      status = 'Warning';
+    }
+
+    const updatedTire: TireState = {
+      id: `tire-${editingTireModal.position.replace(/\s+/g, '-').toLowerCase()}-${Date.now()}`,
+      position: editingTireModal.position,
+      brand,
+      model: editingTireModal.model.trim() || undefined,
+      installedKm,
+      expectedLifeKm,
+      installedDate: editingTireModal.installedDate || undefined,
+      twiMm,
+      status
+    };
+
+    const nextTires = [
+      ...(vehicle.tires || []).filter(t => t.position !== editingTireModal.position),
+      updatedTire
+    ];
+
+    onUpdateVehicle({
+      ...vehicle,
+      tires: nextTires
+    });
+
+    setEditingTireModal(null);
+  };
+
+  const handleRemoveTireModal = () => {
+    if (!editingTireModal) return;
+    const nextTires = (vehicle.tires || []).filter(t => t.position !== editingTireModal.position);
+    onUpdateVehicle({
+      ...vehicle,
+      tires: nextTires
+    });
+    setEditingTireModal(null);
   };
 
   // Maintenance WhatsApp Reminder State & Templates
@@ -6584,10 +6662,14 @@ _Enviado via sistema de gestão de frota._`;
                       {['Frontal Esquerdo', 'Frontal Direito'].map(pos => {
                         const tire = (vehicle.tires || []).find(t => t.position === pos);
                         return (
-                          <div key={pos} className="p-2.5 bg-black/40 border border-white/5 rounded-lg flex justify-between items-center">
+                          <div 
+                            key={pos} 
+                            onClick={() => handleOpenEditTire(pos as TireState['position'])}
+                            className="p-2.5 bg-black/40 hover:bg-white/[0.04] border border-white/5 hover:border-white/10 rounded-lg flex justify-between items-center cursor-pointer transition-all group"
+                          >
                             <div className="min-w-0">
-                              <p className="text-[10px] font-bold text-white">{pos}</p>
-                              <p className="text-[9px] text-gray-500 truncate">{tire ? `${tire.brand} • ${tire.installedKm.toLocaleString('pt-BR')} KM` : 'Não registrado'}</p>
+                              <p className="text-[10px] font-bold text-white group-hover:text-blue-300 transition-colors">{pos}</p>
+                              <p className="text-[9px] text-gray-500 truncate">{tire ? `${tire.brand}${tire.model ? ` • ${tire.model}` : ''} • ${tire.installedKm.toLocaleString('pt-BR')} KM` : 'Não registrado (toque para configurar)'}</p>
                             </div>
                             <div className="flex items-center gap-2">
                               {tire && (() => {
@@ -6604,24 +6686,13 @@ _Enviado via sistema de gestão de frota._`;
                                 );
                               })()}
                               <button 
-                                onClick={() => {
-                                  const brand = prompt(`Marca do pneu (${pos}):`, tire?.brand || '');
-                                  if (brand === null) return;
-                                  const km = prompt(`KM de instalação (${pos}):`, String(tire?.installedKm || vehicle.currentKm || 0));
-                                  if (km === null) return;
-                                  
-                                  const newTires = [...(vehicle.tires || []).filter(t => t.position !== pos)];
-                                  newTires.push({
-                                    id: `tire-${Date.now()}-${pos}`,
-                                    position: pos as any,
-                                    brand,
-                                    installedKm: Number(km) || 0,
-                                    expectedLifeKm: 40000,
-                                    status: 'Good'
-                                  });
-                                  onUpdateVehicle({ ...vehicle, tires: newTires });
+                                type="button"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleOpenEditTire(pos as TireState['position']);
                                 }}
-                                className="p-1.5 bg-white/5 hover:bg-white/10 rounded-md transition-colors"
+                                className="p-1.5 bg-white/5 hover:bg-blue-600/20 rounded-md transition-colors cursor-pointer text-blue-400"
+                                title="Editar pneu"
                               >
                                 <Edit3 className="w-3 h-3 text-blue-400" />
                               </button>
@@ -6638,10 +6709,14 @@ _Enviado via sistema de gestão de frota._`;
                       {['Traseiro Esquerdo', 'Traseiro Direito', 'Estepe'].map(pos => {
                         const tire = (vehicle.tires || []).find(t => t.position === pos);
                         return (
-                          <div key={pos} className="p-2.5 bg-black/40 border border-white/5 rounded-lg flex justify-between items-center">
+                          <div 
+                            key={pos} 
+                            onClick={() => handleOpenEditTire(pos as TireState['position'])}
+                            className="p-2.5 bg-black/40 hover:bg-white/[0.04] border border-white/5 hover:border-white/10 rounded-lg flex justify-between items-center cursor-pointer transition-all group"
+                          >
                             <div className="min-w-0">
-                              <p className="text-[10px] font-bold text-white">{pos}</p>
-                              <p className="text-[9px] text-gray-500 truncate">{tire ? `${tire.brand} • ${tire.installedKm.toLocaleString('pt-BR')} KM` : 'Não registrado'}</p>
+                              <p className="text-[10px] font-bold text-white group-hover:text-blue-300 transition-colors">{pos}</p>
+                              <p className="text-[9px] text-gray-500 truncate">{tire ? `${tire.brand}${tire.model ? ` • ${tire.model}` : ''} • ${tire.installedKm.toLocaleString('pt-BR')} KM` : 'Não registrado (toque para configurar)'}</p>
                             </div>
                             <div className="flex items-center gap-2">
                               {tire && (() => {
@@ -6658,24 +6733,13 @@ _Enviado via sistema de gestão de frota._`;
                                 );
                               })()}
                               <button 
-                                onClick={() => {
-                                  const brand = prompt(`Marca do pneu (${pos}):`, tire?.brand || '');
-                                  if (brand === null) return;
-                                  const km = prompt(`KM de instalação (${pos}):`, String(tire?.installedKm || vehicle.currentKm || 0));
-                                  if (km === null) return;
-                                  
-                                  const newTires = [...(vehicle.tires || []).filter(t => t.position !== pos)];
-                                  newTires.push({
-                                    id: `tire-${Date.now()}-${pos}`,
-                                    position: pos as any,
-                                    brand,
-                                    installedKm: Number(km) || 0,
-                                    expectedLifeKm: 40000,
-                                    status: 'Good'
-                                  });
-                                  onUpdateVehicle({ ...vehicle, tires: newTires });
+                                type="button"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleOpenEditTire(pos as TireState['position']);
                                 }}
-                                className="p-1.5 bg-white/5 hover:bg-white/10 rounded-md transition-colors"
+                                className="p-1.5 bg-white/5 hover:bg-blue-600/20 rounded-md transition-colors cursor-pointer text-blue-400"
+                                title="Editar pneu"
                               >
                                 <Edit3 className="w-3 h-3 text-blue-400" />
                               </button>
@@ -7248,6 +7312,186 @@ _Enviado via sistema de gestão de frota._`;
         vehicle={vehicle}
         onUpdateVehicle={onUpdateVehicle}
       />
+
+      {/* Tire Edit Modal */}
+      {editingTireModal && (
+        <div 
+          className="fixed inset-0 z-[120] flex items-center justify-center p-4 bg-black/80 backdrop-blur-xs animate-in fade-in duration-150"
+          onClick={() => setEditingTireModal(null)}
+        >
+          <div 
+            className="bg-[#141416] border border-white/15 rounded-2xl w-full max-w-md p-5 space-y-4 shadow-2xl animate-in zoom-in-95 duration-150"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* Header */}
+            <div className="flex items-center justify-between border-b border-white/10 pb-3">
+              <div className="flex items-center gap-2.5">
+                <div className="w-9 h-9 rounded-xl bg-orange-500/15 border border-orange-500/30 flex items-center justify-center text-orange-400">
+                  <Gauge className="w-4 h-4" />
+                </div>
+                <div>
+                  <h3 className="text-sm font-bold text-white">
+                    Editar Pneu: {editingTireModal.position}
+                  </h3>
+                  <p className="text-[11px] text-gray-400">
+                    {vehicle.brand} {vehicle.model} • {vehicle.plate}
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setEditingTireModal(null)}
+                className="text-gray-400 hover:text-white p-1 rounded-lg hover:bg-white/5 transition-colors cursor-pointer"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            {/* Form */}
+            <form onSubmit={handleSaveTireModal} className="space-y-3.5">
+              {/* Quick Brand suggestions */}
+              <div>
+                <label className="text-[10px] font-bold text-gray-400 uppercase block mb-1">
+                  Marca do Pneu
+                </label>
+                <input
+                  type="text"
+                  value={editingTireModal.brand}
+                  onChange={(e) => setEditingTireModal({ ...editingTireModal, brand: e.target.value })}
+                  placeholder="Ex: Pirelli, Goodyear, Michelin, Bridgestone"
+                  className="w-full text-xs bg-black/60 border border-white/15 rounded-xl p-2.5 text-white font-medium focus:outline-hidden focus:border-orange-500"
+                  required
+                  autoFocus
+                />
+                <div className="flex flex-wrap gap-1.5 mt-1.5">
+                  {['Pirelli', 'Goodyear', 'Michelin', 'Bridgestone', 'Continental', 'Firestone'].map((b) => (
+                    <button
+                      key={b}
+                      type="button"
+                      onClick={() => setEditingTireModal({ ...editingTireModal, brand: b })}
+                      className={`text-[10px] px-2 py-0.5 rounded-md border transition-all cursor-pointer ${
+                        editingTireModal.brand.toLowerCase() === b.toLowerCase()
+                          ? 'bg-orange-500/20 border-orange-500/40 text-orange-300 font-bold'
+                          : 'bg-white/5 border-white/10 text-gray-400 hover:text-white hover:bg-white/10'
+                      }`}
+                    >
+                      {b}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Model / Measure */}
+              <div>
+                <label className="text-[10px] font-bold text-gray-400 uppercase block mb-1">
+                  Modelo / Medida (Opcional)
+                </label>
+                <input
+                  type="text"
+                  value={editingTireModal.model}
+                  onChange={(e) => setEditingTireModal({ ...editingTireModal, model: e.target.value })}
+                  placeholder="Ex: 185/65 R15 Cinturato P1"
+                  className="w-full text-xs bg-black/60 border border-white/15 rounded-xl p-2.5 text-white font-medium focus:outline-hidden focus:border-orange-500"
+                />
+              </div>
+
+              {/* KM Instalação & Vida Estimada */}
+              <div className="grid grid-cols-2 gap-2.5">
+                <div>
+                  <div className="flex items-center justify-between mb-1">
+                    <label className="text-[10px] font-bold text-gray-400 uppercase block">
+                      KM Instalação
+                    </label>
+                    <button
+                      type="button"
+                      onClick={() => setEditingTireModal({ ...editingTireModal, installedKm: vehicle.currentKm || 0 })}
+                      className="text-[9px] text-blue-400 hover:underline cursor-pointer"
+                    >
+                      Usar KM atual
+                    </button>
+                  </div>
+                  <input
+                    type="number"
+                    value={editingTireModal.installedKm}
+                    onChange={(e) => setEditingTireModal({ ...editingTireModal, installedKm: Number(e.target.value) })}
+                    placeholder="0"
+                    className="w-full text-xs bg-black/60 border border-white/15 rounded-xl p-2.5 text-white font-mono font-bold focus:outline-hidden focus:border-orange-500"
+                  />
+                </div>
+                <div>
+                  <label className="text-[10px] font-bold text-gray-400 uppercase block mb-1">
+                    Vida Estimada (KM)
+                  </label>
+                  <input
+                    type="number"
+                    value={editingTireModal.expectedLifeKm}
+                    onChange={(e) => setEditingTireModal({ ...editingTireModal, expectedLifeKm: Number(e.target.value) })}
+                    placeholder="45000"
+                    className="w-full text-xs bg-black/60 border border-white/15 rounded-xl p-2.5 text-white font-mono font-bold focus:outline-hidden focus:border-orange-500"
+                  />
+                </div>
+              </div>
+
+              {/* TWI & Data */}
+              <div className="grid grid-cols-2 gap-2.5">
+                <div>
+                  <label className="text-[10px] font-bold text-gray-400 uppercase block mb-1">
+                    Sulco TWI (mm)
+                  </label>
+                  <input
+                    type="number"
+                    step="0.1"
+                    value={editingTireModal.twiMm}
+                    onChange={(e) => setEditingTireModal({ ...editingTireModal, twiMm: e.target.value === '' ? '' : Number(e.target.value) })}
+                    placeholder="Ex: 5.5"
+                    className="w-full text-xs bg-black/60 border border-white/15 rounded-xl p-2.5 text-white font-mono font-bold focus:outline-hidden focus:border-orange-500"
+                  />
+                </div>
+                <div>
+                  <label className="text-[10px] font-bold text-gray-400 uppercase block mb-1">
+                    Data da Troca / Instalação
+                  </label>
+                  <input
+                    type="date"
+                    value={editingTireModal.installedDate}
+                    onChange={(e) => setEditingTireModal({ ...editingTireModal, installedDate: e.target.value })}
+                    className="w-full text-xs bg-black/60 border border-white/15 rounded-xl p-2.5 text-white font-medium focus:outline-hidden focus:border-orange-500 scheme-dark"
+                  />
+                </div>
+              </div>
+
+              {/* Actions */}
+              <div className="flex items-center justify-between gap-2 pt-3 border-t border-white/10">
+                <button
+                  type="button"
+                  onClick={handleRemoveTireModal}
+                  className="px-3 py-2 bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 border border-rose-500/20 rounded-xl text-xs font-semibold flex items-center gap-1.5 transition-colors cursor-pointer"
+                  title="Remover registro deste pneu"
+                >
+                  <Trash2 className="w-3.5 h-3.5" />
+                  <span>Limpar Registro</span>
+                </button>
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setEditingTireModal(null)}
+                    className="px-3.5 py-2 bg-white/5 hover:bg-white/10 text-gray-300 hover:text-white rounded-xl text-xs font-semibold transition-colors cursor-pointer"
+                  >
+                    Cancelar
+                  </button>
+                  <button
+                    type="submit"
+                    className="px-4 py-2 bg-orange-600 hover:bg-orange-500 text-white rounded-xl text-xs font-bold flex items-center gap-1.5 transition-colors shadow-lg shadow-orange-900/20 cursor-pointer"
+                  >
+                    <Check className="w-4 h-4" />
+                    <span>Salvar Pneu</span>
+                  </button>
+                </div>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
 
       {/* Fines Management Modal */}
       <FinesManagementModal

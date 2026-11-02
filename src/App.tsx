@@ -79,7 +79,9 @@ import {
   Map,
   BellRing,
   Gauge,
-  FileDown
+  FileDown,
+  ChevronLeft,
+  ChevronRight
 } from 'lucide-react';
 
 function ensureFuturePaymentsForVehicles(vehicles: Vehicle[]): Vehicle[] {
@@ -3369,6 +3371,89 @@ export default function App() {
             </div>
           </div>
         )}
+
+        {/* Month / Year Navigator Bar (Passar para trás e ir para frente) */}
+        <div className="flex flex-wrap items-center justify-between gap-3 bg-[#111111] border border-white/10 rounded-2xl p-3 sm:px-4 shadow-md max-w-3xl mx-auto w-full">
+          <div className="flex items-center gap-2.5">
+            <div className="p-2 bg-blue-500/10 text-blue-400 rounded-xl border border-blue-500/20 flex items-center justify-center shrink-0">
+              <Calendar className="w-4 h-4" />
+            </div>
+            <div>
+              <span className="text-[10px] uppercase font-bold text-gray-400 tracking-wider block">Competência Financeira</span>
+              <span className="text-xs sm:text-sm font-bold text-white capitalize">
+                {['Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho', 'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro'][selectedMonth]} de {selectedYear}
+              </span>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-1.5 bg-[#18181c] p-1.5 rounded-xl border border-white/10 shadow-inner">
+            <button
+              type="button"
+              onClick={() => {
+                if (selectedMonth === 0) {
+                  setSelectedMonth(11);
+                  setSelectedYear(y => y - 1);
+                } else {
+                  setSelectedMonth(m => m - 1);
+                }
+              }}
+              className="p-1.5 hover:bg-white/10 active:bg-white/20 rounded-lg text-gray-300 hover:text-white transition-all cursor-pointer flex items-center justify-center"
+              title="Mês Anterior (Passar para trás)"
+            >
+              <ChevronLeft className="w-4 h-4" />
+            </button>
+
+            <select
+              value={selectedMonth}
+              onChange={(e) => setSelectedMonth(Number(e.target.value))}
+              className="bg-[#242429] border border-white/10 text-white text-xs rounded-lg px-2.5 py-1 font-bold focus:outline-hidden focus:border-blue-500 cursor-pointer"
+            >
+              {['Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho', 'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro'].map((m, idx) => (
+                <option key={idx} value={idx} className="bg-neutral-900 text-white">{m}</option>
+              ))}
+            </select>
+
+            <select
+              value={selectedYear}
+              onChange={(e) => setSelectedYear(Number(e.target.value))}
+              className="bg-[#242429] border border-white/10 text-white text-xs rounded-lg px-2.5 py-1 font-bold focus:outline-hidden focus:border-blue-500 cursor-pointer font-mono"
+            >
+              {[2023, 2024, 2025, 2026, 2027, 2028].map((y) => (
+                <option key={y} value={y} className="bg-neutral-900 text-white">{y}</option>
+              ))}
+            </select>
+
+            <button
+              type="button"
+              onClick={() => {
+                if (selectedMonth === 11) {
+                  setSelectedMonth(0);
+                  setSelectedYear(y => y + 1);
+                } else {
+                  setSelectedMonth(m => m + 1);
+                }
+              }}
+              className="p-1.5 hover:bg-white/10 active:bg-white/20 rounded-lg text-gray-300 hover:text-white transition-all cursor-pointer flex items-center justify-center"
+              title="Próximo Mês (Ir para frente)"
+            >
+              <ChevronRight className="w-4 h-4" />
+            </button>
+
+            {(selectedMonth !== new Date().getMonth() || selectedYear !== new Date().getFullYear()) && (
+              <button
+                type="button"
+                onClick={() => {
+                  setSelectedMonth(new Date().getMonth());
+                  setSelectedYear(new Date().getFullYear());
+                }}
+                className="ml-1 px-2 py-1 bg-blue-500/20 hover:bg-blue-500/30 text-blue-300 border border-blue-500/30 rounded-lg text-[10px] font-bold transition-all cursor-pointer whitespace-nowrap"
+                title="Voltar para o Mês Atual"
+              >
+                Mês Atual
+              </button>
+            )}
+          </div>
+        </div>
 
         {/* 1. Global KPIs Row */}
         <DashboardStats 

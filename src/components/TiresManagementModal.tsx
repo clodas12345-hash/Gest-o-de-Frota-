@@ -155,7 +155,7 @@ export const TiresManagementModal: React.FC<TiresManagementModalProps> = ({
     ];
 
     handleSaveTires(rotated);
-    alert('Rodízio de pneus registrado! As posições dianteiras e traseiras foram alternadas com base na quilometragem atual.');
+    setSuccessMsg('Rodízio de pneus registrado com sucesso! Posições dianteiras e traseiras foram alternadas.');
   };
 
   const handleSaveTireEdit = (e: React.FormEvent) => {

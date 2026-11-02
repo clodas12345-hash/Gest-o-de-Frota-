@@ -15,7 +15,9 @@ import {
   Car,
   Wrench,
   Shield,
-  FileText
+  FileText,
+  ChevronLeft,
+  ChevronRight
 } from 'lucide-react';
 import jsPDF from 'jspdf';
 
@@ -48,6 +50,26 @@ export const VehicleProfitabilityModal: React.FC<VehicleProfitabilityModalProps>
     'Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho',
     'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro'
   ];
+
+  const handlePrevMonth = () => {
+    if (currentMonth === 0) {
+      setCurrentMonth(11);
+      setCurrentYear((y) => y - 1);
+    } else {
+      setCurrentMonth((m) => m - 1);
+    }
+  };
+
+  const handleNextMonth = () => {
+    if (currentMonth === 11) {
+      setCurrentMonth(0);
+      setCurrentYear((y) => y + 1);
+    } else {
+      setCurrentMonth((m) => m + 1);
+    }
+  };
+
+  const isCurrentRealMonth = currentMonth === new Date().getMonth() && currentYear === new Date().getFullYear();
 
   // Filter logs by vehicle and period
   const vehicleMaintenances = useMemo(() => {
@@ -317,25 +339,59 @@ export const VehicleProfitabilityModal: React.FC<VehicleProfitabilityModalProps>
           </div>
 
           {viewMode === 'month' && (
-            <div className="flex items-center gap-2">
-              <select
-                value={currentMonth}
-                onChange={(e) => setCurrentMonth(Number(e.target.value))}
-                className="bg-[#1e1e24] border border-white/10 text-white text-xs rounded-xl p-2 font-medium focus:outline-hidden focus:border-emerald-500 cursor-pointer"
+            <div className="flex items-center gap-1.5 bg-[#18181c] p-1.5 rounded-xl border border-white/10 shadow-inner">
+              <button
+                type="button"
+                onClick={handlePrevMonth}
+                className="p-1.5 hover:bg-white/10 active:bg-white/20 rounded-lg text-gray-300 hover:text-white transition-all cursor-pointer flex items-center justify-center"
+                title="Mês Anterior (Passar para trás)"
               >
-                {months.map((m, idx) => (
-                  <option key={idx} value={idx}>{m}</option>
-                ))}
-              </select>
-              <select
-                value={currentYear}
-                onChange={(e) => setCurrentYear(Number(e.target.value))}
-                className="bg-[#1e1e24] border border-white/10 text-white text-xs rounded-xl p-2 font-medium focus:outline-hidden focus:border-emerald-500 cursor-pointer"
+                <ChevronLeft className="w-4 h-4" />
+              </button>
+
+              <div className="flex items-center gap-1.5 px-1">
+                <select
+                  value={currentMonth}
+                  onChange={(e) => setCurrentMonth(Number(e.target.value))}
+                  className="bg-[#242429] border border-white/10 text-white text-xs rounded-lg px-2.5 py-1.5 font-bold focus:outline-hidden focus:border-emerald-500 cursor-pointer"
+                >
+                  {months.map((m, idx) => (
+                    <option key={idx} value={idx} className="bg-neutral-900 text-white">{m}</option>
+                  ))}
+                </select>
+                <select
+                  value={currentYear}
+                  onChange={(e) => setCurrentYear(Number(e.target.value))}
+                  className="bg-[#242429] border border-white/10 text-white text-xs rounded-lg px-2.5 py-1.5 font-bold focus:outline-hidden focus:border-emerald-500 cursor-pointer font-mono"
+                >
+                  {[2023, 2024, 2025, 2026, 2027, 2028].map((y) => (
+                    <option key={y} value={y} className="bg-neutral-900 text-white">{y}</option>
+                  ))}
+                </select>
+              </div>
+
+              <button
+                type="button"
+                onClick={handleNextMonth}
+                className="p-1.5 hover:bg-white/10 active:bg-white/20 rounded-lg text-gray-300 hover:text-white transition-all cursor-pointer flex items-center justify-center"
+                title="Próximo Mês (Ir para frente)"
               >
-                {[2024, 2025, 2026, 2027].map((y) => (
-                  <option key={y} value={y}>{y}</option>
-                ))}
-              </select>
+                <ChevronRight className="w-4 h-4" />
+              </button>
+
+              {!isCurrentRealMonth && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setCurrentMonth(new Date().getMonth());
+                    setCurrentYear(new Date().getFullYear());
+                  }}
+                  className="ml-1 px-2 py-1 bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-300 border border-emerald-500/30 rounded-lg text-[10px] font-bold transition-all cursor-pointer whitespace-nowrap"
+                  title="Voltar para o Mês Atual"
+                >
+                  Mês Atual
+                </button>
+              )}
             </div>
           )}
         </div>

@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { X, Save, Plus, Trash2, ListChecks, Edit2 } from 'lucide-react';
+import { X, Save, Plus, Trash2, ListChecks, Edit2, Check } from 'lucide-react';
 
 interface ChecklistConfigModalProps {
   isOpen: boolean;
@@ -16,6 +16,9 @@ export const ChecklistConfigModal: React.FC<ChecklistConfigModalProps> = ({
 }) => {
   const [items, setItems] = useState<string[]>(config);
   const [newItem, setNewItem] = useState('');
+  const [editingIndex, setEditingIndex] = useState<number | null>(null);
+  const [editingValue, setEditingValue] = useState('');
+  const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
   if (!isOpen) return null;
 
@@ -25,16 +28,37 @@ export const ChecklistConfigModal: React.FC<ChecklistConfigModalProps> = ({
     if (trimmed && !items.includes(trimmed)) {
       setItems([...items, trimmed]);
       setNewItem('');
+      setErrorMsg(null);
     }
   };
 
   const handleRemoveItem = (index: number) => {
     setItems(items.filter((_, i) => i !== index));
+    if (editingIndex === index) {
+      setEditingIndex(null);
+      setEditingValue('');
+    }
+  };
+
+  const handleStartEdit = (index: number, currentText: string) => {
+    setEditingIndex(index);
+    setEditingValue(currentText);
+  };
+
+  const handleSaveEdit = (index: number) => {
+    const trimmed = editingValue.trim();
+    if (trimmed) {
+      const next = [...items];
+      next[index] = trimmed;
+      setItems(next);
+    }
+    setEditingIndex(null);
+    setEditingValue('');
   };
 
   const handleSave = () => {
     if (items.length === 0) {
-      alert("A lista não pode ficar vazia.");
+      setErrorMsg("A lista não pode ficar vazia.");
       return;
     }
     onSave(items);
@@ -79,38 +103,68 @@ export const ChecklistConfigModal: React.FC<ChecklistConfigModalProps> = ({
             </button>
           </form>
 
+          {errorMsg && (
+            <p className="text-xs text-rose-400 bg-rose-500/10 border border-rose-500/20 px-3 py-1.5 rounded-lg">
+              {errorMsg}
+            </p>
+          )}
+
           <div className="max-h-64 overflow-y-auto space-y-2 pr-1">
-            
             {items.map((item, index) => (
               <div key={index} className="flex flex-col gap-2 p-3 bg-black/40 border border-white/5 rounded-xl group">
-                <div className="flex items-center justify-between">
-                  <span className="text-xs font-medium text-gray-200">{item}</span>
-                  <div className="flex items-center gap-1 opacity-100 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity">
+                {editingIndex === index ? (
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="text"
+                      value={editingValue}
+                      onChange={(e) => setEditingValue(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') handleSaveEdit(index);
+                        if (e.key === 'Escape') setEditingIndex(null);
+                      }}
+                      autoFocus
+                      className="flex-1 text-xs bg-black border border-emerald-500/50 rounded-lg px-2.5 py-1 text-white focus:outline-hidden"
+                    />
                     <button
                       type="button"
-                      onClick={() => {
-                        const newName = prompt('Editar item do checklist:', item);
-                        if (newName && newName.trim() && newName.trim() !== item) {
-                          const newItems = [...items];
-                          newItems[index] = newName.trim();
-                          setItems(newItems);
-                        }
-                      }}
-                      className="p-1.5 text-gray-400 hover:text-emerald-400 hover:bg-emerald-500/10 rounded-lg transition-colors cursor-pointer"
-                      title="Editar"
+                      onClick={() => handleSaveEdit(index)}
+                      className="p-1.5 bg-emerald-600/30 text-emerald-400 hover:bg-emerald-600/50 rounded-lg transition-colors cursor-pointer"
+                      title="Salvar"
                     >
-                      <Edit2 className="w-4 h-4" />
+                      <Check className="w-3.5 h-3.5" />
                     </button>
                     <button
                       type="button"
-                      onClick={() => handleRemoveItem(index)}
-                      className="p-1.5 text-gray-500 hover:text-red-400 hover:bg-red-500/10 rounded-lg transition-colors cursor-pointer"
-                      title="Remover"
+                      onClick={() => setEditingIndex(null)}
+                      className="p-1.5 bg-white/5 text-gray-400 hover:text-white rounded-lg transition-colors cursor-pointer"
+                      title="Cancelar"
                     >
-                      <Trash2 className="w-4 h-4" />
+                      <X className="w-3.5 h-3.5" />
                     </button>
                   </div>
-                </div>
+                ) : (
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-medium text-gray-200">{item}</span>
+                    <div className="flex items-center gap-1 opacity-100 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity">
+                      <button
+                        type="button"
+                        onClick={() => handleStartEdit(index, item)}
+                        className="p-1.5 text-gray-400 hover:text-emerald-400 hover:bg-emerald-500/10 rounded-lg transition-colors cursor-pointer"
+                        title="Editar"
+                      >
+                        <Edit2 className="w-4 h-4" />
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handleRemoveItem(index)}
+                        className="p-1.5 text-gray-500 hover:text-red-400 hover:bg-red-500/10 rounded-lg transition-colors cursor-pointer"
+                        title="Remover"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                    </div>
+                  </div>
+                )}
               </div>
             ))}
 
