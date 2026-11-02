@@ -44,7 +44,10 @@ export function ConfirmFinalizeContractModal({
 
   useEffect(() => {
     if (isOpen && vehicle) {
-      setCaucaoOriginal(vehicle.caucaoValor || 0);
+      const paidPromises = (vehicle.promisePayments || [])
+        .filter(p => p.isPaid)
+        .reduce((sum, p) => sum + (p.amount || 0), 0);
+      setCaucaoOriginal((vehicle.caucaoValor || 0) + paidPromises);
       
       let calculatedPending = 0;
       let used = 0;

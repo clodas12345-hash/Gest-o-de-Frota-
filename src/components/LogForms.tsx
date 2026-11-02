@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Vehicle, VehicleDocument, FuelLog, MaintenanceLog, ExpenseLog, AgendaContact, SinistroLog, TireState, PromisePayment, MAINTENANCE_CATEGORIES, MAINTENANCE_SCOPES, getScopesForCategory } from '../types';
-import { X, Save, AlertCircle, Users, BookOpen, Sparkles, Mic, MicOff, Calculator, Plus, Trash2, User, Phone, Search, Smartphone, Check, Upload, ExternalLink, AlertTriangle, Car, Calendar, Camera, Shield, Bell, Paperclip, Eye, FileText, Building2, FilePlus, Layers, FileCheck, Loader2, Wrench, Coins } from 'lucide-react';
+import { X, Save, AlertCircle, Users, BookOpen, Sparkles, Mic, MicOff, Calculator, Plus, Trash2, User, Phone, Search, Smartphone, Check, Upload, ExternalLink, AlertTriangle, Car, Calendar, Camera, Shield, Bell, Paperclip, Eye, FileText, Building2, FilePlus, Layers, FileCheck, Loader2, Wrench, Coins, CheckCircle2, History } from 'lucide-react';
 import { Contacts } from '@capacitor-community/contacts';
 import { Capacitor } from '@capacitor/core';
 import { generateNextContractNumber } from '../utils/contractHelper';
@@ -222,6 +222,46 @@ export function LogForms({
   const [showAddCaucaoPromise, setShowAddCaucaoPromise] = useState(false);
   const [newCaucaoPromiseDate, setNewCaucaoPromiseDate] = useState(() => getTodayStr());
   const [newCaucaoPromiseAmount, setNewCaucaoPromiseAmount] = useState<number>(0);
+  const [showBatchCaucaoPromise, setShowBatchCaucaoPromise] = useState(false);
+  const [batchCaucaoCount, setBatchCaucaoCount] = useState<number>(10);
+  const [batchCaucaoAmount, setBatchCaucaoAmount] = useState<number>(100);
+  const [batchCaucaoFrequency, setBatchCaucaoFrequency] = useState<'semanal' | 'quinzenal' | 'mensal'>('semanal');
+  const [batchCaucaoStartDate, setBatchCaucaoStartDate] = useState(() => getTodayStr());
+  const [batchCaucaoItems, setBatchCaucaoItems] = useState<Array<{ id: string; date: string; amount: number }>>([]);
+  const [showLogPromiseHistory, setShowLogPromiseHistory] = useState(false);
+
+  const handleGenerateBatchCaucaoItems = () => {
+    const count = Math.max(1, Math.min(52, Number(batchCaucaoCount) || 1));
+    const amount = Number(batchCaucaoAmount) || 0;
+    const start = batchCaucaoStartDate ? new Date(batchCaucaoStartDate + 'T12:00:00') : new Date();
+    const intervalDays = batchCaucaoFrequency === 'quinzenal' ? 15 : batchCaucaoFrequency === 'mensal' ? 30 : 7;
+    
+    const items: Array<{ id: string; date: string; amount: number }> = [];
+    for (let i = 0; i < count; i++) {
+      const d = new Date(start.getTime() + i * intervalDays * 24 * 60 * 60 * 1000);
+      const dateStr = d.toISOString().split('T')[0];
+      items.push({
+        id: `batch-${Date.now()}-${i}-${Math.random().toString(36).substring(2, 6)}`,
+        date: dateStr,
+        amount: amount
+      });
+    }
+    setBatchCaucaoItems(items);
+  };
+
+  const handleSaveBatchCaucaoPromises = () => {
+    if (batchCaucaoItems.length === 0) return;
+    const newPromises: PromisePayment[] = batchCaucaoItems.map(item => ({
+      id: item.id || `prom-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
+      date: item.date || getTodayStr(),
+      amount: Number(item.amount) || 0,
+      isPaid: false
+    }));
+
+    setPromisePayments(prev => [...prev, ...newPromises]);
+    setBatchCaucaoItems([]);
+    setShowBatchCaucaoPromise(false);
+  };
   const [nextVistoriaDate, setNextVistoriaDate] = useState('');
   const [insuranceExpirationDate, setInsuranceExpirationDate] = useState('');
   const [showAddExpense, setShowAddExpense] = useState(false);
@@ -2588,8 +2628,20 @@ export function LogForms({
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <div className="space-y-1">
                     <div className="flex justify-between items-center min-h-[20px]">
-                      <label className="font-semibold text-gray-400 text-xs">Valor do Caução (R$)</label>
-                      <span className="text-[9px] text-emerald-400/80 font-normal">(Garantia)</span>
+                      <label className="font-semibold text-gray-400 text-xs">Caução Pago Inicial (R$)</label>
+                      {(() => {
+                        const totalPaidPromises = (promisePayments || [])
+                          .filter(p => p.isPaid)
+                          .reduce((acc, p) => acc + (p.amount || 0), 0);
+                        if (totalPaidPromises > 0) {
+                          return (
+                            <span className="text-[9px] text-emerald-400 font-bold bg-emerald-500/10 px-1.5 py-0.5 rounded border border-emerald-500/20">
+                              Total: R$ {((caucaoValor || 0) + totalPaidPromises).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                            </span>
+                          );
+                        }
+                        return <span className="text-[9px] text-emerald-400/80 font-normal">(Garantia)</span>;
+                      })()}
                     </div>
                     <CurrencyInput 
                       value={caucaoValor} 
@@ -2624,14 +2676,55 @@ export function LogForms({
                 <div className="bg-black/30 border border-white/5 p-3 rounded-xl space-y-2 mt-2">
                   <div className="flex items-center justify-between">
                     <span className="text-[11px] font-bold text-gray-300">Promessas de Pagamento (Caução)</span>
-                    {promisePayments.length > 0 && (
-                      <span className="text-[9px] text-emerald-400 bg-emerald-500/10 px-1.5 py-0.5 rounded border border-emerald-500/20 font-mono">
-                        {promisePayments.filter(p => p.isPaid).length}/{promisePayments.length} pagas
-                      </span>
-                    )}
+                    <div className="flex items-center gap-1.5">
+                      {promisePayments.some(p => p.isPaid) && (
+                        <button
+                          type="button"
+                          onClick={() => setShowLogPromiseHistory(!showLogPromiseHistory)}
+                          className="text-[9px] text-emerald-300 hover:text-white bg-emerald-500/10 hover:bg-emerald-500/20 px-2 py-0.5 rounded border border-emerald-500/20 transition-colors cursor-pointer flex items-center gap-1"
+                        >
+                          <History className="w-3 h-3 text-emerald-400" />
+                          <span>{showLogPromiseHistory ? 'Ocultar Histórico' : 'Histórico de Pagos'}</span>
+                        </button>
+                      )}
+                      {promisePayments.length > 0 && (
+                        <span className="text-[9px] text-emerald-400 bg-emerald-500/10 px-1.5 py-0.5 rounded border border-emerald-500/20 font-mono">
+                          {promisePayments.filter(p => p.isPaid).length}/{promisePayments.length} pagas
+                        </span>
+                      )}
+                    </div>
                   </div>
 
-                  {promisePayments.length === 0 && !showAddCaucaoPromise && (
+                  {/* Histórico Consolidado de Pagamentos */}
+                  {showLogPromiseHistory && (
+                    <div className="p-2.5 bg-emerald-950/20 border border-emerald-500/20 rounded-xl space-y-1.5 mb-2 animate-in slide-in-from-top-1 duration-150">
+                      <div className="flex items-center justify-between text-[11px] font-bold text-emerald-300 border-b border-emerald-500/20 pb-1">
+                        <span className="flex items-center gap-1">
+                          <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />
+                          <span>Histórico de Pagamentos Recebidos</span>
+                        </span>
+                        <span className="font-mono text-xs">
+                          R$ {promisePayments.filter(p => p.isPaid).reduce((acc, p) => acc + (p.amount || 0), 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                        </span>
+                      </div>
+                      <div className="space-y-1 max-h-36 overflow-y-auto scrollbar-thin">
+                        {promisePayments.filter(p => p.isPaid).map((p, idx) => (
+                          <div key={p.id || idx} className="flex justify-between items-center text-[10px] text-gray-300 bg-black/40 px-2 py-1 rounded border border-white/5">
+                            <div>
+                              <span className="font-bold text-white">Parcela {idx + 1}:</span> R$ {(p.amount || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                              <span className="text-gray-400 block text-[9px]">Vencimento previsto: {p.date}</span>
+                            </div>
+                            <div className="text-right">
+                              <span className="text-emerald-400 font-semibold block">✓ Pago</span>
+                              <span className="text-[9px] text-gray-400 font-mono">{p.paidAt || 'Data não registrada'}</span>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {promisePayments.length === 0 && !showAddCaucaoPromise && !showBatchCaucaoPromise && (
                     <p className="text-[10px] text-gray-500 italic py-1">Nenhuma promessa cadastrada.</p>
                   )}
 
@@ -2643,42 +2736,59 @@ export function LogForms({
                         : p.date;
 
                       return (
-                        <div key={p.id} className="flex justify-between items-center text-xs bg-white/[0.03] p-2 rounded-lg border border-white/5">
-                          <span className={`font-mono text-xs ${p.isPaid ? 'line-through text-gray-500' : 'text-gray-200 font-bold'}`}>
-                            {formattedDate} — R$ {(p.amount || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                          </span>
-                          <div className="flex items-center gap-1.5">
-                            <button
-                              type="button"
-                              onClick={() => {
-                                setPromisePayments(prev => prev.map(item => item.id === p.id ? { ...item, isPaid: !item.isPaid } : item));
-                              }}
-                              className={`text-[9px] px-2 py-0.5 rounded font-bold cursor-pointer transition-colors ${
-                                p.isPaid
-                                  ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30'
-                                  : 'bg-amber-500/20 text-amber-300 border border-amber-500/30'
-                              }`}
-                            >
-                              {p.isPaid ? '✓ Pago' : 'Pendente'}
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => {
-                                setPromisePayments(prev => prev.filter(item => item.id !== p.id));
-                              }}
-                              className="p-1 text-gray-500 hover:text-rose-400 transition-colors cursor-pointer rounded"
-                              title="Excluir promessa"
-                            >
-                              <Trash2 className="w-3 h-3" />
-                            </button>
+                        <div key={p.id} className="flex flex-col gap-1 text-xs bg-white/[0.03] p-2 rounded-lg border border-white/5">
+                          <div className="flex justify-between items-center">
+                            <div className="flex flex-col min-w-0">
+                              <span className={`font-mono text-xs ${p.isPaid ? 'line-through text-gray-500' : 'text-gray-200 font-bold'}`}>
+                                📅 {formattedDate} — R$ {(p.amount || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                              </span>
+                              {p.isPaid && (
+                                <span className="text-[10px] text-emerald-400 flex items-center gap-1 font-sans mt-0.5">
+                                  <CheckCircle2 className="w-3 h-3 text-emerald-400 shrink-0" />
+                                  <span>Pago em: <strong className="font-mono text-emerald-300">{p.paidAt || 'Registrado'}</strong></span>
+                                </span>
+                              )}
+                            </div>
+                            <div className="flex items-center gap-1.5 shrink-0">
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  const nowStr = `${new Date().toLocaleDateString('pt-BR')} às ${new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}`;
+                                  setPromisePayments(prev => prev.map(item => item.id === p.id ? { 
+                                    ...item, 
+                                    isPaid: !item.isPaid,
+                                    paidAt: !item.isPaid ? (item.paidAt || nowStr) : undefined
+                                  } : item));
+                                }}
+                                className={`text-[9px] px-2 py-0.5 rounded font-bold cursor-pointer transition-colors ${
+                                  p.isPaid
+                                    ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30'
+                                    : 'bg-amber-500/20 text-amber-300 border border-amber-500/30'
+                                }`}
+                              >
+                                {p.isPaid ? '✓ Pago' : 'Pendente'}
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setPromisePayments(prev => prev.filter(item => item.id !== p.id));
+                                }}
+                                className="p-1 text-gray-500 hover:text-rose-400 transition-colors cursor-pointer rounded"
+                                title="Excluir promessa"
+                              >
+                                <Trash2 className="w-3 h-3" />
+                              </button>
+                            </div>
                           </div>
                         </div>
                       );
                     })}
                   </div>
 
+                  {/* Formulário Individual */}
                   {showAddCaucaoPromise && (
-                    <div className="p-3 bg-neutral-900 rounded-lg border border-blue-500/30 space-y-2 mt-2">
+                    <div className="p-3 bg-neutral-900 rounded-lg border border-blue-500/30 space-y-2 mt-2 animate-in slide-in-from-top-1 duration-150">
+                      <span className="text-[10px] font-bold text-blue-400 block">+ Nova Promessa Individual</span>
                       <div className="grid grid-cols-2 gap-2">
                         <div>
                           <label className="text-[9px] text-gray-400 block mb-0.5">Data Prevista</label>
@@ -2742,19 +2852,205 @@ export function LogForms({
                     </div>
                   )}
 
-                  <button
-                    type="button"
-                    onClick={() => {
-                      if (!showAddCaucaoPromise) {
-                        setNewCaucaoPromiseDate(getTodayStr());
-                        setNewCaucaoPromiseAmount(0);
-                      }
-                      setShowAddCaucaoPromise(!showAddCaucaoPromise);
-                    }}
-                    className="w-full text-xs text-blue-400 border border-blue-400/30 rounded py-1 hover:bg-blue-400/10 cursor-pointer font-medium transition-colors"
-                  >
-                    {showAddCaucaoPromise ? 'Fechar Formulário' : '+ Adicionar Promessa de Caução'}
-                  </button>
+                  {/* Formulário Múltiplas Promessas (Em Lote / Parcelado) */}
+                  {showBatchCaucaoPromise && (
+                    <div className="p-3 bg-neutral-900 rounded-xl border border-indigo-500/40 space-y-3 mt-2 animate-in slide-in-from-top-1 duration-150 shadow-xl">
+                      <div className="flex items-center justify-between border-b border-indigo-500/20 pb-2">
+                        <div className="flex items-center gap-1.5 text-indigo-300 font-bold text-xs">
+                          <Layers className="w-4 h-4 text-indigo-400" />
+                          <span>Salvar Múltiplas Promessas de Uma Vez</span>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => setShowBatchCaucaoPromise(false)}
+                          className="text-gray-400 hover:text-white text-xs cursor-pointer"
+                        >
+                          <X className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+
+                      {/* Gerador de Parcelas */}
+                      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 bg-black/40 p-2.5 rounded-lg border border-white/5 text-[10px]">
+                        <div>
+                          <label className="text-gray-400 block mb-0.5">Qtd Parcelas</label>
+                          <input
+                            type="number"
+                            min="1"
+                            max="52"
+                            value={batchCaucaoCount}
+                            onChange={(e) => setBatchCaucaoCount(Math.max(1, Number(e.target.value)))}
+                            className="w-full bg-black border border-white/10 rounded px-2 py-1 text-white font-mono"
+                          />
+                        </div>
+
+                        <div>
+                          <label className="text-gray-400 block mb-0.5">Valor Parcela (R$)</label>
+                          <CurrencyInput
+                            value={batchCaucaoAmount}
+                            onChange={setBatchCaucaoAmount}
+                            placeholder="0,00"
+                            className="w-full bg-black border border-white/10 rounded px-2 py-1 text-white font-mono"
+                          />
+                        </div>
+
+                        <div>
+                          <label className="text-gray-400 block mb-0.5">Frequência</label>
+                          <select
+                            value={batchCaucaoFrequency}
+                            onChange={(e) => setBatchCaucaoFrequency(e.target.value as any)}
+                            className="w-full bg-black border border-white/10 rounded px-2 py-1 text-white"
+                          >
+                            <option value="semanal">Semanal (+7 dias)</option>
+                            <option value="quinzenal">Quinzenal (+15 dias)</option>
+                            <option value="mensal">Mensal (+30 dias)</option>
+                          </select>
+                        </div>
+
+                        <div>
+                          <label className="text-gray-400 block mb-0.5">1ª Data</label>
+                          <input
+                            type="date"
+                            value={batchCaucaoStartDate}
+                            onChange={(e) => setBatchCaucaoStartDate(e.target.value)}
+                            className="w-full bg-black border border-white/10 rounded px-2 py-1 text-white font-mono"
+                          />
+                        </div>
+
+                        <div className="col-span-2 sm:col-span-4 pt-1 flex justify-end">
+                          <button
+                            type="button"
+                            onClick={handleGenerateBatchCaucaoItems}
+                            className="px-3 py-1 bg-indigo-600 hover:bg-indigo-500 text-white rounded font-bold text-xs flex items-center gap-1 cursor-pointer transition-all shadow-sm"
+                          >
+                            <Sparkles className="w-3.5 h-3.5" />
+                            <span>Gerar {batchCaucaoCount} Parcelas na Lista</span>
+                          </button>
+                        </div>
+                      </div>
+
+                      {/* Tabela de Parcelas a Salvar */}
+                      {batchCaucaoItems.length > 0 && (
+                        <div className="space-y-1.5">
+                          <div className="flex items-center justify-between text-[11px] text-gray-300 font-bold px-1">
+                            <span>Prévia das Promessas ({batchCaucaoItems.length} parcelas)</span>
+                            <span className="text-emerald-400 font-mono">
+                              Total: R$ {batchCaucaoItems.reduce((acc, it) => acc + (it.amount || 0), 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                            </span>
+                          </div>
+
+                          <div className="max-h-48 overflow-y-auto space-y-1.5 border border-white/10 rounded-lg p-2 bg-black/50 scrollbar-thin">
+                            {batchCaucaoItems.map((item, index) => (
+                              <div key={item.id} className="flex items-center gap-2 text-xs bg-white/[0.02] p-1.5 rounded border border-white/5">
+                                <span className="text-[10px] text-gray-400 font-mono w-6 text-center">#{index + 1}</span>
+                                <input
+                                  type="date"
+                                  value={item.date}
+                                  onChange={(e) => {
+                                    const next = [...batchCaucaoItems];
+                                    next[index].date = e.target.value;
+                                    setBatchCaucaoItems(next);
+                                  }}
+                                  className="bg-black border border-white/10 rounded px-2 py-0.5 text-white font-mono text-[11px]"
+                                />
+                                <div className="flex-1">
+                                  <CurrencyInput
+                                    value={item.amount}
+                                    onChange={(val) => {
+                                      const next = [...batchCaucaoItems];
+                                      next[index].amount = Number(val) || 0;
+                                      setBatchCaucaoItems(next);
+                                    }}
+                                    placeholder="0,00"
+                                    className="w-full bg-black border border-white/10 rounded px-2 py-0.5 text-white font-mono text-[11px]"
+                                  />
+                                </div>
+                                <button
+                                  type="button"
+                                  onClick={() => setBatchCaucaoItems(batchCaucaoItems.filter((_, idx) => idx !== index))}
+                                  className="text-gray-500 hover:text-rose-400 p-1 cursor-pointer"
+                                  title="Remover esta parcela"
+                                >
+                                  <Trash2 className="w-3.5 h-3.5" />
+                                </button>
+                              </div>
+                            ))}
+                          </div>
+
+                          <div className="flex items-center justify-between pt-1">
+                            <button
+                              type="button"
+                              onClick={() => {
+                                const lastDate = batchCaucaoItems.length > 0 ? batchCaucaoItems[batchCaucaoItems.length - 1].date : batchCaucaoStartDate;
+                                const d = new Date(lastDate + 'T12:00:00');
+                                const nextDate = new Date(d.getTime() + 7 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
+                                setBatchCaucaoItems([...batchCaucaoItems, {
+                                  id: `batch-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
+                                  date: nextDate,
+                                  amount: Number(batchCaucaoAmount) || 0
+                                }]);
+                              }}
+                              className="text-[10px] text-blue-400 hover:text-blue-300 font-semibold cursor-pointer"
+                            >
+                              + Adicionar Linha Avulsa
+                            </button>
+
+                            <div className="flex gap-2">
+                              <button
+                                type="button"
+                                onClick={() => setBatchCaucaoItems([])}
+                                className="px-2.5 py-1 text-gray-400 hover:text-white text-[10px] cursor-pointer"
+                              >
+                                Limpar Lista
+                              </button>
+                              <button
+                                type="button"
+                                onClick={handleSaveBatchCaucaoPromises}
+                                className="px-4 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg text-xs font-bold cursor-pointer transition-all shadow-md flex items-center gap-1.5"
+                              >
+                                <CheckCircle2 className="w-3.5 h-3.5" />
+                                <span>Salvar Todas ({batchCaucaoItems.length} Promessas)</span>
+                              </button>
+                            </div>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  {/* Botões de Ação para Adicionar Promessas */}
+                  <div className="grid grid-cols-2 gap-2 pt-1">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (!showAddCaucaoPromise) {
+                          setNewCaucaoPromiseDate(getTodayStr());
+                          setNewCaucaoPromiseAmount(0);
+                          setShowBatchCaucaoPromise(false);
+                        }
+                        setShowAddCaucaoPromise(!showAddCaucaoPromise);
+                      }}
+                      className="text-xs text-blue-400 border border-blue-400/30 rounded py-1.5 hover:bg-blue-400/10 cursor-pointer font-medium transition-colors text-center"
+                    >
+                      {showAddCaucaoPromise ? 'Fechar Formulário' : '+ 1 Promessa'}
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (!showBatchCaucaoPromise) {
+                          setShowAddCaucaoPromise(false);
+                          if (batchCaucaoItems.length === 0) {
+                            handleGenerateBatchCaucaoItems();
+                          }
+                        }
+                        setShowBatchCaucaoPromise(!showBatchCaucaoPromise);
+                      }}
+                      className="text-xs text-indigo-400 border border-indigo-400/30 bg-indigo-500/10 rounded py-1.5 hover:bg-indigo-500/20 cursor-pointer font-semibold transition-colors flex items-center justify-center gap-1.5 text-center shadow-xs"
+                    >
+                      <Layers className="w-3.5 h-3.5" />
+                      <span>{showBatchCaucaoPromise ? 'Fechar Lote' : '⚡ Salvar Múltiplas'}</span>
+                    </button>
+                  </div>
                 </div>
               </div>
 

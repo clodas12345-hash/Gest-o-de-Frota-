@@ -155,8 +155,8 @@ export const HelpModal: React.FC<HelpModalProps> = ({
       return `📄 *Envio de Documentos (CRLV, Contrato) pelo WhatsApp:*\n\n• Ao clicar em **Enviar p/ WhatsApp** no documento, o sistema baixa automaticamente o arquivo físico PDF/imagem no seu computador ou celular.\n• Para enviar no WhatsApp, basta anexar o arquivo baixado clicando no ícone do clipe 📎 do WhatsApp!\n• Dica: Em dispositivos móveis ou navegadores compatíveis, você também pode usar o botão **"Compartilhar Arquivo"** para abrir o menu nativo e anexar diretamente.`;
     }
 
-    if (q.includes('caução') || q.includes('caucao') || q.includes('garantia') || q.includes('escondi') || q.includes('expandi')) {
-      return `💰 *Caução de Garantia Oculta/Expansível:*\n\n• A seção de Caução fica recolhida para economizar espaço no cartão do veículo.\n• Clique na linha **"Caução de Garantia"** no cartão do carro para expandir/recolher os detalhes e pagamentos.`;
+    if (q.includes('caução') || q.includes('caucao') || q.includes('garantia') || q.includes('promessa') || q.includes('escondi') || q.includes('expandi') || q.includes('lote') || q.includes('multipla') || q.includes('múltipla')) {
+      return `💰 *Caução de Garantia & Promessas de Pagamento:*\n\n• **Soma Automática das Promessas Pagas:** Toda promessa de pagamento de caução marcada como **"✓ Pago"** é somada automaticamente ao **Caução Pago Inicial**, atualizando o **Caução Total Acumulado** em tempo real no cabeçalho do carro, no Portal do Motorista, no Contrato de Locação e no Fechamento/Acerto de Devolução.\n• **Histórico de Pagamentos com Data e Hora:** Ao marcar uma promessa como paga, o sistema registra e exibe o momento exato do pagamento (*DD/MM/AAAA às HH:mm*). Você pode clicar em **"Histórico de Pagos"** para visualizar a lista completa de todas as parcelas recebidas.\n• **⚡ Salvar Múltiplas Promessas de Uma Vez:** Em vez de cadastrar uma a uma, clique no botão roxo **"⚡ Salvar Múltiplas"** no cartão ou no formulário do carro. Escolha o número de parcelas (ex: 10), o valor de cada uma (ex: R$ 100,00), a frequência (semanal, quinzenal ou mensal) e a 1ª data. O sistema gera a prévia de todas as datas e permite salvar todas de uma única vez com 1 clique!\n• **Painel Recolhível:** A seção fica recolhida para manter a tela limpa. Clique na linha **"Caução de Garantia"** no cartão do veículo para expandir ou recolher os detalhes, promessas e observações.`;
     }
 
     if (q.includes('tipo') || q.includes('entrega') || q.includes('periódica') || q.includes('periodica') || q.includes('devolução') || q.includes('devolucao')) {
@@ -540,9 +540,9 @@ export const HelpModal: React.FC<HelpModalProps> = ({
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div className="p-4 bg-white/[0.03] border border-white/10 rounded-xl space-y-2">
-                  <h4 className="font-bold text-white text-xs">💰 Caução de Garantia Expansível</h4>
+                  <h4 className="font-bold text-white text-xs">💰 Caução de Garantia & Múltiplas Promessas</h4>
                   <p className="text-gray-400 text-xs">
-                    Para manter a interface limpa, o módulo de Caução de Garantia inicia recolhido. Clique na linha da caução para expandir e gerenciar parcelas e devoluções.
+                    Módulo expansível: use o botão <strong className="text-indigo-400">"⚡ Salvar Múltiplas"</strong> para gerar até 52 parcelas de uma vez com datas semanais/mensais e salvar em lote com 1 clique! Ao marcar como paga, o sistema salva a data e hora do pagamento no <strong>Histórico de Pagos</strong> e soma automaticamente ao Caução Total Acumulado.
                   </p>
                 </div>
 

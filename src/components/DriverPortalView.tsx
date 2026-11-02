@@ -131,7 +131,13 @@ export const DriverPortalView: React.FC<DriverPortalViewProps> = ({
             <div className="bg-black/30 p-3 rounded-2xl border border-white/5">
               <span className="text-[10px] text-gray-400 uppercase font-bold block">Caução Paga</span>
               <span className="text-sm font-mono font-bold text-white mt-1 block">
-                R$ {(vehicle.caucaoValor || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                {(() => {
+                  const paidPromises = (vehicle.promisePayments || [])
+                    .filter(p => p.isPaid)
+                    .reduce((acc, p) => acc + (p.amount || 0), 0);
+                  const totalCaucao = (vehicle.caucaoValor || 0) + paidPromises;
+                  return `R$ ${totalCaucao.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`;
+                })()}
               </span>
             </div>
             <div className="bg-black/30 p-3 rounded-2xl border border-white/5">

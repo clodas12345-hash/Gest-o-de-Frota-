@@ -281,7 +281,13 @@ export const ContractEditorModal: React.FC<ContractEditorModalProps> = ({
     KM_INICIAL: selectedVeh ? (selectedVeh.initialKm || selectedVeh.currentKm || 0).toLocaleString('pt-BR') : '18.601',
     VALOR_SEMANAL: selectedVeh?.valorSemanal ? selectedVeh.valorSemanal.toLocaleString('pt-BR', { minimumFractionDigits: 2 }) : '650,00',
     VALOR_SEMANAL_EXTENSO: 'seiscentos e cinquenta reais',
-    VALOR_CAUCAO: selectedVeh?.caucaoValor ? selectedVeh.caucaoValor.toLocaleString('pt-BR', { minimumFractionDigits: 2 }) : '1.200,00',
+    VALOR_CAUCAO: (() => {
+      const paidPromises = (selectedVeh?.promisePayments || [])
+        .filter(p => p.isPaid)
+        .reduce((acc, p) => acc + (p.amount || 0), 0);
+      const total = (selectedVeh?.caucaoValor || 0) + paidPromises;
+      return total > 0 ? total.toLocaleString('pt-BR', { minimumFractionDigits: 2 }) : '1.200,00';
+    })(),
     VALOR_CAUCAO_EXTENSO: 'mil e duzentos reais',
     DATA_INICIO: selectedVeh?.startDate ? new Date(selectedVeh.startDate + 'T12:00:00').toLocaleDateString('pt-BR') : new Date().toLocaleDateString('pt-BR'),
     DIA_VENCIMENTO: 'toda segunda-feira até às 23h59',

@@ -621,6 +621,51 @@ export const VehicleCard: React.FC<VehicleCardProps> = ({
   const [customPaymentMsgText, setCustomPaymentMsgText] = useState('');
   const [paymentTemplateSavedStatus, setPaymentTemplateSavedStatus] = useState<string | null>(null);
 
+  // State for Batch / Multiple Promise Payments
+  const [showBatchPromise, setShowBatchPromise] = useState(false);
+  const [batchCount, setBatchCount] = useState<number>(10);
+  const [batchAmount, setBatchAmount] = useState<number>(100);
+  const [batchFrequency, setBatchFrequency] = useState<'semanal' | 'quinzenal' | 'mensal'>('semanal');
+  const [batchStartDate, setBatchStartDate] = useState(() => new Date().toISOString().split('T')[0]);
+  const [batchItems, setBatchItems] = useState<Array<{ id: string; date: string; amount: number }>>([]);
+  const [showPromiseHistory, setShowPromiseHistory] = useState(false);
+
+  const handleGenerateBatchItems = () => {
+    const count = Math.max(1, Math.min(52, Number(batchCount) || 1));
+    const amount = Number(batchAmount) || 0;
+    const start = batchStartDate ? new Date(batchStartDate + 'T12:00:00') : new Date();
+    const intervalDays = batchFrequency === 'quinzenal' ? 15 : batchFrequency === 'mensal' ? 30 : 7;
+    
+    const items: Array<{ id: string; date: string; amount: number }> = [];
+    for (let i = 0; i < count; i++) {
+      const d = new Date(start.getTime() + i * intervalDays * 24 * 60 * 60 * 1000);
+      const dateStr = d.toISOString().split('T')[0];
+      items.push({
+        id: `batch-${Date.now()}-${i}-${Math.random().toString(36).substring(2, 6)}`,
+        date: dateStr,
+        amount: amount
+      });
+    }
+    setBatchItems(items);
+  };
+
+  const handleSaveBatchPromises = () => {
+    if (batchItems.length === 0) return;
+    const newPromises: PromisePayment[] = batchItems.map(item => ({
+      id: item.id || `prom-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
+      date: item.date || new Date().toISOString().split('T')[0],
+      amount: Number(item.amount) || 0,
+      isPaid: false
+    }));
+
+    onUpdateVehicle({
+      ...vehicle,
+      promisePayments: [...(vehicle.promisePayments || []), ...newPromises]
+    });
+    setBatchItems([]);
+    setShowBatchPromise(false);
+  };
+
   // Maintenance WhatsApp Reminder State & Templates
   const [showMaintenanceWhatsApp, setShowMaintenanceWhatsApp] = useState(false);
   const [maintenanceWhatsAppType, setMaintenanceWhatsAppType] = useState<'proxima' | 'vencida' | 'agendada'>('proxima');
@@ -3220,15 +3265,22 @@ _Enviado via sistema de gestão de frota._`;
                     <ShieldCheck className="w-3.5 h-3.5 text-emerald-400 shrink-0" /> 
                     <span>Caução de Garantia</span>
                     <span className="text-[9px] text-gray-400 font-normal lowercase">(Informativo - Não somar)</span>
-                    {vehicle.caucaoValor ? (
-                      <span className="font-mono text-emerald-400 text-xs font-black normal-case">
-                        ({formatBRL(vehicle.caucaoValor)})
-                      </span>
-                    ) : (
-                      <span className="text-gray-500 text-[10px] normal-case font-normal">
-                        (Não cadastrado)
-                      </span>
-                    )}
+                    {(() => {
+                      const totalPaidPromises = (vehicle.promisePayments || [])
+                        .filter(p => p.isPaid)
+                        .reduce((acc, p) => acc + (p.amount || 0), 0);
+                      const totalCaucao = (vehicle.caucaoValor || 0) + totalPaidPromises;
+                      
+                      return totalCaucao > 0 ? (
+                        <span className="font-mono text-emerald-400 text-xs font-black normal-case">
+                          ({formatBRL(totalCaucao)})
+                        </span>
+                      ) : (
+                        <span className="text-gray-500 text-[10px] normal-case font-normal">
+                          (Não cadastrado)
+                        </span>
+                      );
+                    })()}
                   </span>
                   <span className="flex items-center gap-1 text-[10px] text-blue-400 font-semibold bg-blue-500/10 hover:bg-blue-500/20 px-2.5 py-1 rounded-md border border-blue-500/15 shrink-0">
                     {isCaucaoExpanded ? 'Recolher' : 'Caução'}
@@ -3239,46 +3291,138 @@ _Enviado via sistema de gestão de frota._`;
 
               {isCaucaoExpanded && (
                 <div className="space-y-3 pt-1 animate-in slide-in-from-top-1 duration-150">
-                  {/* Banner Explicativo Caução */}
                   <div className="bg-emerald-500/10 border border-emerald-500/20 rounded-xl p-2.5 text-[11px] text-emerald-300 flex items-center gap-2">
                     <ShieldCheck className="w-4 h-4 text-emerald-400 shrink-0" />
                     <span>
-                      <strong>Garantia Caução:</strong> O valor do caução é mantido exclusivamente como garantia e <strong>nunca é somado</strong> à receita ou aos pagamentos semanais.
+                      <strong>Garantia Caução:</strong> O valor total do caução (depósito inicial + promessas pagas) é mantido exclusivamente como garantia e <strong>nunca é somado</strong> à receita ou aos pagamentos semanais.
                     </span>
                   </div>
 
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                     {/* Valor do Caução */}
                     <div className="bg-white/[0.01] p-3 rounded-xl border border-white/5 flex flex-col justify-between hover:border-white/10 transition-colors">
-                      <span className="text-[10px] text-gray-400 font-semibold mb-1">Valor do Caução</span>
-                      <div className="flex items-center justify-between">
-                        <span className="text-gray-500"><DollarSign className="w-3.5 h-3.5 text-emerald-500" /></span>
-                        <InlineEdit
-                          value={vehicle.caucaoValor || 0}
-                          label="Valor do Caução"
-                          onSave={(val) => {
-                            onUpdateVehicle({
-                              ...vehicle,
-                              caucaoValor: val
-                            });
-                          }}
-                        />
-                      </div>
+                      {(() => {
+                        const totalPaidPromises = (vehicle.promisePayments || [])
+                          .filter(p => p.isPaid)
+                          .reduce((acc, p) => acc + (p.amount || 0), 0);
+                        const totalCaucao = (vehicle.caucaoValor || 0) + totalPaidPromises;
+
+                        return (
+                          <>
+                            <div className="flex items-center justify-between mb-1">
+                              <span className="text-[10px] text-gray-400 font-semibold">
+                                {totalPaidPromises > 0 ? 'Caução Total (Inicial + Promessas)' : 'Valor do Caução'}
+                              </span>
+                              {totalPaidPromises > 0 && (
+                                <span className="text-[9px] text-emerald-400 font-bold bg-emerald-500/10 px-1.5 py-0.5 rounded border border-emerald-500/20 font-mono">
+                                  +{formatBRL(totalPaidPromises)} em promessas
+                                </span>
+                              )}
+                            </div>
+
+                            <div className="flex items-center justify-between">
+                              <span className="text-gray-500"><DollarSign className="w-3.5 h-3.5 text-emerald-500" /></span>
+                              {totalPaidPromises > 0 ? (
+                                <span className="font-mono text-base font-extrabold text-emerald-400">
+                                  {formatBRL(totalCaucao)}
+                                </span>
+                              ) : (
+                                <InlineEdit
+                                  value={vehicle.caucaoValor || 0}
+                                  label="Valor do Caução"
+                                  onSave={(val) => {
+                                    onUpdateVehicle({
+                                      ...vehicle,
+                                      caucaoValor: val
+                                    });
+                                  }}
+                                />
+                              )}
+                            </div>
+
+                            {totalPaidPromises > 0 && (
+                              <div className="pt-2 mt-2 border-t border-white/5 flex items-center justify-between text-[10px] text-gray-400">
+                                <span className="flex items-center gap-1">
+                                  <span>Inicial:</span>
+                                  <span className="font-mono text-gray-300">{formatBRL(vehicle.caucaoValor || 0)}</span>
+                                </span>
+                                <div className="flex items-center gap-1">
+                                  <span className="text-[9px] text-gray-500">Editar inicial:</span>
+                                  <InlineEdit
+                                    value={vehicle.caucaoValor || 0}
+                                    label="Caução Pago Inicial"
+                                    onSave={(val) => {
+                                      onUpdateVehicle({
+                                        ...vehicle,
+                                        caucaoValor: val
+                                      });
+                                    }}
+                                  />
+                                </div>
+                              </div>
+                            )}
+                          </>
+                        );
+                      })()}
                     </div>
                     {/* Botão de Promessa de Pagamento */}
                     <div className="bg-white/[0.01] p-3 rounded-xl border border-white/5">
                       <div className="flex items-center justify-between mb-2">
                         <span className="text-[10px] text-gray-400 font-semibold block">Promessas de Pagamento (Caução)</span>
-                        {vehicle.promisePayments && vehicle.promisePayments.length > 0 && (
-                          <span className="text-[9px] text-emerald-400 bg-emerald-500/10 px-1.5 py-0.5 rounded border border-emerald-500/20 font-mono">
-                            {vehicle.promisePayments.filter(p => p.isPaid).length}/{vehicle.promisePayments.length} pagas
-                          </span>
-                        )}
+                        <div className="flex items-center gap-1.5">
+                          {vehicle.promisePayments && vehicle.promisePayments.some(p => p.isPaid) && (
+                            <button
+                              type="button"
+                              onClick={() => setShowPromiseHistory(!showPromiseHistory)}
+                              className="text-[9px] text-emerald-300 hover:text-white bg-emerald-500/10 hover:bg-emerald-500/20 px-2 py-0.5 rounded border border-emerald-500/20 transition-colors cursor-pointer flex items-center gap-1"
+                              title="Ver histórico de quando cada promessa foi paga"
+                            >
+                              <History className="w-3 h-3 text-emerald-400" />
+                              <span>{showPromiseHistory ? 'Ocultar Histórico' : 'Histórico de Pagos'}</span>
+                            </button>
+                          )}
+                          {vehicle.promisePayments && vehicle.promisePayments.length > 0 && (
+                            <span className="text-[9px] text-emerald-400 bg-emerald-500/10 px-1.5 py-0.5 rounded border border-emerald-500/20 font-mono">
+                              {vehicle.promisePayments.filter(p => p.isPaid).length}/{vehicle.promisePayments.length} pagas
+                            </span>
+                          )}
+                        </div>
                       </div>
+
+                      {/* Histórico Consolidado de Pagamentos de Promessas */}
+                      {showPromiseHistory && vehicle.promisePayments && (
+                        <div className="p-2.5 bg-emerald-950/20 border border-emerald-500/20 rounded-xl space-y-1.5 mb-2.5 animate-in slide-in-from-top-1 duration-150">
+                          <div className="flex items-center justify-between text-[11px] font-bold text-emerald-300 border-b border-emerald-500/20 pb-1">
+                            <span className="flex items-center gap-1">
+                              <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />
+                              <span>Histórico de Pagamentos Recebidos</span>
+                            </span>
+                            <span className="font-mono text-xs">
+                              {formatBRL(vehicle.promisePayments.filter(p => p.isPaid).reduce((acc, p) => acc + (p.amount || 0), 0))}
+                            </span>
+                          </div>
+                          <div className="space-y-1 max-h-36 overflow-y-auto scrollbar-thin">
+                            {vehicle.promisePayments.filter(p => p.isPaid).map((p, idx) => (
+                              <div key={p.id || idx} className="flex justify-between items-center text-[10px] text-gray-300 bg-black/40 px-2 py-1 rounded border border-white/5">
+                                <div>
+                                  <span className="font-bold text-white">Parcela {idx + 1}:</span> {formatBRL(p.amount)}
+                                  <span className="text-gray-400 block text-[9px]">Vencimento previsto: {p.date}</span>
+                                </div>
+                                <div className="text-right">
+                                  <span className="text-emerald-400 font-semibold block">✓ Pago</span>
+                                  <span className="text-[9px] text-gray-400 font-mono">{p.paidAt || 'Data não registrada'}</span>
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+
                       <div className="space-y-2">
-                        {(!vehicle.promisePayments || vehicle.promisePayments.length === 0) && !showAddPromise && (
+                        {(!vehicle.promisePayments || vehicle.promisePayments.length === 0) && !showAddPromise && !showBatchPromise && (
                           <p className="text-[10px] text-gray-500 italic py-1">Nenhuma promessa de pagamento registrada.</p>
                         )}
+
                         {vehicle.promisePayments?.map((p) => {
                           const dateParts = (p.date || '').split('-');
                           const formattedDate = dateParts.length === 3 
@@ -3286,49 +3430,65 @@ _Enviado via sistema de gestão de frota._`;
                             : p.date;
 
                           return (
-                            <div key={p.id} className="flex justify-between items-center text-xs bg-white/[0.03] p-2 rounded-lg border border-white/5 hover:border-white/10 transition-colors">
-                              <div className="flex items-center gap-2 min-w-0">
-                                <span className={`font-mono text-xs ${p.isPaid ? 'line-through text-gray-500' : 'text-gray-200 font-bold'}`}>
-                                  {formattedDate} — R$ {(p.amount || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                                </span>
-                              </div>
-                              <div className="flex items-center gap-1.5 shrink-0">
-                                <button
-                                  type="button"
-                                  onClick={() => {
-                                    onUpdateVehicle({
-                                      ...vehicle,
-                                      promisePayments: (vehicle.promisePayments || []).map(prev => prev.id === p.id ? { ...prev, isPaid: !prev.isPaid } : prev)
-                                    });
-                                  }}
-                                  className={`text-[9px] px-2 py-0.5 rounded font-bold cursor-pointer transition-colors ${
-                                    p.isPaid
-                                      ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 hover:bg-emerald-500/30'
-                                      : 'bg-amber-500/20 text-amber-300 border border-amber-500/30 hover:bg-amber-500/30'
-                                  }`}
-                                  title={p.isPaid ? 'Clique para desmarcar como pago' : 'Clique para marcar como pago'}
-                                >
-                                  {p.isPaid ? '✓ Pago' : 'Pendente'}
-                                </button>
-                                <button
-                                  type="button"
-                                  onClick={() => {
-                                    onUpdateVehicle({
-                                      ...vehicle,
-                                      promisePayments: (vehicle.promisePayments || []).filter(prev => prev.id !== p.id)
-                                    });
-                                  }}
-                                  className="p-1 text-gray-500 hover:text-rose-400 transition-colors cursor-pointer rounded"
-                                  title="Excluir promessa"
-                                >
-                                  <Trash2 className="w-3 h-3" />
-                                </button>
+                            <div key={p.id} className="flex flex-col gap-1 text-xs bg-white/[0.03] p-2.5 rounded-lg border border-white/5 hover:border-white/10 transition-colors">
+                              <div className="flex justify-between items-center">
+                                <div className="flex flex-col min-w-0">
+                                  <span className={`font-mono text-xs ${p.isPaid ? 'line-through text-gray-500' : 'text-gray-200 font-bold'}`}>
+                                    📅 {formattedDate} — R$ {(p.amount || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                  </span>
+                                  {p.isPaid && (
+                                    <span className="text-[10px] text-emerald-400 flex items-center gap-1 font-sans mt-0.5">
+                                      <CheckCircle2 className="w-3 h-3 text-emerald-400 shrink-0" />
+                                      <span>Pago em: <strong className="font-mono text-emerald-300">{p.paidAt || 'Registrado'}</strong></span>
+                                    </span>
+                                  )}
+                                </div>
+                                <div className="flex items-center gap-1.5 shrink-0">
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      const nowStr = `${new Date().toLocaleDateString('pt-BR')} às ${new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}`;
+                                      onUpdateVehicle({
+                                        ...vehicle,
+                                        promisePayments: (vehicle.promisePayments || []).map(prev => prev.id === p.id ? { 
+                                          ...prev, 
+                                          isPaid: !prev.isPaid,
+                                          paidAt: !prev.isPaid ? (prev.paidAt || nowStr) : undefined
+                                        } : prev)
+                                      });
+                                    }}
+                                    className={`text-[9px] px-2.5 py-1 rounded-md font-bold cursor-pointer transition-colors shadow-xs ${
+                                      p.isPaid
+                                        ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 hover:bg-emerald-500/30'
+                                        : 'bg-amber-500/20 text-amber-300 border border-amber-500/30 hover:bg-amber-500/30'
+                                    }`}
+                                    title={p.isPaid ? 'Clique para desmarcar como pago' : 'Clique para marcar como pago e salvar histórico'}
+                                  >
+                                    {p.isPaid ? '✓ Pago' : 'Pendente'}
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      onUpdateVehicle({
+                                        ...vehicle,
+                                        promisePayments: (vehicle.promisePayments || []).filter(prev => prev.id !== p.id)
+                                      });
+                                    }}
+                                    className="p-1 text-gray-500 hover:text-rose-400 transition-colors cursor-pointer rounded"
+                                    title="Excluir promessa"
+                                  >
+                                    <Trash2 className="w-3 h-3" />
+                                  </button>
+                                </div>
                               </div>
                             </div>
                           );
                         })}
+
+                        {/* Formulário Individual */}
                         {showAddPromise && (
                           <div className="p-3 bg-neutral-900 rounded-lg border border-blue-500/30 space-y-2 mb-2 animate-in slide-in-from-top-1 duration-150">
+                            <span className="text-[10px] font-bold text-blue-400 block">+ Nova Promessa Individual</span>
                             <div className="grid grid-cols-2 gap-2">
                               <div>
                                 <label className="text-[9px] text-gray-400 block mb-0.5">Data Prevista</label>
@@ -3408,19 +3568,206 @@ _Enviado via sistema de gestão de frota._`;
                             </div>
                           </div>
                         )}
-                        <button
-                          type="button"
-                          onClick={() => {
-                            if (!showAddPromise) {
-                              setNewPromiseDate(new Date().toISOString().split('T')[0]);
-                              setNewPromiseAmount(0);
-                            }
-                            setShowAddPromise(!showAddPromise);
-                          }}
-                          className="w-full text-xs text-blue-400 border border-blue-400/30 rounded py-1 hover:bg-blue-400/10 cursor-pointer font-medium transition-colors"
-                        >
-                          {showAddPromise ? 'Fechar Formulário' : '+ Adicionar Promessa'}
-                        </button>
+
+                        {/* Formulário Múltiplas Promessas (Em Lote / Parcelado) */}
+                        {showBatchPromise && (
+                          <div className="p-3 bg-neutral-900 rounded-xl border border-indigo-500/40 space-y-3 mb-2 animate-in slide-in-from-top-1 duration-150 shadow-xl">
+                            <div className="flex items-center justify-between border-b border-indigo-500/20 pb-2">
+                              <div className="flex items-center gap-1.5 text-indigo-300 font-bold text-xs">
+                                <Layers className="w-4 h-4 text-indigo-400" />
+                                <span>Salvar Múltiplas Promessas de Uma Vez</span>
+                              </div>
+                              <button
+                                type="button"
+                                onClick={() => setShowBatchPromise(false)}
+                                className="text-gray-400 hover:text-white text-xs cursor-pointer"
+                              >
+                                <X className="w-3.5 h-3.5" />
+                              </button>
+                            </div>
+
+                            {/* Gerador de Parcelas */}
+                            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 bg-black/40 p-2.5 rounded-lg border border-white/5 text-[10px]">
+                              <div>
+                                <label className="text-gray-400 block mb-0.5">Qtd Parcelas</label>
+                                <input
+                                  type="number"
+                                  min="1"
+                                  max="52"
+                                  value={batchCount}
+                                  onChange={(e) => setBatchCount(Math.max(1, Number(e.target.value)))}
+                                  className="w-full bg-black border border-white/10 rounded px-2 py-1 text-white font-mono"
+                                />
+                              </div>
+
+                              <div>
+                                <label className="text-gray-400 block mb-0.5">Valor Parcela (R$)</label>
+                                <CurrencyInput
+                                  value={batchAmount}
+                                  onChange={setBatchAmount}
+                                  placeholder="0,00"
+                                  className="w-full bg-black border border-white/10 rounded px-2 py-1 text-white font-mono"
+                                />
+                              </div>
+
+                              <div>
+                                <label className="text-gray-400 block mb-0.5">Frequência</label>
+                                <select
+                                  value={batchFrequency}
+                                  onChange={(e) => setBatchFrequency(e.target.value as any)}
+                                  className="w-full bg-black border border-white/10 rounded px-2 py-1 text-white"
+                                >
+                                  <option value="semanal">Semanal (+7 dias)</option>
+                                  <option value="quinzenal">Quinzenal (+15 dias)</option>
+                                  <option value="mensal">Mensal (+30 dias)</option>
+                                </select>
+                              </div>
+
+                              <div>
+                                <label className="text-gray-400 block mb-0.5">1ª Data</label>
+                                <input
+                                  type="date"
+                                  value={batchStartDate}
+                                  onChange={(e) => setBatchStartDate(e.target.value)}
+                                  className="w-full bg-black border border-white/10 rounded px-2 py-1 text-white font-mono"
+                                />
+                              </div>
+
+                              <div className="col-span-2 sm:col-span-4 pt-1 flex justify-end">
+                                <button
+                                  type="button"
+                                  onClick={handleGenerateBatchItems}
+                                  className="px-3 py-1 bg-indigo-600 hover:bg-indigo-500 text-white rounded font-bold text-xs flex items-center gap-1 cursor-pointer transition-all shadow-sm"
+                                >
+                                  <Sparkles className="w-3.5 h-3.5" />
+                                  <span>Gerar {batchCount} Parcelas na Lista</span>
+                                </button>
+                              </div>
+                            </div>
+
+                            {/* Tabela de Parcelas a Salvar */}
+                            {batchItems.length > 0 && (
+                              <div className="space-y-1.5">
+                                <div className="flex items-center justify-between text-[11px] text-gray-300 font-bold px-1">
+                                  <span>Prévia das Promessas ({batchItems.length} parcelas)</span>
+                                  <span className="text-emerald-400 font-mono">
+                                    Total: {formatBRL(batchItems.reduce((acc, it) => acc + (it.amount || 0), 0))}
+                                  </span>
+                                </div>
+
+                                <div className="max-h-48 overflow-y-auto space-y-1.5 border border-white/10 rounded-lg p-2 bg-black/50 scrollbar-thin">
+                                  {batchItems.map((item, index) => (
+                                    <div key={item.id} className="flex items-center gap-2 text-xs bg-white/[0.02] p-1.5 rounded border border-white/5">
+                                      <span className="text-[10px] text-gray-400 font-mono w-6 text-center">#{index + 1}</span>
+                                      <input
+                                        type="date"
+                                        value={item.date}
+                                        onChange={(e) => {
+                                          const next = [...batchItems];
+                                          next[index].date = e.target.value;
+                                          setBatchItems(next);
+                                        }}
+                                        className="bg-black border border-white/10 rounded px-2 py-0.5 text-white font-mono text-[11px]"
+                                      />
+                                      <div className="flex-1">
+                                        <CurrencyInput
+                                          value={item.amount}
+                                          onChange={(val) => {
+                                            const next = [...batchItems];
+                                            next[index].amount = Number(val) || 0;
+                                            setBatchItems(next);
+                                          }}
+                                          placeholder="0,00"
+                                          className="w-full bg-black border border-white/10 rounded px-2 py-0.5 text-white font-mono text-[11px]"
+                                        />
+                                      </div>
+                                      <button
+                                        type="button"
+                                        onClick={() => setBatchItems(batchItems.filter((_, idx) => idx !== index))}
+                                        className="text-gray-500 hover:text-rose-400 p-1 cursor-pointer"
+                                        title="Remover esta parcela"
+                                      >
+                                        <Trash2 className="w-3.5 h-3.5" />
+                                      </button>
+                                    </div>
+                                  ))}
+                                </div>
+
+                                <div className="flex items-center justify-between pt-1">
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      const lastDate = batchItems.length > 0 ? batchItems[batchItems.length - 1].date : batchStartDate;
+                                      const d = new Date(lastDate + 'T12:00:00');
+                                      const nextDate = new Date(d.getTime() + 7 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
+                                      setBatchItems([...batchItems, {
+                                        id: `batch-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
+                                        date: nextDate,
+                                        amount: Number(batchAmount) || 0
+                                      }]);
+                                    }}
+                                    className="text-[10px] text-blue-400 hover:text-blue-300 font-semibold cursor-pointer"
+                                  >
+                                    + Adicionar Linha Avulsa
+                                  </button>
+
+                                  <div className="flex gap-2">
+                                    <button
+                                      type="button"
+                                      onClick={() => setBatchItems([])}
+                                      className="px-2.5 py-1 text-gray-400 hover:text-white text-[10px] cursor-pointer"
+                                    >
+                                      Limpar Lista
+                                    </button>
+                                    <button
+                                      type="button"
+                                      onClick={handleSaveBatchPromises}
+                                      className="px-4 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg text-xs font-bold cursor-pointer transition-all shadow-md flex items-center gap-1.5"
+                                    >
+                                      <CheckCircle2 className="w-3.5 h-3.5" />
+                                      <span>Salvar Todas ({batchItems.length} Promessas)</span>
+                                    </button>
+                                  </div>
+                                </div>
+                              </div>
+                            )}
+                          </div>
+                        )}
+
+                        {/* Botões de Ação para Adicionar Promessas */}
+                        <div className="grid grid-cols-2 gap-2 pt-1">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              if (!showAddPromise) {
+                                setNewPromiseDate(new Date().toISOString().split('T')[0]);
+                                setNewPromiseAmount(0);
+                                setShowBatchPromise(false);
+                              }
+                              setShowAddPromise(!showAddPromise);
+                            }}
+                            className="text-xs text-blue-400 border border-blue-400/30 rounded py-1.5 hover:bg-blue-400/10 cursor-pointer font-medium transition-colors text-center"
+                          >
+                            {showAddPromise ? 'Fechar Formulário' : '+ 1 Promessa'}
+                          </button>
+
+                          <button
+                            type="button"
+                            onClick={() => {
+                              if (!showBatchPromise) {
+                                setShowAddPromise(false);
+                                if (batchItems.length === 0) {
+                                  handleGenerateBatchItems();
+                                }
+                              }
+                              setShowBatchPromise(!showBatchPromise);
+                            }}
+                            className="text-xs text-indigo-400 border border-indigo-400/30 bg-indigo-500/10 rounded py-1.5 hover:bg-indigo-500/20 cursor-pointer font-semibold transition-colors flex items-center justify-center gap-1.5 text-center shadow-xs"
+                          >
+                            <Layers className="w-3.5 h-3.5" />
+                            <span>{showBatchPromise ? 'Fechar Lote' : '⚡ Salvar Múltiplas'}</span>
+                          </button>
+                        </div>
                       </div>
                     </div>
                   </div>

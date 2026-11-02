@@ -314,7 +314,10 @@ export const RentalContractModal: React.FC<RentalContractModalProps> = ({
       startDate: startDate || currentVeh.startDate,
       endDate: endDate !== undefined ? endDate : currentVeh.endDate,
       valorSemanal: Number(rentalValue) > 0 ? Number(rentalValue) : currentVeh.valorSemanal,
-      caucaoValor: Number(caucaoValue) > 0 ? Number(caucaoValue) : currentVeh.caucaoValor,
+      caucaoValor: (() => {
+        const currentPaidPromises = (currentVeh.promisePayments || []).filter(p => p.isPaid).reduce((s, p) => s + (p.amount || 0), 0);
+        return Number(caucaoValue) > 0 ? Math.max(0, Number(caucaoValue) - currentPaidPromises) : currentVeh.caucaoValor;
+      })(),
       contractNumber: contractNumber.trim() !== '' ? contractNumber.trim() : currentVeh.contractNumber,
       rentalCompany: landlordName.trim() !== '' ? landlordName.trim() : currentVeh.rentalCompany,
       fineRate: Number(contractFineRate),
@@ -607,10 +610,13 @@ Isso é fundamental para a vinculação correta do veículo. Qualquer dúvida es
       : (Number(veh.valorRecebido) > 0 ? Number(veh.valorRecebido) : 960);
     setRentalValue(registeredWeekly);
 
-    // 3. Puxar Valor de Caução do cadastro do carro
-    const registeredCaucao = veh.caucaoValor !== undefined && Number(veh.caucaoValor) > 0
-      ? Number(veh.caucaoValor)
-      : 1920;
+    // 3. Puxar Valor de Caução do cadastro do carro (inicial + promessas pagas)
+    const paidPromises = (veh.promisePayments || [])
+      .filter(p => p.isPaid)
+      .reduce((sum, p) => sum + (p.amount || 0), 0);
+    const registeredCaucao = (veh.caucaoValor !== undefined && Number(veh.caucaoValor) > 0)
+      ? Number(veh.caucaoValor) + paidPromises
+      : (paidPromises > 0 ? paidPromises : 1920);
     setCaucaoValue(registeredCaucao);
 
     setStartDate(veh.startDate || new Date().toISOString().split('T')[0]);
@@ -714,7 +720,10 @@ Isso é fundamental para a vinculação correta do veículo. Qualquer dúvida es
         startDate: contractData.startDate || currentVehicle.startDate,
         endDate: endDate !== undefined ? endDate : currentVehicle.endDate,
         valorSemanal: contractData.rentalValue > 0 ? contractData.rentalValue : currentVehicle.valorSemanal,
-        caucaoValor: contractData.caucaoValue > 0 ? contractData.caucaoValue : currentVehicle.caucaoValor,
+        caucaoValor: (() => {
+          const currentPaidPromises = (currentVehicle.promisePayments || []).filter(p => p.isPaid).reduce((s, p) => s + (p.amount || 0), 0);
+          return contractData.caucaoValue > 0 ? Math.max(0, contractData.caucaoValue - currentPaidPromises) : currentVehicle.caucaoValor;
+        })(),
         contractNumber: contractData.contractNumber,
         rentalCompany: contractData.landlordName || currentVehicle.rentalCompany,
         fineRate: Number(contractFineRate),
@@ -1354,7 +1363,12 @@ O contrato oficial em PDF já foi gerado e está arquivado nos documentos do ve�
                             setTenantCnh(sourceV.tenantCnh || '');
                             setTenantEmail(sourceV.tenantEmail || '');
                             setTenantAddress(sourceV.tenantAddress || '');
-                            if (sourceV.caucaoValor) setCaucaoValue(sourceV.caucaoValor);
+                            const sourcePaidPromises = (sourceV.promisePayments || [])
+                              .filter(p => p.isPaid)
+                              .reduce((s, p) => s + (p.amount || 0), 0);
+                            if (sourceV.caucaoValor || sourcePaidPromises > 0) {
+                              setCaucaoValue((sourceV.caucaoValor || 0) + sourcePaidPromises);
+                            }
                             if (sourceV.valorSemanal || sourceV.valorRecebido) {
                               setRentalValue(sourceV.valorSemanal || sourceV.valorRecebido || 0);
                             }
@@ -1606,7 +1620,7 @@ O contrato oficial em PDF já foi gerado e está arquivado nos documentos do ve�
 
                   <div className="space-y-1">
                     <label className="text-[10px] text-gray-400 font-semibold uppercase tracking-wider block">
-                      Depósito Caução (R$) <span className="text-[9px] text-emerald-400/80 font-normal lowercase">(Informativo - Não somar)</span>
+                      Depósito Caução (R$) <span className="text-[9px] text-emerald-400/80 font-normal lowercase">(Garantia)</span>
                     </label>
                     <CurrencyInput
                       value={caucaoValue}
@@ -1615,7 +1629,13 @@ O contrato oficial em PDF já foi gerado e está arquivado nos documentos do ve�
                       className="w-full bg-[#111111] border border-white/10 rounded-xl px-3 py-2 text-white font-mono focus:outline-hidden focus:border-amber-500/50"
                     />
                     <span className="text-[9px] text-gray-400 block mt-0.5">
-                      Puxado do cadastro: R$ {(currentVehicle?.caucaoValor || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })} (atualize se necessário).
+                      {(() => {
+                        const paidPromises = (currentVehicle?.promisePayments || [])
+                          .filter(p => p.isPaid)
+                          .reduce((sum, p) => sum + (p.amount || 0), 0);
+                        const total = (currentVehicle?.caucaoValor || 0) + paidPromises;
+                        return `Puxado do cadastro: R$ ${total.toLocaleString('pt-BR', { minimumFractionDigits: 2 })} (Inicial + Promessas Pagas).`;
+                      })()}
                     </span>
                   </div>
 

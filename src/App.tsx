@@ -797,7 +797,7 @@ export default function App() {
             console.warn('Error syncing fleetData to cloud:', err);
           }
         }
-      }, 60000);
+      }, 1200);
     } catch (err) {
       console.warn('Error preparing saveToCloud:', err);
     }
@@ -892,19 +892,22 @@ export default function App() {
           }
 
           if (d.vehicles && Array.isArray(d.vehicles)) {
-            incomingVehicles.forEach((veh) => {
-              (veh.pendingReceipts || []).forEach((rec) => {
-                if (!knownReceiptIdsRef.current.has(rec.id)) {
-                  knownReceiptIdsRef.current.add(rec.id);
-                  sendAppNotification(`🧾 Novo Comprovante Recebido: ${veh.brand} (${veh.plate})`, {
-                    body: `O motorista ${rec.driverName || veh.driver || ''} enviou um comprovante de R$ ${(rec.amount || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })} para aprovação.`,
-                    eventKey: 'receipt_received',
-                  });
-                }
+            // Only update vehicles if no local cloud sync is currently queued for vehicles
+            if (!pendingCloudSyncRef.current['vehicles']) {
+              incomingVehicles.forEach((veh) => {
+                (veh.pendingReceipts || []).forEach((rec) => {
+                  if (!knownReceiptIdsRef.current.has(rec.id)) {
+                    knownReceiptIdsRef.current.add(rec.id);
+                    sendAppNotification(`🧾 Novo Comprovante Recebido: ${veh.brand} (${veh.plate})`, {
+                      body: `O motorista ${rec.driverName || veh.driver || ''} enviou um comprovante de R$ ${(rec.amount || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })} para aprovação.`,
+                      eventKey: 'receipt_received',
+                    });
+                  }
+                });
               });
-            });
-            lastSyncedJsonRef.current['vehicles'] = JSON.stringify(cleanVehiclesForCloud(incomingVehicles));
-            setVehicles(incomingVehicles);
+              lastSyncedJsonRef.current['vehicles'] = JSON.stringify(cleanVehiclesForCloud(incomingVehicles));
+              setVehicles(incomingVehicles);
+            }
           }
 
           if (d.contacts && Array.isArray(d.contacts)) {
@@ -1366,9 +1369,15 @@ export default function App() {
         });
       }
       // #12 Caucao Updated
-      if (vehicle.caucaoValor !== prevVehicle.caucaoValor || vehicle.caucaoObservacoes !== prevVehicle.caucaoObservacoes) {
+      // #12 Caucao Updated
+      const prevPaidPromises = (prevVehicle.promisePayments || []).filter(p => p.isPaid).reduce((s, p) => s + (p.amount || 0), 0);
+      const currPaidPromises = (vehicle.promisePayments || []).filter(p => p.isPaid).reduce((s, p) => s + (p.amount || 0), 0);
+      const prevTotalCaucao = (prevVehicle.caucaoValor || 0) + prevPaidPromises;
+      const currTotalCaucao = (vehicle.caucaoValor || 0) + currPaidPromises;
+
+      if (currTotalCaucao !== prevTotalCaucao || vehicle.caucaoObservacoes !== prevVehicle.caucaoObservacoes) {
         sendAppNotification(`🛡️ Caução Atualizada: ${vehicle.brand} (${vehicle.plate})`, {
-          body: `Valor de caução atualizado para R$ ${(vehicle.caucaoValor || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}.`,
+          body: `Valor de caução total atualizado para R$ ${currTotalCaucao.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}.`,
           eventKey: 'caucao_updated',
         });
       }
