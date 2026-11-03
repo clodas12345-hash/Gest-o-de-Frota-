@@ -2078,11 +2078,11 @@ _Enviado via sistema de gestão de frota._`;
   return (
     <div 
       id={`vehicle-card-container-${vehicle.id}`} 
-      className="bg-gray-800 rounded-2xl shadow-md hover:border-white/20 transition-all flex flex-col h-full relative"
-      style={{ 
-        border: `1px solid ${vehicle.themeColor || 'rgba(255, 255, 255, 0.1)'}`,
-        boxShadow: vehicle.themeColor ? `0 0 15px ${vehicle.themeColor}15` : undefined
-      }}
+      className={`bg-gray-800 rounded-2xl shadow-md transition-all flex flex-col h-full relative ${
+        isExpanded 
+          ? 'border-2 border-emerald-500 shadow-[0_0_20px_rgba(16,185,129,0.25)] ring-1 ring-emerald-500/40' 
+          : 'border border-white/10 hover:border-white/20'
+      }`}
     >
       {/* Header Panel - Brand, Model, Plate and Collapse Status */}
       <div 
