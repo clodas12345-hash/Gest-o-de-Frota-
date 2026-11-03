@@ -539,6 +539,7 @@ export const VehicleCard: React.FC<VehicleCardProps> = ({
     const d = new Date(pay.date);
     return d.getFullYear() === thisYear && getWeekNumber(d) === currentWeek;
   });
+  const nextPendingPromise = (vehicle.promisePayments || []).find(p => !p.isPaid);
   const [activeTab, setActiveTab] = useState<'financeiro' | 'pagamentos' | 'manutencao' | 'vistorias' | 'documentos' | 'pneus' | 'sinistros' | 'multas'>('financeiro');
   const [isCaucaoExpanded, setIsCaucaoExpanded] = useState(true);
   const [isContractExpanded, setIsContractExpanded] = useState(true);
@@ -623,7 +624,7 @@ export const VehicleCard: React.FC<VehicleCardProps> = ({
 
   // State for Batch / Multiple Promise Payments
   const [showBatchPromise, setShowBatchPromise] = useState(false);
-  const [batchCount, setBatchCount] = useState<number>(10);
+  const [batchCount, setBatchCount] = useState<number | ''>(10);
   const [batchAmount, setBatchAmount] = useState<number>(100);
   const [batchFrequency, setBatchFrequency] = useState<'semanal' | 'quinzenal' | 'mensal'>('semanal');
   const [batchStartDate, setBatchStartDate] = useState(() => new Date().toISOString().split('T')[0]);
@@ -2274,6 +2275,34 @@ _Enviado via sistema de gestão de frota._`;
                     <span>{alreadyPaid ? 'Confirmado' : `Confirmar Semanal (R$ ${(vehicle.valorSemanal || vehicle.valorRecebido || 0).toLocaleString('pt-BR')})`}</span>
                   </button>
                 )}
+
+                {/* #3 Botão Confirmar Próxima Promessa de Caução (1 Clique) */}
+                {nextPendingPromise && (
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      const nowStr = `${new Date().toLocaleDateString('pt-BR')} às ${new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}`;
+                      onUpdateVehicle({
+                        ...vehicle,
+                        promisePayments: (vehicle.promisePayments || []).map(p => p.id === nextPendingPromise.id ? { 
+                          ...p, 
+                          isPaid: true, 
+                          paidAt: nowStr 
+                        } : p)
+                      });
+                      sendAppNotification(`💰 Promessa de Caução Confirmada: ${vehicle.brand} (${vehicle.plate})`, {
+                        body: `Parcela de R$ ${(nextPendingPromise.amount || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })} da caução confirmada em 1 clique!`,
+                        eventKey: 'payment_registered'
+                      });
+                    }}
+                    className="text-[10px] text-indigo-300 hover:text-white bg-indigo-500/20 hover:bg-indigo-600 border border-indigo-500/30 px-2 py-0.5 rounded font-bold transition-all flex items-center gap-1 cursor-pointer shadow-xs shrink-0"
+                    title="Confirmar recebimento da próxima parcela da promessa de caução em 1 clique"
+                  >
+                    <Check className="w-3 h-3 text-indigo-400" />
+                    <span>Confirmar Promessa (R$ {(nextPendingPromise.amount || 0).toLocaleString('pt-BR')})</span>
+                  </button>
+                )}
               </div>
             </div>
           </div>
@@ -3501,19 +3530,24 @@ _Enviado via sistema de gestão de frota._`;
                           <p className="text-[10px] text-gray-500 italic py-1">Nenhuma promessa de pagamento registrada.</p>
                         )}
 
-                        {vehicle.promisePayments?.map((p) => {
+                        {vehicle.promisePayments?.map((p, idx) => {
                           const dateParts = (p.date || '').split('-');
                           const formattedDate = dateParts.length === 3 
                             ? `${dateParts[2]}/${dateParts[1]}/${dateParts[0]}`
                             : p.date;
 
                           return (
-                            <div key={p.id} className="flex flex-col gap-1 text-xs bg-white/[0.03] p-2.5 rounded-lg border border-white/5 hover:border-white/10 transition-colors">
-                              <div className="flex justify-between items-center">
+                            <div key={p.id || idx} className={`flex flex-col gap-1 text-xs p-2.5 rounded-lg border transition-all ${p.isPaid ? 'bg-emerald-950/20 border-emerald-500/20' : 'bg-white/[0.03] border-white/10 hover:border-white/20'}`}>
+                              <div className="flex justify-between items-center gap-2">
                                 <div className="flex flex-col min-w-0">
-                                  <span className={`font-mono text-xs ${p.isPaid ? 'line-through text-gray-500' : 'text-gray-200 font-bold'}`}>
-                                    📅 {formattedDate} — R$ {(p.amount || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                                  </span>
+                                  <div className="flex items-center gap-1.5 flex-wrap">
+                                    <span className="text-[10px] font-bold font-mono bg-white/10 px-1.5 py-0.5 rounded text-gray-300">
+                                      #{idx + 1}
+                                    </span>
+                                    <span className={`font-mono text-xs ${p.isPaid ? 'line-through text-gray-400' : 'text-white font-bold'}`}>
+                                      📅 {formattedDate} — R$ {(p.amount || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                    </span>
+                                  </div>
                                   {p.isPaid && (
                                     <span className="text-[10px] text-emerald-400 flex items-center gap-1 font-sans mt-0.5">
                                       <CheckCircle2 className="w-3 h-3 text-emerald-400 shrink-0" />
@@ -3522,6 +3556,20 @@ _Enviado via sistema de gestão de frota._`;
                                   )}
                                 </div>
                                 <div className="flex items-center gap-1.5 shrink-0">
+                                  {!p.isPaid && (
+                                    <button
+                                      type="button"
+                                      onClick={() => {
+                                        const driverPhone = vehicle.driverPhone || '';
+                                        const msg = `Olá, *${vehicle.driver || 'Locatário'}*!\n\nLembrete da promessa de pagamento de caução (Parcela #${idx + 1}) referente ao veículo *${vehicle.brand} ${vehicle.model}* (${vehicle.plate}).\n\n💵 *Valor:* R$ ${(p.amount || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}\n📅 *Vencimento:* ${formattedDate}\n\nPor favor, envie o comprovante do pagamento quando realizado. Obrigado!`;
+                                        openWhatsAppUrl(driverPhone, msg);
+                                      }}
+                                      className="p-1 text-emerald-400 hover:text-white bg-emerald-500/10 hover:bg-emerald-500/20 border border-emerald-500/20 rounded transition-colors cursor-pointer"
+                                      title="Enviar cobrança de parcela pelo WhatsApp"
+                                    >
+                                      <MessageCircle className="w-3.5 h-3.5" />
+                                    </button>
+                                  )}
                                   <button
                                     type="button"
                                     onClick={() => {
@@ -3535,14 +3583,15 @@ _Enviado via sistema de gestão de frota._`;
                                         } : prev)
                                       });
                                     }}
-                                    className={`text-[9px] px-2.5 py-1 rounded-md font-bold cursor-pointer transition-colors shadow-xs ${
+                                    className={`text-[10px] px-2.5 py-1 rounded-md font-bold cursor-pointer transition-all shadow-xs flex items-center gap-1 ${
                                       p.isPaid
                                         ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 hover:bg-emerald-500/30'
-                                        : 'bg-amber-500/20 text-amber-300 border border-amber-500/30 hover:bg-amber-500/30'
+                                        : 'bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 border border-amber-500/30'
                                     }`}
-                                    title={p.isPaid ? 'Clique para desmarcar como pago' : 'Clique para marcar como pago e salvar histórico'}
+                                    title={p.isPaid ? 'Clique para desmarcar como pago' : 'Clique para marcar como pago e somar ao caução total'}
                                   >
-                                    {p.isPaid ? '✓ Pago' : 'Pendente'}
+                                    <Check className="w-3 h-3" />
+                                    <span>{p.isPaid ? '✓ Pago' : 'Confirmar Parcela'}</span>
                                   </button>
                                   <button
                                     type="button"
@@ -3673,7 +3722,10 @@ _Enviado via sistema de gestão de frota._`;
                                   min="1"
                                   max="52"
                                   value={batchCount}
-                                  onChange={(e) => setBatchCount(Math.max(1, Number(e.target.value)))}
+                                  onChange={(e) => {
+                                    const val = e.target.value;
+                                    setBatchCount(val === '' ? '' : Math.max(1, Math.min(52, parseInt(val) || 1)));
+                                  }}
                                   className="w-full bg-black border border-white/10 rounded px-2 py-1 text-white font-mono"
                                 />
                               </div>

@@ -223,7 +223,7 @@ export function LogForms({
   const [newCaucaoPromiseDate, setNewCaucaoPromiseDate] = useState(() => getTodayStr());
   const [newCaucaoPromiseAmount, setNewCaucaoPromiseAmount] = useState<number>(0);
   const [showBatchCaucaoPromise, setShowBatchCaucaoPromise] = useState(false);
-  const [batchCaucaoCount, setBatchCaucaoCount] = useState<number>(10);
+  const [batchCaucaoCount, setBatchCaucaoCount] = useState<number | ''>(10);
   const [batchCaucaoAmount, setBatchCaucaoAmount] = useState<number>(100);
   const [batchCaucaoFrequency, setBatchCaucaoFrequency] = useState<'semanal' | 'quinzenal' | 'mensal'>('semanal');
   const [batchCaucaoStartDate, setBatchCaucaoStartDate] = useState(() => getTodayStr());
@@ -2878,7 +2878,10 @@ export function LogForms({
                             min="1"
                             max="52"
                             value={batchCaucaoCount}
-                            onChange={(e) => setBatchCaucaoCount(Math.max(1, Number(e.target.value)))}
+                            onChange={(e) => {
+                              const val = e.target.value;
+                              setBatchCaucaoCount(val === '' ? '' : Math.max(1, Math.min(52, parseInt(val) || 1)));
+                            }}
                             className="w-full bg-black border border-white/10 rounded px-2 py-1 text-white font-mono"
                           />
                         </div>
@@ -2923,7 +2926,7 @@ export function LogForms({
                             className="px-3 py-1 bg-indigo-600 hover:bg-indigo-500 text-white rounded font-bold text-xs flex items-center gap-1 cursor-pointer transition-all shadow-sm"
                           >
                             <Sparkles className="w-3.5 h-3.5" />
-                            <span>Gerar {batchCaucaoCount} Parcelas na Lista</span>
+                            <span>Gerar {batchCaucaoCount || 1} Parcelas na Lista</span>
                           </button>
                         </div>
                       </div>
