@@ -401,28 +401,6 @@ export default function App() {
       // Quarta (10h e 16h), Quinta (11h e 20h) e Sexta (10h, 13h e 17h)
       if (!disableFridayReminder) {
         scheduleVistoriaReminders();
-
-        const now = new Date();
-        const dayOfWeek = now.getDay();
-        const hour = now.getHours();
-
-        const matchingSlot = VISTORIA_REMINDER_SLOTS.find(
-          (s) => s.day === dayOfWeek && s.hour === hour
-        );
-
-        if (matchingSlot && isNotificationEventEnabled('vistoria_friday')) {
-          const slotKey = `fleet_vistoria_slot_${todayDateStr}_${matchingSlot.id}`;
-          const alreadySent = localStorage.getItem(slotKey);
-
-          if (!alreadySent) {
-            localStorage.setItem(slotKey, 'true');
-            sendAppNotification(matchingSlot.title, {
-              id: matchingSlot.id,
-              body: matchingSlot.body,
-              eventKey: 'vistoria_friday',
-            });
-          }
-        }
       }
 
       // 2. Check Daily Scheduled & Alert Conditions on Startup

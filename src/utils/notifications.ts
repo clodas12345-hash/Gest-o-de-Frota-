@@ -310,9 +310,9 @@ export async function setupNotificationChannel() {
       await LocalNotifications.createChannel({
         id: CHANNEL_ID,
         name: 'Alertas e Lembretes da Frota',
-        description: 'Notificações de revisões de manutenção, cobranças, contratos e vistorias da frota',
-        importance: 5, // High importance (heads-up notification + sound)
-        visibility: 1,
+        description: 'Notificações críticas de revisões, cobranças e vistorias',
+        importance: 5, // Importance Level 5 (Max)
+        visibility: 1, // Public (Visible on lock screen)
         sound: 'default',
         vibration: true,
         lights: true,
@@ -371,9 +371,6 @@ export async function requestNotificationPermission(): Promise<boolean> {
       const granted = status.display === 'granted';
       if (granted) {
         await requestIgnoreBatteryOptimization();
-        if (isNotificationEventEnabled('vistoria_friday')) {
-          await scheduleFridayInspectionNotification();
-        }
       }
       return granted;
     } catch (err) {
@@ -536,6 +533,15 @@ export const VISTORIA_REMINDER_SLOTS: VistoriaScheduleSlot[] = [
   },
   // Sexta-feira às 10h, 13h e 17h
   {
+    id: 888000,
+    day: 5,
+    dayName: 'Sexta-feira',
+    hour: 0,
+    minute: 30, // Just after midnight as a generic 'today is friday'
+    title: '📋 Lembrete de Vistoria Semanal',
+    body: 'Sexta-feira é dia de vistoria! Lembre-se de enviar os links de vistoria para os motoristas da frota.'
+  },
+  {
     id: 888005,
     day: 5,
     dayName: 'Sexta-feira',
@@ -571,12 +577,23 @@ export function getNextSlotDate(slot: { day: number; hour: number; minute: numbe
   const currentDay = fromDate.getDay();
   let daysUntil = (slot.day - currentDay + 7) % 7;
 
-  // Se for hoje mas o horário já passou, agenda para a próxima semana (+7 dias)
-  if (daysUntil === 0 && fromDate.getTime() >= result.getTime()) {
+  // Se o slot for hoje, mas o horário já passou (ou é nos próximos 5 minutos), 
+  // agenda para a próxima semana (+7 dias) para evitar disparos imediatos indesejados.
+  const nowTime = fromDate.getTime();
+  const slotTime = result.getTime();
+  const fiveMinutesInMs = 5 * 60 * 1000;
+
+  if (daysUntil === 0 && nowTime >= (slotTime - fiveMinutesInMs)) {
     daysUntil = 7;
   }
 
   result.setDate(fromDate.getDate() + daysUntil);
+  
+  // Garantia absoluta de que a data final é no futuro
+  if (result.getTime() <= nowTime) {
+    result.setDate(result.getDate() + 7);
+  }
+
   return result;
 }
 
