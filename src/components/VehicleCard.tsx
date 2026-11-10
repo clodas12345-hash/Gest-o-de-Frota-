@@ -493,11 +493,13 @@ interface VehicleCardProps {
 
 
 // Function to get ISO week number (1-53)
+// Function to get ISO week number (1-53) - Using UTC to avoid timezone shifts
 const getWeekNumber = (date: Date) => {
-  const d = new Date(Date.UTC(date.getFullYear(), date.getMonth(), date.getDate()));
-  const dayNum = d.getUTCDay() || 7;
-  d.setUTCDate(d.getUTCDate() + 4 - dayNum);
-  const yearStart = new Date(Date.UTC(d.getUTCFullYear(), 0, 1));
+  // Create a copy and normalize to midday to avoid DST/timezone issues
+  const d = new Date(date.getFullYear(), date.getMonth(), date.getDate(), 12, 0, 0);
+  const dayNum = d.getDay() || 7;
+  d.setDate(d.getDate() + 4 - dayNum);
+  const yearStart = new Date(d.getFullYear(), 0, 1, 12, 0, 0);
   return Math.ceil((((d.getTime() - yearStart.getTime()) / 86400000) + 1) / 7);
 };
 
@@ -536,8 +538,16 @@ export const VehicleCard: React.FC<VehicleCardProps> = ({
   const currentWeek = getWeekNumber(today);
   const thisYear = today.getFullYear();
   const alreadyPaid = (vehicle.weeklyPayments || []).some(pay => {
-    const d = new Date(pay.date);
+    // Force parsing as local date at midday to avoid UTC shifting to previous day
+    const d = new Date(pay.date + 'T12:00:00');
     return d.getFullYear() === thisYear && getWeekNumber(d) === currentWeek;
+  });
+  const alreadyPaidPromiseThisWeek = (vehicle.promisePayments || []).some(p => {
+    if (!p.isPaid) return false;
+    const checkDateStr = p.paidDate || p.date;
+    if (!checkDateStr) return false;
+    const d = new Date(checkDateStr + 'T12:00:00');
+    return !isNaN(d.getTime()) && d.getFullYear() === thisYear && getWeekNumber(d) === currentWeek;
   });
   const nextPendingPromise = (vehicle.promisePayments || []).find(p => !p.isPaid);
   const [activeTab, setActiveTab] = useState<'financeiro' | 'pagamentos' | 'manutencao' | 'vistorias' | 'documentos' | 'pneus' | 'sinistros' | 'multas'>('financeiro');
@@ -1322,7 +1332,7 @@ export const VehicleCard: React.FC<VehicleCardProps> = ({
   const handleAddPayment = () => {
     if (!newPaymentDate || newPaymentAmount <= 0) return;
     const newPayment: WeeklyPayment = {
-      id: `wp-${Date.now()}`,
+      id: `wp-${Date.now()}-${Math.random().toString(36).substr(2, 5)}`,
       date: newPaymentDate,
       amount: newPaymentAmount,
     };
@@ -1344,7 +1354,7 @@ export const VehicleCard: React.FC<VehicleCardProps> = ({
   const handleApproveReceipt = (receipt: { id: string; date: string; amount?: number; photoUrl: string; notes?: string; driverName?: string }) => {
     const amountToUse = receipt.amount || vehicle.valorSemanal || 0;
     const newPayment = {
-      id: `pay-${Date.now()}`,
+      id: `pay-${Date.now()}-${Math.random().toString(36).substr(2, 5)}`,
       date: receipt.date || new Date().toISOString().split('T')[0],
       amount: amountToUse
     };
@@ -2075,12 +2085,69 @@ _Enviado via sistema de gestão de frota._`;
     setIsVistoriaExpanded(true);
   };
 
+  const getTireAlertState = () => {
+    if (!vehicle.tires || vehicle.tires.length === 0) return null;
+    const currentKm = vehicle.currentKm || 0;
+
+    let hasReplace = false;
+    let hasWarning = false;
+    let countReplace = 0;
+    let countWarning = 0;
+
+    for (const tire of vehicle.tires) {
+      const drivenKm = Math.max(0, currentKm - (tire.installedKm || 0));
+      const expected = tire.expectedLifeKm || 40000;
+      const lifeRemainingPct = Math.max(0, Math.min(100, Math.round(((expected - drivenKm) / expected) * 100)));
+
+      const isReplace = tire.status === 'Replace' || lifeRemainingPct < 25 || (tire.twiMm !== undefined && tire.twiMm <= 2.0) || drivenKm >= 40000;
+      const isWarning = tire.status === 'Warning' || (!isReplace && (lifeRemainingPct < 50 || (tire.twiMm !== undefined && tire.twiMm <= 3.5) || drivenKm >= 35000));
+
+      if (isReplace) {
+        hasReplace = true;
+        countReplace++;
+      } else if (isWarning) {
+        hasWarning = true;
+        countWarning++;
+      }
+    }
+
+    if (hasReplace) {
+      return {
+        level: 'Replace' as const,
+        count: countReplace,
+        badgeText: countReplace > 1 ? `PNEUS: ${countReplace} TROCAS` : 'PNEUS: TROCAR',
+        badgeClass: 'bg-rose-500/20 text-rose-300 border-rose-500/40 shadow-xs shadow-rose-500/10',
+        dotColor: 'bg-rose-500 animate-ping',
+        borderClass: 'border-rose-500/80 shadow-[0_0_15px_rgba(244,63,94,0.3)] ring-1 ring-rose-500/40',
+        title: `${countReplace} pneu(s) com desgaste crítico ou status de troca necessária!`
+      };
+    }
+
+    if (hasWarning) {
+      return {
+        level: 'Warning' as const,
+        count: countWarning,
+        badgeText: countWarning > 1 ? `PNEUS: ${countWarning} ATENÇÃO` : 'PNEUS: ATENÇÃO',
+        badgeClass: 'bg-amber-500/20 text-amber-300 border-amber-500/40 shadow-xs shadow-amber-500/10',
+        dotColor: 'bg-amber-500 animate-pulse',
+        borderClass: 'border-amber-500/80 shadow-[0_0_15px_rgba(245,158,11,0.25)] ring-1 ring-amber-500/30',
+        title: `${countWarning} pneu(s) com desgaste ou status de atenção!`
+      };
+    }
+
+    return null;
+  };
+
+  const vehicleTireAlert = getTireAlertState();
+
   return (
     <div 
       id={`vehicle-card-container-${vehicle.id}`} 
       className={`bg-gray-800 rounded-2xl shadow-md transition-all flex flex-col h-full relative ${
         isExpanded 
           ? 'border-2 border-emerald-500 shadow-[0_0_20px_rgba(16,185,129,0.25)] ring-1 ring-emerald-500/40' 
+          : vehicleTireAlert
+          ? `border-2 ${vehicleTireAlert.borderClass}`
           : 'border border-white/10 hover:border-white/20'
       }`}
     >
@@ -2164,11 +2231,28 @@ _Enviado via sistema de gestão de frota._`;
                   <span>CNH {cnhStatus.isExpired ? 'VENCIDA' : 'EXPIRANDO'}</span>
                 </div>
               )}
-              {(() => {
+              {vehicleTireAlert ? (
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setIsExpanded(true);
+                    setActiveTab('pneus');
+                  }}
+                  className={`flex items-center gap-1.5 text-[10px] font-bold px-2 py-0.5 rounded-md border transition-all cursor-pointer animate-pulse ${vehicleTireAlert.badgeClass}`}
+                  title={`${vehicleTireAlert.title} (Toque para ver a gestão de pneus)`}
+                >
+                  <span className="relative flex h-2 w-2 shrink-0 items-center justify-center">
+                    <span className={`absolute inline-flex h-full w-full rounded-full opacity-75 ${vehicleTireAlert.dotColor}`}></span>
+                    <span className={`relative inline-flex rounded-full h-1.5 w-1.5 ${vehicleTireAlert.level === 'Replace' ? 'bg-rose-400' : 'bg-amber-400'}`}></span>
+                  </span>
+                  <Gauge className="w-3 h-3 shrink-0" />
+                  <span>{vehicleTireAlert.badgeText}</span>
+                </button>
+              ) : (() => {
                 const tireIssues = (vehicle.tires || []).map(t => getTireStatus(t.installedKm));
-                const needsReplacement = tireIssues.some(s => s.needsReplacement);
                 const needsRotation = tireIssues.some(s => s.needsRotation);
-                if (!needsReplacement && !needsRotation) return null;
+                if (!needsRotation) return null;
                 
                 return (
                   <button
@@ -2178,11 +2262,11 @@ _Enviado via sistema de gestão de frota._`;
                       setIsExpanded(true);
                       setActiveTab('pneus');
                     }}
-                    className={`flex items-center gap-1 text-[10px] font-semibold ${needsReplacement ? 'bg-rose-500/15 text-rose-400 border-rose-500/30' : 'bg-amber-500/10 text-amber-300 border-amber-500/25'} px-2 py-0.5 rounded-md border transition-all cursor-pointer`}
-                    title={needsReplacement ? 'Pneus precisam de TROCA!' : 'Pneus precisam de RODÍZIO!'}
+                    className="flex items-center gap-1 text-[10px] font-semibold bg-amber-500/10 text-amber-300 border border-amber-500/25 px-2 py-0.5 rounded-md border transition-all cursor-pointer"
+                    title="Pneus precisam de RODÍZIO!"
                   >
-                    <Gauge className="w-3 h-3 shrink-0" />
-                    <span>PNEUS: {needsReplacement ? 'TROCAR' : 'RODÍZIO'}</span>
+                    <Gauge className="w-3 h-3 shrink-0 text-amber-400" />
+                    <span>PNEUS: RODÍZIO</span>
                   </button>
                 );
               })()}
@@ -2251,18 +2335,25 @@ _Enviado via sistema de gestão de frota._`;
                     onClick={(e) => {
                       e.stopPropagation();
                       if (alreadyPaid) return;
+                      // Use the fixed weekly value if available, otherwise fallback to the generic received value
                       const quickAmt = vehicle.valorSemanal || vehicle.valorRecebido || 0;
                       if (quickAmt <= 0) return;
+                      
                       const todayIso = new Date().toISOString().split('T')[0];
                       const newPay = {
-                        id: `wp-${Date.now()}`,
+                        id: `wp-${Date.now()}-${Math.random().toString(36).substr(2, 5)}`,
                         date: todayIso,
                         amount: quickAmt
                       };
+                      
+                      // Explicitly clone and update to ensure state propagation
+                      const updatedWeeklyPayments = [...(vehicle.weeklyPayments || []), newPay];
+                      
                       onUpdateVehicle({
                         ...vehicle,
-                        weeklyPayments: [...(vehicle.weeklyPayments || []), newPay]
+                        weeklyPayments: updatedWeeklyPayments
                       });
+                      
                       sendAppNotification(`💰 Pagamento Semanal Confirmado: ${vehicle.brand} (${vehicle.plate})`, {
                         body: `Pagamento rápido de R$ ${quickAmt.toLocaleString('pt-BR', { minimumFractionDigits: 2 })} lançado em 1 clique!`,
                         eventKey: 'payment_registered'
@@ -2280,27 +2371,52 @@ _Enviado via sistema de gestão de frota._`;
                 {nextPendingPromise && (
                   <button
                     type="button"
+                    id={`btn-confirm-promise-header-${vehicle.id}`}
+                    disabled={alreadyPaidPromiseThisWeek}
                     onClick={(e) => {
                       e.stopPropagation();
+                      if (alreadyPaidPromiseThisWeek) return;
                       const nowStr = `${new Date().toLocaleDateString('pt-BR')} às ${new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}`;
+                      const todayIso = new Date().toISOString().split('T')[0];
+                      
+                      let found = false;
+                      const updatedPromises = (vehicle.promisePayments || []).map((p, idx) => {
+                        const isMatch = nextPendingPromise.id ? (p.id === nextPendingPromise.id) : (!p.isPaid && !found);
+                        if (isMatch) {
+                          found = true;
+                          return { 
+                            ...p, 
+                            id: p.id || `prom-${idx}-${Date.now()}`,
+                            isPaid: true, 
+                            paidAt: nowStr,
+                            paidDate: todayIso
+                          };
+                        }
+                        return {
+                          ...p,
+                          id: p.id || `prom-${idx}-${Date.now()}`
+                        };
+                      });
+                      
                       onUpdateVehicle({
                         ...vehicle,
-                        promisePayments: (vehicle.promisePayments || []).map(p => p.id === nextPendingPromise.id ? { 
-                          ...p, 
-                          isPaid: true, 
-                          paidAt: nowStr 
-                        } : p)
+                        promisePayments: updatedPromises
                       });
+                      
                       sendAppNotification(`💰 Promessa de Caução Confirmada: ${vehicle.brand} (${vehicle.plate})`, {
                         body: `Parcela de R$ ${(nextPendingPromise.amount || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })} da caução confirmada em 1 clique!`,
                         eventKey: 'payment_registered'
                       });
                     }}
-                    className="text-[10px] text-indigo-300 hover:text-white bg-indigo-500/20 hover:bg-indigo-600 border border-indigo-500/30 px-2 py-0.5 rounded font-bold transition-all flex items-center gap-1 cursor-pointer shadow-xs shrink-0"
-                    title="Confirmar recebimento da próxima parcela da promessa de caução em 1 clique"
+                    className={`text-[10px] font-bold transition-all flex items-center gap-1 shadow-xs shrink-0 ${
+                      alreadyPaidPromiseThisWeek
+                        ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 opacity-60 cursor-not-allowed'
+                        : 'text-indigo-300 hover:text-white bg-indigo-500/20 hover:bg-indigo-600 border border-indigo-500/30 cursor-pointer'
+                    }`}
+                    title={alreadyPaidPromiseThisWeek ? "Parcela da promessa já confirmada nesta semana. Para alterar, acesse o cadastro do carro." : "Confirmar recebimento da próxima parcela da promessa de caução em 1 clique"}
                   >
-                    <Check className="w-3 h-3 text-indigo-400" />
-                    <span>Confirmar Promessa (R$ {(nextPendingPromise.amount || 0).toLocaleString('pt-BR')})</span>
+                    <Check className="w-3 h-3 text-emerald-400" />
+                    <span>{alreadyPaidPromiseThisWeek ? 'Confirmado' : `Confirmar Promessa (R$ ${(nextPendingPromise.amount || 0).toLocaleString('pt-BR')})`}</span>
                   </button>
                 )}
               </div>
@@ -4230,17 +4346,23 @@ _Enviado via sistema de gestão de frota._`;
                         onClick={() => {
                           setPaymentWhatsAppType('atrasado_com_juros');
                           const rawTpl = localStorage.getItem('fleet_payment_msg_atrasado_com_juros') || DEFAULT_PAYMENT_TEMPLATES.atrasado_com_juros;
+                          const targetDateForMonth = paymentWhatsAppDueDate ? new Date(paymentWhatsAppDueDate + 'T12:00:00') : new Date();
+                          const daysInMonth = new Date(targetDateForMonth.getFullYear(), targetDateForMonth.getMonth() + 1, 0).getDate();
+                          const amt = paymentWhatsAppAmount || vehicle.valorRecebido || 0;
+                          const jurosMora = amt * (jurosMoraPercentage / 100);
+                          const jurosMoratorios = amt * (jurosMoratoriosPercentage / 100 / daysInMonth) * diasAtraso;
+                          const calculatedJuros = jurosMora + jurosMoratorios;
                           const text = formatPaymentTemplateText(
                             rawTpl,
                             vehicle.driver || '',
                             vehicle.brand || '',
                             vehicle.model || '',
                             vehicle.plate || '',
-                            paymentWhatsAppAmount || vehicle.valorRecebido || 0,
+                            amt,
                             paymentWhatsAppDueDate,
                             undefined,
                             vehicle.id,
-                            (paymentWhatsAppAmount || vehicle.valorRecebido || 0) * 0.11 // 11% (10% mora + 1% juros)
+                            calculatedJuros
                           );
                           setCustomPaymentMsgText(text);
                         }}
@@ -4292,7 +4414,11 @@ _Enviado via sistema de gestão de frota._`;
                           onChange={(newAmt) => {
                             setPaymentWhatsAppAmount(newAmt);
                             const rawTpl = localStorage.getItem(`fleet_payment_msg_${paymentWhatsAppType}`) || DEFAULT_PAYMENT_TEMPLATES[paymentWhatsAppType];
-                            const calculatedJuros = (paymentWhatsAppType === 'atrasado_com_juros') ? (newAmt * (jurosMoraPercentage / 100)) : 0;
+                            const targetDateForMonth = paymentWhatsAppDueDate ? new Date(paymentWhatsAppDueDate + 'T12:00:00') : new Date();
+                            const daysInMonth = new Date(targetDateForMonth.getFullYear(), targetDateForMonth.getMonth() + 1, 0).getDate();
+                            const jurosMora = newAmt * (jurosMoraPercentage / 100);
+                            const jurosMoratorios = newAmt * (jurosMoratoriosPercentage / 100 / daysInMonth) * diasAtraso;
+                            const calculatedJuros = (paymentWhatsAppType === 'atrasado_com_juros') ? (jurosMora + jurosMoratorios) : 0;
                             const text = formatPaymentTemplateText(
                               rawTpl,
                               vehicle.driver || '',
@@ -4324,8 +4450,10 @@ _Enviado via sistema de gestão de frota._`;
                                 const newPct = Number(e.target.value);
                                 setJurosMoraPercentage(newPct);
                                 const rawTpl = localStorage.getItem(`fleet_payment_msg_${paymentWhatsAppType}`) || DEFAULT_PAYMENT_TEMPLATES[paymentWhatsAppType];
+                                const targetDateForMonth = paymentWhatsAppDueDate ? new Date(paymentWhatsAppDueDate + 'T12:00:00') : new Date();
+                                const daysInMonth = new Date(targetDateForMonth.getFullYear(), targetDateForMonth.getMonth() + 1, 0).getDate();
                                 const jurosMora = (paymentWhatsAppAmount * (newPct / 100));
-                                const jurosMoratorios = (paymentWhatsAppAmount * (jurosMoratoriosPercentage / 100 / 30) * diasAtraso);
+                                const jurosMoratorios = (paymentWhatsAppAmount * (jurosMoratoriosPercentage / 100 / daysInMonth) * diasAtraso);
                                 const calculatedJuros = jurosMora + jurosMoratorios;
                                 const text = formatPaymentTemplateText(
                                   rawTpl,
@@ -4355,8 +4483,10 @@ _Enviado via sistema de gestão de frota._`;
                                 const newPct = Number(e.target.value);
                                 setJurosMoratoriosPercentage(newPct);
                                 const rawTpl = localStorage.getItem(`fleet_payment_msg_${paymentWhatsAppType}`) || DEFAULT_PAYMENT_TEMPLATES[paymentWhatsAppType];
+                                const targetDateForMonth = paymentWhatsAppDueDate ? new Date(paymentWhatsAppDueDate + 'T12:00:00') : new Date();
+                                const daysInMonth = new Date(targetDateForMonth.getFullYear(), targetDateForMonth.getMonth() + 1, 0).getDate();
                                 const jurosMora = (paymentWhatsAppAmount * (jurosMoraPercentage / 100));
-                                const jurosMoratorios = (paymentWhatsAppAmount * (newPct / 100 / 30) * diasAtraso);
+                                const jurosMoratorios = (paymentWhatsAppAmount * (newPct / 100 / daysInMonth) * diasAtraso);
                                 const calculatedJuros = jurosMora + jurosMoratorios;
                                 const text = formatPaymentTemplateText(
                                   rawTpl,
@@ -4386,8 +4516,10 @@ _Enviado via sistema de gestão de frota._`;
                                 const newDias = Number(e.target.value);
                                 setDiasAtraso(newDias);
                                 const rawTpl = localStorage.getItem(`fleet_payment_msg_${paymentWhatsAppType}`) || DEFAULT_PAYMENT_TEMPLATES[paymentWhatsAppType];
+                                const targetDateForMonth = paymentWhatsAppDueDate ? new Date(paymentWhatsAppDueDate + 'T12:00:00') : new Date();
+                                const daysInMonth = new Date(targetDateForMonth.getFullYear(), targetDateForMonth.getMonth() + 1, 0).getDate();
                                 const jurosMora = (paymentWhatsAppAmount * (jurosMoraPercentage / 100));
-                                const jurosMoratorios = (paymentWhatsAppAmount * (jurosMoratoriosPercentage / 100 / 30) * newDias);
+                                const jurosMoratorios = (paymentWhatsAppAmount * (jurosMoratoriosPercentage / 100 / daysInMonth) * newDias);
                                 const calculatedJuros = jurosMora + jurosMoratorios;
                                 const text = formatPaymentTemplateText(
                                   rawTpl,
@@ -4421,7 +4553,11 @@ _Enviado via sistema de gestão de frota._`;
                           const newDate = e.target.value;
                           setPaymentWhatsAppDueDate(newDate);
                           const rawTpl = localStorage.getItem(`fleet_payment_msg_${paymentWhatsAppType}`) || DEFAULT_PAYMENT_TEMPLATES[paymentWhatsAppType];
-                          const calculatedJuros = (paymentWhatsAppType === 'atrasado_com_juros') ? (paymentWhatsAppAmount * (jurosMoraPercentage / 100)) : 0;
+                          const targetDateForMonth = newDate ? new Date(newDate + 'T12:00:00') : new Date();
+                          const daysInMonth = new Date(targetDateForMonth.getFullYear(), targetDateForMonth.getMonth() + 1, 0).getDate();
+                          const jurosMora = paymentWhatsAppAmount * (jurosMoraPercentage / 100);
+                          const jurosMoratorios = paymentWhatsAppAmount * (jurosMoratoriosPercentage / 100 / daysInMonth) * diasAtraso;
+                          const calculatedJuros = (paymentWhatsAppType === 'atrasado_com_juros') ? (jurosMora + jurosMoratorios) : 0;
                           const text = formatPaymentTemplateText(
                             rawTpl,
                             vehicle.driver || '',

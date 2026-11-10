@@ -355,6 +355,7 @@ export interface PromisePayment {
   amount: number;
   isPaid: boolean;
   paidAt?: string;
+  paidDate?: string;
   paymentMethod?: string;
   notes?: string;
 }

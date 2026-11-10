@@ -114,9 +114,11 @@ export const InterestCalculatorModal: React.FC<InterestCalculatorModalProps> = (
   // Calculations for Overdue Mode
   // Multa Fixa (10%)
   const fineAmount = (originalAmount * fineRate) / 100;
-  // Juros Moratórios (1% ao mês -> 1% / 30 dias ao dia)
+  // Juros Moratórios (1% ao mês dividido pelos dias do mês vigente)
+  const targetDateForDays = paymentDate ? new Date(paymentDate + 'T12:00:00') : new Date();
+  const daysInMonth = new Date(targetDateForDays.getFullYear(), targetDateForDays.getMonth() + 1, 0).getDate();
   const monthlyInterestRate = 1.0;
-  const dailyInterestRate = (monthlyInterestRate / 30) / 100;
+  const dailyInterestRate = (monthlyInterestRate / daysInMonth) / 100;
   const interestAmount = originalAmount * dailyInterestRate * daysOverdue;
   const totalAmount = originalAmount + fineAmount + interestAmount;
 

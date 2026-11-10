@@ -140,9 +140,15 @@ function ensureFuturePaymentsForVehicles(vehicles: Vehicle[]): Vehicle[] {
       payments = [...payments, ...clonedSeptember];
     }
     
+    const normalizedPromises = (vehicle.promisePayments || []).map((p, idx) => ({
+      ...p,
+      id: p.id || `prom-${idx}-${Date.now()}`
+    }));
+    
     return {
       ...vehicle,
-      weeklyPayments: payments
+      weeklyPayments: payments,
+      promisePayments: normalizedPromises
     };
   });
 }
@@ -730,6 +736,8 @@ export default function App() {
 
   const isCloudLoadedRef = useRef(false);
   const [isQuotaExhausted, setIsQuotaExhausted] = useState(false);
+  const lastUpdateTimestampRef = useRef<Record<string, number>>({});
+  const vehiclesRef = useRef<Vehicle[]>([]);
   const lastSyncedJsonRef = useRef<Record<string, string>>({});
   const pendingCloudSyncRef = useRef<Record<string, any>>({});
   const cloudSyncTimerRef = useRef<NodeJS.Timeout | null>(null);
@@ -873,8 +881,19 @@ export default function App() {
 
           if (d.vehicles && Array.isArray(d.vehicles)) {
             // Only update vehicles if no local cloud sync is currently queued for vehicles
+            // AND we haven't updated this specific vehicle locally in the last 4 seconds (to prevent race conditions)
             if (!pendingCloudSyncRef.current['vehicles']) {
-              incomingVehicles.forEach((veh) => {
+              const now = Date.now();
+              const filteredIncoming = incomingVehicles.map(incomingV => {
+                const lastLocalUpdate = lastUpdateTimestampRef.current[incomingV.id] || 0;
+                if (now - lastLocalUpdate < 4000) {
+                  // Keep local version for this specific vehicle for a few seconds
+                  return vehiclesRef.current.find(v => v.id === incomingV.id) || incomingV;
+                }
+                return incomingV;
+              });
+
+              filteredIncoming.forEach((veh) => {
                 (veh.pendingReceipts || []).forEach((rec) => {
                   if (!knownReceiptIdsRef.current.has(rec.id)) {
                     knownReceiptIdsRef.current.add(rec.id);
@@ -1039,6 +1058,7 @@ export default function App() {
 
   // Save states to localStorage and Cloud (Firestore) with debounce for zero lag
   useEffect(() => {
+    vehiclesRef.current = vehicles;
     try {
       localStorage.setItem('fleet_vehicles', JSON.stringify(vehicles));
       if (vehicles.length > 0) {
@@ -1339,6 +1359,9 @@ export default function App() {
   };
 
   const handleUpdateVehicle = (vehicle: Vehicle) => {
+    // Block onSnapshot overwrites for this vehicle for the next 4 seconds
+    lastUpdateTimestampRef.current[vehicle.id] = Date.now();
+
     const prevVehicle = vehicles.find((v) => v.id === vehicle.id);
     if (prevVehicle) {
       // #10 Receipt Received
@@ -1379,6 +1402,10 @@ export default function App() {
       }
     }
     setVehicles((prev) => prev.map((v) => (v.id === vehicle.id ? vehicle : v)));
+    
+    // Explicitly trigger a cloud sync check without waiting for the next effect cycle
+    // (Though useEffect will catch it, this ensures we don't lose the update if the user closes the app immediately)
+    // Actually the useEffect is fine, but we need to make sure pendingCloudSyncRef is updated.
   };
 
   const handleUploadDocument = (
