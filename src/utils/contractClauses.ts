@@ -40,15 +40,22 @@ export const DEFAULT_CONTRACT_CLAUSES: ContractClause[] = [
     id: 'clausula_4_rescisao',
     section: '4. DO PRAZO E RENOVAÇÃO',
     clauseLabel: 'Cláusula 4ª',
-    title: 'Aviso Prévio',
+    title: 'Aviso Prévio e Rescisão Antecipada',
     text: 'A rescisão por qualquer das partes exige aviso prévio por escrito com antecedência mínima de 48 (quarenta e oito) horas, ressalvadas as hipóteses de retomada imediata previstas neste instrumento.'
+  },
+  {
+    id: 'clausula_4_paragrafo',
+    section: '4. DO PRAZO E RENOVAÇÃO',
+    clauseLabel: '• Parágrafo Único',
+    title: 'Multa por Quebra Antecipada',
+    text: 'Caso o LOCATÁRIO solicite a rescisão antes de completado o período mínimo inicial de 30 (trinta) dias, incidirá multa compensatória de 20% (vinte por cento) calculada proporcionalmente sobre o saldo dos dias restantes para o término do referido prazo mínimo, sem prejuízo do cumprimento do aviso prévio de 48 horas e das demais obrigações financeiras pendentes.'
   },
   {
     id: 'clausula_5_valores',
     section: '5. DOS VALORES, PAGAMENTO E CAUÇÃO',
     clauseLabel: 'Cláusula 5ª',
     title: 'Aluguel Semanal e Pagamento',
-    text: 'O aluguel semanal é de R$ {VALOR_SEMANAL} ({VALOR_SEMANAL_EXTENSO}). A primeira semana é paga no prazo de 7 (sete) dias corridos a contar da retirada do veículo, e os pagamentos subsequentes ocorrem {DIA_VENCIMENTO}, via PIX para a chave (telefone) {CHAVE_PIX}.'
+    text: 'O aluguel semanal é de R$ {VALOR_SEMANAL} ({VALOR_SEMANAL_EXTENSO}). A primeira semana é paga no prazo de 7 (sete) dias corridos a contar da retirada do veículo, e os pagamentos subsequentes ocorrem {DIA_VENCIMENTO}, via PIX para a chave {CHAVE_PIX}.'
   },
   {
     id: 'clausula_6_mora',
@@ -93,11 +100,18 @@ export const DEFAULT_CONTRACT_CLAUSES: ContractClause[] = [
     text: 'Multas de infrações cometidas durante a vigência do contrato, mas notificadas após a devolução do veículo, deverão ser pagas em até 15 (quinze) dias corridos a contar da notificação, sob pena de execução e cobrança judicial. A data e o horário da infração registrados no órgão competente definem a responsabilidade temporal.'
   },
   {
+    id: 'clausula_9_paragrafo_3',
+    section: '6. DAS MULTAS DE TRÂNSITO',
+    clauseLabel: '• Parágrafo Terceiro (Taxa Administrativa por Pagamento Direto)',
+    title: 'Taxa Administrativa de Gestão',
+    text: 'Caso o LOCATÁRIO não efetue o pagamento da multa de trânsito no prazo estabelecido, exigindo que o LOCADOR realize o pagamento e a gestão administrativa da infração, incidirá taxa administrativa de 20% (vinte por cento) sobre o valor nominal da multa, a ser reembolsada pelo LOCATÁRIO no próximo vencimento semanal.'
+  },
+  {
     id: 'clausula_10_manutencao',
     section: '7. DA MANUTENÇÃO, USO E SEGURANÇA',
     clauseLabel: 'Cláusula 10ª',
     title: 'Quilometragem e Manutenção Preventiva',
-    text: 'O veículo possui limite de quilometragem de {LIMITE_KM} rodados por mês. Caso este limite seja ultrapassado e torne-se necessário antecipar a revisão, os custos da manutenção preventiva antecipada serão rateados em 50/50 entre LOCADOR e LOCATÁRIO. A manutenção preventiva regular ocorre a cada 7.000 km rodados{OFICINA_NOME}.'
+    text: 'O veículo possui limite de quilometragem de {LIMITE_KM} rodados por mês. Caso este limite seja ultrapassado e torne-se necessário antecipar a revisão, os custos da manutenção preventiva antecipada serão rateados em 50/50 entre LOCADOR e LOCATÁRIO. A manutenção preventiva regular ocorre a cada 7.000 km rodados {OFICINA_NOME}.'
   },
   {
     id: 'clausula_10_paragrafo',
@@ -216,7 +230,7 @@ export const DEFAULT_CONTRACT_CLAUSES: ContractClause[] = [
     section: '11. DO SEGURO',
     clauseLabel: 'Cláusula 20ª',
     title: 'Cobertura Securitária',
-    text: 'O veículo possui apólice de seguro contratada junto à Loovi Seguros ({SEGURADORA_NOME}), contemplando assistência 24 horas, cobertura para furto/roubo, colisão completa (danos próprios e a terceiros), carro reserva e proteção de vidros.'
+    text: 'O veículo possui apólice de seguro contratada junto à {SEGURADORA_NOME}, contemplando assistência 24 horas, cobertura para furto/roubo, colisão completa (danos próprios e a terceiros), carro reserva e proteção de vidros.'
   },
   {
     id: 'clausula_20_paragrafo_1',
@@ -238,6 +252,20 @@ export const DEFAULT_CONTRACT_CLAUSES: ContractClause[] = [
     clauseLabel: '• Parágrafo Terceiro',
     title: 'Telefones de Emergência',
     text: 'Contatos de emergência do seguro: {SEGURADORA_FONES}.'
+  },
+  {
+    id: 'clausula_21_observacoes',
+    section: '12. OBSERVAÇÕES E CONDIÇÕES ESPECÍFICAS',
+    clauseLabel: 'Cláusula 21ª',
+    title: 'Condições Específicas do Ajuste',
+    text: 'Caução de R$ 1.000,00 no ato, sendo R$ 920,00 divididos em 8x de R$ 100,00 + 1x de R$ 120,00 pagos semanalmente junto com a semanal do carro. Contrato de 3 meses, com desconto de R$ 25,00 semanal por 12 semanas. Caso ocorra a quebra de contrato antes das 12 semanas, o valor de desconto acumulado será descontado da caução. Da 13ª semana em diante, o valor retorna ao padrão integral ou mediante aditivo contratual.'
+  },
+  {
+    id: 'clausula_22_foro',
+    section: '13. DO FORO E DISPOSIÇÕES FINAIS',
+    clauseLabel: 'Cláusula 22ª',
+    title: 'Eleição de Foro',
+    text: 'Para dirimir quaisquer controvérsias ou litígios oriundos do presente contrato, as partes elegem expressamente o Foro da Comarca de São Paulo/SP, renunciando a qualquer outro, por mais privilegiado que seja.'
   }
 ];
 
@@ -298,21 +326,21 @@ export const CONTRACT_VARIABLES: ContractVariableMeta[] = [
   { key: 'PLACA', label: 'Placa do Veículo', example: 'TDD-5I76' },
   { key: 'COR', label: 'Cor do Veículo', example: 'Branco' },
   { key: 'KM_INICIAL', label: 'Quilometragem Inicial', example: '18.601' },
-  { key: 'VALOR_SEMANAL', label: 'Valor do Aluguel Semanal', example: '650,00' },
-  { key: 'VALOR_SEMANAL_EXTENSO', label: 'Aluguel Semanal por Extenso', example: 'seiscentos e cinquenta reais' },
-  { key: 'VALOR_CAUCAO', label: 'Valor da Caução', example: '1.200,00' },
-  { key: 'VALOR_CAUCAO_EXTENSO', label: 'Caução por Extenso', example: 'mil e duzentos reais' },
+  { key: 'VALOR_SEMANAL', label: 'Valor do Aluguel Semanal', example: '960,00' },
+  { key: 'VALOR_SEMANAL_EXTENSO', label: 'Aluguel Semanal por Extenso', example: 'novecentos e sessenta reais' },
+  { key: 'VALOR_CAUCAO', label: 'Valor da Caução', example: '1.000,00' },
+  { key: 'VALOR_CAUCAO_EXTENSO', label: 'Caução por Extenso', example: 'mil reais' },
   { key: 'DATA_INICIO', label: 'Data de Início da Locação', example: '01/11/2026' },
   { key: 'DIA_VENCIMENTO', label: 'Dia do Vencimento Semanal', example: 'toda segunda-feira até às 23h59' },
   { key: 'CHAVE_PIX', label: 'Chave Pix para Pagamento', example: '11953292570' },
   { key: 'TAXA_MULTA', label: 'Percentual de Multa por Atraso', example: '10' },
   { key: 'TAXA_MULTA_EXTENSO', label: 'Multa por Extenso', example: 'dez por cento' },
   { key: 'TAXA_JUROS', label: 'Taxa de Juros Moratórios ao Mês', example: '1' },
-  { key: 'LIMITE_KM', label: 'Limite Mensal de KM', example: '6.000 km' },
+  { key: 'LIMITE_KM', label: 'Limite Mensal de KM', example: '5.000 km' },
   { key: 'OFICINA_NOME', label: 'Oficina Credenciada', example: 'Oficina Central GKD' },
   { key: 'SEGURADORA_NOME', label: 'Nome da Seguradora', example: 'Loovi Seguros' },
   { key: 'SEGURADORA_FONES', label: 'Telefones da Seguradora', example: '0800 591 0422 / WhatsApp 0800 000 0000' },
-  { key: 'DATA_ATUAL', label: 'Data Atual Formatada', example: '31 de outubro de 2026' }
+  { key: 'DATA_ATUAL', label: 'Data Atual Formatada', example: '11 de novembro de 2026' }
 ];
 
 export function buildDefaultFullContractText(clauses: ContractClause[] = DEFAULT_CONTRACT_CLAUSES): string {
@@ -323,33 +351,27 @@ export function buildDefaultFullContractText(clauses: ContractClause[] = DEFAULT
     sections[sec].push(c);
   });
 
-  let full = `CONTRATO DE LOCAÇÃO DE VEÍCULO AUTOMOTOR PARA APLICATIVO
+  let full = `CONTRATO DE LOCAÇÃO DE VEÍCULO AUTOMOTOR PARA TRANSPORTE PRIVADO DE PASSAGEIROS POR APLICATIVO
 
 1. DAS PARTES
-LOCADOR: {LOCADOR_NOME}, inscrito no CPF sob nº {LOCADOR_CPF}, RG nº {LOCADOR_RG}, residente e domiciliado em {LOCADOR_ENDERECO}.
-LOCATÁRIO: {LOCATARIO_NOME}, inscrito no CPF sob nº {LOCATARIO_CPF}, RG nº {LOCATARIO_RG}, portador da CNH nº {LOCATARIO_CNH}, residente e domiciliado em {LOCATARIO_ENDERECO}, telefone/WhatsApp: {LOCATARIO_FONE}.
+* LOCADOR: {LOCADOR_NOME}, portador do CPF nº {LOCADOR_CPF} e RG nº {LOCADOR_RG}, residente e domiciliado à {LOCADOR_ENDERECO}.
+* LOCATÁRIO: {LOCATARIO_NOME}, portador(a) da CNH nº {LOCATARIO_CNH} com EAR (atividade remunerada), CPF nº {LOCATARIO_CPF}, RG nº {LOCATARIO_RG}, residente e domiciliado(a) à {LOCATARIO_ENDERECO}. Telefone: {LOCATARIO_FONE}.
 
-As partes acima qualificadas têm, entre si, justo e acordado o presente Contrato de Locação de Veículo Automotor, que se regerá pelas seguintes cláusulas e condições:
-\n`;
+As partes acima qualificadas têm, entre si, justo e acordado o presente Contrato de Locação de Veículo Automotor, que se regerá pelas seguintes cláusulas e condições:\n`;
 
   for (const [secTitle, secClauses] of Object.entries(sections)) {
-    full += `--------------------------------------------------\n`;
-    full += `${secTitle.toUpperCase()}\n`;
-    full += `--------------------------------------------------\n\n`;
+    full += `\n${secTitle.toUpperCase()}\n`;
 
     secClauses.forEach((c) => {
-      full += `${c.clauseLabel}${c.title ? ` - ${c.title}` : ''}\n`;
-      full += `${c.text}\n\n`;
+      full += `* ${c.clauseLabel}${c.title ? ` (${c.title})` : ''}: ${c.text}\n`;
     });
   }
 
-  full += `--------------------------------------------------\n`;
-  full += `DO FORO E ASSINATURAS\n`;
-  full += `--------------------------------------------------\n\n`;
-  full += `Para dirimir quaisquer controvérsias oriundas do presente contrato, as partes elegem o Foro da Comarca de São Paulo/SP.\n\n`;
+  full += `\n13. DO FORO E DISPOSIÇÕES FINAIS\n`;
+  full += `E por estarem assim justas e contratadas, as partes assinam o presente instrumento em 02 (duas) vias de igual teor e forma para um só efeito legal.\n\n`;
   full += `São Paulo/SP, {DATA_ATUAL}.\n\n\n`;
-  full += `_______________________________________\nLOCADOR: {LOCADOR_NOME}\n\n`;
-  full += `_______________________________________\nLOCATÁRIO: {LOCATARIO_NOME}\n`;
+  full += `_______________________________________\n{LOCADOR_NOME}\n(Locador)\n\n`;
+  full += `_______________________________________\n{LOCATARIO_NOME}\n(Locatário)\n`;
 
   return full;
 }
@@ -391,4 +413,3 @@ export function replaceClauseVariables(template: string, variables: Record<strin
   }
   return result;
 }
-
