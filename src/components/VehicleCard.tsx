@@ -612,6 +612,7 @@ export const VehicleCard: React.FC<VehicleCardProps> = ({
   const [showAddPayment, setShowAddPayment] = useState(false);
   const [newPaymentDate, setNewPaymentDate] = useState(() => new Date().toISOString().split('T')[0]);
   const [newPaymentAmount, setNewPaymentAmount] = useState<number>(0);
+  const [paymentViewFilter, setPaymentViewFilter] = useState<'current' | 'all'>('current');
 
   // Payment WhatsApp Reminder State
   const [showPaymentWhatsApp, setShowPaymentWhatsApp] = useState(false);
@@ -1346,6 +1347,10 @@ export const VehicleCard: React.FC<VehicleCardProps> = ({
       body: `Aluguel semanal de R$ ${newPaymentAmount.toLocaleString('pt-BR', { minimumFractionDigits: 2 })} registrado para ${vehicle.driver || 'motorista'}.`,
       eventKey: 'payment_registered',
     });
+
+    if (!isCurrentMonth(newPaymentDate)) {
+      setPaymentViewFilter('all');
+    }
 
     setNewPaymentAmount(0);
     setShowAddPayment(false);
@@ -4696,72 +4701,169 @@ _Enviado via sistema de gestão de frota._`;
                 </div>
               )}
 
-              <div className="space-y-1.5 pr-1">
-                {(!vehicle.weeklyPayments || vehicle.weeklyPayments.filter((wp) => isCurrentMonth(wp.date)).length === 0) ? (
-                  <p className="text-[10px] text-gray-500 italic text-center py-2">Nenhum pagamento registrado neste mês.</p>
-                ) : (
-                  vehicle.weeklyPayments
-                    .filter((wp) => isCurrentMonth(wp.date))
-                    .slice()
-                    .sort((a, b) => b.date.localeCompare(a.date))
-                    .map((p) => (
-                      <div key={p.id} className="flex justify-between items-center text-[11px] py-1 border-b border-white/[0.02]">
-                        <span className="text-gray-400 font-mono">{new Date(p.date + 'T12:00:00').toLocaleDateString('pt-BR')}</span>
-                        <div className="flex items-center gap-1.5">
-                          <InlineEdit
-                            value={p.amount}
-                            label="Pagamento Semanal"
-                            onSave={(val) => handleEditPayment(p.id, val)}
-                          />
-                          <button
-                            type="button"
-                            onClick={async () => {
-                              try {
-                                const { doc, fileName, whatsappText } = await generatePaymentReceiptPDF(vehicle, p);
-                                doc.save(fileName);
-                                let cleanPhone = (vehicle.driverPhone || '').replace(/\D/g, '');
-                                if (cleanPhone && !cleanPhone.startsWith('55')) {
-                                  cleanPhone = '55' + cleanPhone;
-                                }
-                                const waUrl = cleanPhone
-                                  ? `https://wa.me/${cleanPhone}?text=${encodeURIComponent(whatsappText)}`
-                                  : `https://wa.me/?text=${encodeURIComponent(whatsappText)}`;
-                                window.open(waUrl, '_blank');
-                              } catch (err) {
-                                console.error('Erro ao gerar recibo:', err);
-                              }
-                            }}
-                            className="px-1.5 py-0.5 bg-emerald-500/15 hover:bg-emerald-500/30 text-emerald-300 border border-emerald-500/25 rounded text-[9px] font-bold flex items-center gap-1 transition-colors cursor-pointer"
-                            title="Baixar Recibo em PDF e enviar confirmação no WhatsApp do motorista"
-                          >
-                            <FileText className="w-2.5 h-2.5" />
-                            <span>Recibo</span>
-                          </button>
-                          <button
-                            onClick={() => {
-                              if (onShowDeleteConfirm) {
-                                onShowDeleteConfirm("Excluir Pagamento?", `Deseja realmente excluir este registro de pagamento de ${formatBRL(p.amount)}?`, () => handleDeletePayment(p.id));
-                              } else if (window.confirm("Deseja realmente excluir este pagamento?")) {
-                                handleDeletePayment(p.id);
-                              }
-                            }}
-                            className="text-gray-500 hover:text-rose-400 transition-colors p-0.5 rounded"
-                            title="Excluir pagamento"
-                          >
-                            <Trash2 className="w-3.5 h-3.5" />
-                          </button>
+              {/* Filtro: Mês Atual vs Histórico Completo / Retroativos */}
+              {(() => {
+                const allPayments = (vehicle.weeklyPayments || []).slice().sort((a, b) => b.date.localeCompare(a.date));
+                const currentMonthPayments = allPayments.filter((wp) => isCurrentMonth(wp.date));
+                const otherMonthPaymentsCount = allPayments.length - currentMonthPayments.length;
+                const displayedPayments = paymentViewFilter === 'all' ? allPayments : currentMonthPayments;
+                const totalDisplayed = displayedPayments.reduce((acc, p) => acc + (p.amount || 0), 0);
+                const totalAll = allPayments.reduce((acc, p) => acc + (p.amount || 0), 0);
+
+                return (
+                  <>
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pt-1 pb-1">
+                      <div className="flex items-center bg-black/60 p-0.5 rounded-lg border border-white/10 gap-1 text-[10px]">
+                        <button
+                          type="button"
+                          onClick={() => setPaymentViewFilter('current')}
+                          className={`px-2.5 py-1 rounded-md font-bold transition-all cursor-pointer ${
+                            paymentViewFilter === 'current'
+                              ? 'bg-blue-600 text-white shadow-xs'
+                              : 'text-gray-400 hover:text-white'
+                          }`}
+                        >
+                          Mês Atual ({currentMonthPayments.length})
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setPaymentViewFilter('all')}
+                          className={`px-2.5 py-1 rounded-md font-bold transition-all cursor-pointer flex items-center gap-1.5 ${
+                            paymentViewFilter === 'all'
+                              ? 'bg-blue-600 text-white shadow-xs'
+                              : 'text-gray-400 hover:text-white'
+                          }`}
+                        >
+                          <History className="w-3.5 h-3.5 text-amber-400" />
+                          <span>Histórico Completo / Retroativos ({allPayments.length})</span>
+                        </button>
+                      </div>
+
+                      {paymentViewFilter === 'all' && (
+                        <span className="text-[10px] text-amber-300 font-mono font-medium flex items-center gap-1">
+                          <span>📜 Histórico Completo Ativo</span>
+                        </span>
+                      )}
+                    </div>
+
+                    {/* Banner informativo quando houver pagamentos retroativos e o filtro estiver no mês atual */}
+                    {paymentViewFilter === 'current' && otherMonthPaymentsCount > 0 && (
+                      <button
+                        type="button"
+                        onClick={() => setPaymentViewFilter('all')}
+                        className="w-full text-left p-2 bg-amber-500/10 hover:bg-amber-500/15 border border-amber-500/30 rounded-xl text-[10px] text-amber-300 flex items-center justify-between transition-colors cursor-pointer shadow-xs"
+                      >
+                        <span className="flex items-center gap-1.5 font-semibold">
+                          <History className="w-3.5 h-3.5 shrink-0 text-amber-400" />
+                          <span>Há {otherMonthPaymentsCount} pagamento(s) retroativo(s) de meses anteriores neste veículo.</span>
+                        </span>
+                        <span className="font-bold underline text-[9px] uppercase tracking-wide shrink-0">Ver Histórico</span>
+                      </button>
+                    )}
+
+                    <div className="space-y-1.5 pr-1">
+                      {displayedPayments.length === 0 ? (
+                        <p className="text-[10px] text-gray-500 italic text-center py-3">
+                          {paymentViewFilter === 'current'
+                            ? 'Nenhum pagamento registrado neste mês.'
+                            : 'Nenhum pagamento registrado no histórico deste veículo.'}
+                        </p>
+                      ) : (
+                        displayedPayments.map((p) => {
+                          const isRetro = !isCurrentMonth(p.date);
+                          const dateObj = new Date(p.date + 'T12:00:00');
+                          const monthYearStr = dateObj.toLocaleDateString('pt-BR', { month: 'short', year: 'numeric' });
+
+                          return (
+                            <div
+                              key={p.id}
+                              className={`flex justify-between items-center text-[11px] py-1.5 px-2 rounded-lg border-b border-white/[0.03] transition-colors ${
+                                isRetro ? 'bg-purple-950/15 hover:bg-purple-950/25 border-purple-500/10' : 'hover:bg-white/[0.02]'
+                              }`}
+                            >
+                              <div className="flex items-center gap-2 flex-wrap">
+                                <span className="text-gray-300 font-mono font-medium">
+                                  {dateObj.toLocaleDateString('pt-BR')}
+                                </span>
+                                {isRetro && (
+                                  <span className="text-[9px] bg-purple-500/20 text-purple-300 border border-purple-500/30 px-1.5 py-0.2 rounded font-mono font-bold flex items-center gap-1">
+                                    <span>Retroativo ({monthYearStr})</span>
+                                  </span>
+                                )}
+                              </div>
+
+                              <div className="flex items-center gap-1.5">
+                                <InlineEdit
+                                  value={p.amount}
+                                  label="Pagamento Semanal"
+                                  onSave={(val) => handleEditPayment(p.id, val)}
+                                />
+                                <button
+                                  type="button"
+                                  onClick={async () => {
+                                    try {
+                                      const { doc, fileName, whatsappText } = await generatePaymentReceiptPDF(vehicle, p);
+                                      doc.save(fileName);
+                                      let cleanPhone = (vehicle.driverPhone || '').replace(/\D/g, '');
+                                      if (cleanPhone && !cleanPhone.startsWith('55')) {
+                                        cleanPhone = '55' + cleanPhone;
+                                      }
+                                      const waUrl = cleanPhone
+                                        ? `https://wa.me/${cleanPhone}?text=${encodeURIComponent(whatsappText)}`
+                                        : `https://wa.me/?text=${encodeURIComponent(whatsappText)}`;
+                                      window.open(waUrl, '_blank');
+                                    } catch (err) {
+                                      console.error('Erro ao gerar recibo:', err);
+                                    }
+                                  }}
+                                  className="px-1.5 py-0.5 bg-emerald-500/15 hover:bg-emerald-500/30 text-emerald-300 border border-emerald-500/25 rounded text-[9px] font-bold flex items-center gap-1 transition-colors cursor-pointer"
+                                  title="Baixar Recibo em PDF e enviar confirmação no WhatsApp do motorista"
+                                >
+                                  <FileText className="w-2.5 h-2.5" />
+                                  <span>Recibo</span>
+                                </button>
+                                <button
+                                  onClick={() => {
+                                    if (onShowDeleteConfirm) {
+                                      onShowDeleteConfirm("Excluir Pagamento?", `Deseja realmente excluir este registro de pagamento de ${formatBRL(p.amount)}?`, () => handleDeletePayment(p.id));
+                                    } else if (window.confirm("Deseja realmente excluir este pagamento?")) {
+                                      handleDeletePayment(p.id);
+                                    }
+                                  }}
+                                  className="text-gray-500 hover:text-rose-400 transition-colors p-0.5 rounded cursor-pointer"
+                                  title="Excluir pagamento"
+                                >
+                                  <Trash2 className="w-3.5 h-3.5" />
+                                </button>
+                              </div>
+                            </div>
+                          );
+                        })
+                      )}
+                    </div>
+
+                    {allPayments.length > 0 && (
+                      <div className="flex flex-col sm:flex-row sm:items-center justify-between text-[10px] text-gray-400 pt-1.5 border-t border-white/5 gap-1">
+                        <span>
+                          {paymentViewFilter === 'all'
+                            ? `Total Histórico Acumulado (${allPayments.length} pagamentos):`
+                            : `Total Recebido no Mês Atual (${currentMonthPayments.length} pagamentos):`}
+                        </span>
+                        <div className="flex items-center gap-2">
+                          {paymentViewFilter === 'current' && otherMonthPaymentsCount > 0 && (
+                            <span className="text-[9px] text-gray-500 font-mono">
+                              (Total Geral: {formatBRL(totalAll)})
+                            </span>
+                          )}
+                          <span className="font-mono text-emerald-400 font-bold text-xs">
+                            {formatBRL(totalDisplayed)}
+                          </span>
                         </div>
                       </div>
-                    ))
-                )}
-              </div>
-
-              {totalWeeklyReceived > 0 && (
-                <div className="flex justify-between items-center text-[10px] text-gray-400 pt-1 border-t border-white/5">
-                  <span>Total Recebido Semanalmente:</span>
-                  <span className="font-mono text-emerald-400 font-bold">{formatBRL(totalWeeklyReceived)}</span>
-                </div>
-              )}
+                    )}
+                  </>
+                );
+              })()}
             </div>
           </div>
         )}

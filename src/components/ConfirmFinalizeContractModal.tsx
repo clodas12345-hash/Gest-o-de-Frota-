@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Archive, CheckCircle2, X, ShieldCheck, Calculator, MessageCircle } from 'lucide-react';
+import { Archive, CheckCircle2, X, ShieldCheck, Calculator, MessageCircle, FileText } from 'lucide-react';
 import { Vehicle } from '../types';
 import CurrencyInput from './CurrencyInput';
 
@@ -34,16 +34,13 @@ export function ConfirmFinalizeContractModal({
   const [descontoCombustivel, setDescontoCombustivel] = useState<number>(0);
   const [descontoMultas, setDescontoMultas] = useState<number>(0);
   const [observacoesAcerto, setObservacoesAcerto] = useState<string>('');
-  const [earlyFineRatePct, setEarlyFineRatePct] = useState<number>(() => {
-    const saved = localStorage.getItem('fleet_early_return_fine_rate_default');
-    return saved ? Number(saved) : 20;
-  });
+  const [earlyFineRatePct, setEarlyFineRatePct] = useState<number>(20);
   const [daysUsed, setDaysUsed] = useState<number>(0);
   const [missingDays, setMissingDays] = useState<number>(0);
   const [earlyFineAmount, setEarlyFineAmount] = useState<number>(0);
   const [tankCapacity, setTankCapacity] = useState<number | ''>(0);
   const [returnFuelLevel, setReturnFuelLevel] = useState<number>(8);
-  const [fuelPrice, setFuelPrice] = useState<number>(5.80);
+  const [fuelPrice, setFuelPrice] = useState<number>(7.00);
   const [returnDate, setReturnDate] = useState<string>(() => new Date().toISOString().split('T')[0]);
 
   // Reset fields when opening modal for a vehicle
@@ -59,6 +56,8 @@ export function ConfirmFinalizeContractModal({
       setObservacoesAcerto('');
       setTankCapacity(0);
       setReturnFuelLevel(8);
+      setFuelPrice(7.00);
+      setEarlyFineRatePct(20);
       setReturnDate(new Date().toISOString().split('T')[0]);
     }
   }, [isOpen, vehicle?.id]);
@@ -105,6 +104,13 @@ export function ConfirmFinalizeContractModal({
 
   if (!isOpen || !vehicle) return null;
 
+  const weeklyRate = vehicle ? (vehicle.valorSemanal || vehicle.valorRecebido || 0) : 0;
+  const dailyRate = weeklyRate > 0 ? weeklyRate / 7 : 0;
+  const totalPaid = vehicle ? (vehicle.weeklyPayments || []).reduce((sum, p) => sum + (p.amount || 0), 0) : 0;
+  const paidWeeksCount = vehicle ? (vehicle.weeklyPayments || []).filter(p => (p.amount || 0) > 0).length : 0;
+  const expectedTotal = missingDays > 0 ? (30 * dailyRate + earlyFineAmount) : (daysUsed * dailyRate);
+  const calculatedPendingRent = Math.max(0, expectedTotal - totalPaid);
+
   const totalDescontos =
     (descontoAluguelPendente || 0) +
     (descontoAvarias || 0) +
@@ -127,7 +133,7 @@ export function ConfirmFinalizeContractModal({
         ? `✅ *SALDO A DEVOLVER AO LOCATÁRIO:* ${formatBRL(saldoFinal)}`
         : `⚠️ *SALDO DEVEDOR A PAGAR PELO LOCATÁRIO:* ${formatBRL(saldoFinal)}`;
 
-    const text = `📋 *FECHAMENTO E ACERTO DE CAUÇÃO - DEVOLUÇÃO DE VEÍCULO*\n\n🚗 *Veículo:* ${vehicle.brand} ${vehicle.model} (${vehicle.plate})\n👤 *Locatário:* ${vehicle.driver || 'Não informado'}\n📅 *Data do Encerramento:* ${new Date().toLocaleDateString('pt-BR')}\n\n💰 *Caução Depositada:* ${formatBRL(caucaoOriginal)}\n➖ *Aluguéis/Dias Pendentes:* ${formatBRL(descontoAluguelPendente)}\n➖ *Avarias / Oficina:* ${formatBRL(descontoAvarias)}\n➖ *Diferença de Combustível:* ${formatBRL(descontoCombustivel)}\n➖ *Multas / Pedágios:* ${formatBRL(descontoMultas)}\n${observacoesAcerto ? `📝 *Obs:* ${observacoesAcerto}\n` : ''}\n${statusLine}`;
+    const text = `📋 *DEMONSTRATIVO DE FECHAMENTO E ACERTO DE CAUÇÃO*\n\n🚗 *Veículo:* ${vehicle.brand} ${vehicle.model} (${vehicle.plate})\n👤 *Locatário:* ${vehicle.driver || 'Não informado'}\n📅 *Período:* ${vehicle.startDate ? new Date(vehicle.startDate + 'T12:00:00').toLocaleDateString('pt-BR') : ''} até ${new Date(returnDate + 'T12:00:00').toLocaleDateString('pt-BR')} (${daysUsed} dias rodados)\n📊 *Diária Proporcional:* ${formatBRL(dailyRate)}/dia (Semanal ${formatBRL(weeklyRate)})\n\n💵 *Total Devido do Período:* ${formatBRL(expectedTotal)}\n➖ *Total Já Pago:* ${formatBRL(totalPaid)} (${paidWeeksCount} semanais pagas)\n🟰 *Aluguéis em Aberto:* ${formatBRL(descontoAluguelPendente)}\n\n--- *ACERTO DA CAUÇÃO* ---\n💰 *Caução Depositada:* +${formatBRL(caucaoOriginal)}\n➖ *Aluguéis em Aberto:* -${formatBRL(descontoAluguelPendente)}\n➖ *Avarias / Oficina:* -${formatBRL(descontoAvarias)}\n➖ *Diferença Combustível:* -${formatBRL(descontoCombustivel)}\n➖ *Multas / Pedágios:* -${formatBRL(descontoMultas)}\n${observacoesAcerto ? `📝 *Obs:* ${observacoesAcerto}\n` : ''}\n${statusLine}`;
 
     const url = cleanPhone
       ? `https://wa.me/${cleanPhone}?text=${encodeURIComponent(text)}`
@@ -202,6 +208,55 @@ export function ConfirmFinalizeContractModal({
               </span>
             </div>
 
+            {/* Demonstrativo Detalhado de Aluguéis e Dias */}
+            {vehicle.startDate && (
+              <div className="p-3 bg-blue-950/20 border border-blue-500/30 rounded-xl space-y-2">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1 text-[11px] font-bold text-blue-300">
+                  <span className="flex items-center gap-1.5">
+                    <FileText className="w-3.5 h-3.5 text-blue-400 shrink-0" />
+                    <span>Memória de Cálculo dos Aluguéis (Diária Proporcional)</span>
+                  </span>
+                  <span className="font-mono text-[10px] text-blue-200">
+                    Semanal: {formatBRL(weeklyRate)} ÷ 7 = <strong className="text-white">{formatBRL(dailyRate)}/dia</strong>
+                  </span>
+                </div>
+
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-[10px]">
+                  <div className="bg-black/50 p-2 rounded-lg border border-white/5 space-y-0.5">
+                    <span className="text-gray-400 block text-[9px]">Período Rodado</span>
+                    <strong className="text-white block font-mono text-xs">{daysUsed} dia(s)</strong>
+                    <span className="text-gray-400 block text-[8px] truncate">
+                      {new Date(vehicle.startDate + 'T12:00:00').toLocaleDateString('pt-BR')} a {new Date(returnDate + 'T12:00:00').toLocaleDateString('pt-BR')}
+                    </span>
+                  </div>
+
+                  <div className="bg-black/50 p-2 rounded-lg border border-white/5 space-y-0.5">
+                    <span className="text-gray-400 block text-[9px]">Total Devido do Período</span>
+                    <strong className="text-amber-300 block font-mono text-xs">{formatBRL(expectedTotal)}</strong>
+                    <span className="text-gray-400 block text-[8px]">
+                      {missingDays > 0 ? `(30d mín. + multa ${earlyFineRatePct}%)` : `(${daysUsed}d × ${formatBRL(dailyRate)})`}
+                    </span>
+                  </div>
+
+                  <div className="bg-black/50 p-2 rounded-lg border border-white/5 space-y-0.5">
+                    <span className="text-gray-400 block text-[9px]">Total Já Pago</span>
+                    <strong className="text-emerald-400 block font-mono text-xs">{formatBRL(totalPaid)}</strong>
+                    <span className="text-gray-400 block text-[8px]">
+                      {paidWeeksCount} semanal(is) paga(s)
+                    </span>
+                  </div>
+
+                  <div className="bg-black/50 p-2 rounded-lg border border-white/5 space-y-0.5">
+                    <span className="text-gray-400 block text-[9px]">Aluguel em Aberto</span>
+                    <strong className="text-rose-300 block font-mono text-xs">{formatBRL(calculatedPendingRent)}</strong>
+                    <span className="text-gray-400 block text-[8px]">
+                      {calculatedPendingRent > 0 ? 'Cobrado no acerto' : '100% quitado'}
+                    </span>
+                  </div>
+                </div>
+              </div>
+            )}
+
             <div className="grid grid-cols-2 gap-2.5">
               <div>
                 <label className="text-[10px] text-gray-400 block mb-1 font-semibold">
@@ -237,17 +292,17 @@ export function ConfirmFinalizeContractModal({
                 )}
               </div>
 
-              {missingDays > 0 && (
+              {missingDays > 0 ? (
                 <div className="col-span-2 bg-amber-950/40 border border-amber-500/30 p-3 rounded-xl space-y-2">
                   <div className="flex items-center justify-between text-[11px] font-bold text-amber-300">
                     <span>⚠️ Devolução Antes de 30 Dias (Tempo Mínimo)</span>
                     <span className="font-mono text-[10px]">{daysUsed}d rodados / {missingDays}d faltantes</span>
                   </div>
                   <p className="text-[10px] text-gray-300 leading-relaxed">
-                    O contrato exige tempo mínimo de 30 dias. É cobrado o período base de 30 dias mais a multa percentual sobre os {missingDays} dias não cumpridos.
+                    O contrato exige tempo mínimo de 30 dias. É cobrado o período base de 30 dias mais a multa percentual de {earlyFineRatePct}% sobre os {missingDays} dias não cumpridos.
                   </p>
                   <div className="flex items-center justify-between pt-1.5 border-t border-amber-500/20">
-                    <label className="text-[10px] font-semibold text-gray-300">Multa sobre dias faltantes (%):</label>
+                    <label className="text-[10px] font-semibold text-gray-300">Multa sobre dias faltantes (% padrão 20%, editável):</label>
                     <div className="flex items-center gap-1">
                       <input
                         type="number"
@@ -258,12 +313,33 @@ export function ConfirmFinalizeContractModal({
                         onChange={(e) => {
                           const val = Math.max(0, Number(e.target.value));
                           setEarlyFineRatePct(val);
-                          localStorage.setItem('fleet_early_return_fine_rate_default', String(val));
                         }}
                         className="w-16 px-2 py-0.5 bg-black border border-amber-500/40 rounded text-amber-300 font-mono font-bold text-xs text-right"
                       />
                       <span className="text-amber-300 font-bold text-xs">%</span>
                     </div>
+                  </div>
+                </div>
+              ) : (
+                <div className="col-span-2 bg-white/[0.03] border border-white/10 p-2.5 rounded-xl flex items-center justify-between">
+                  <div className="text-[10px] text-gray-300">
+                    <span className="font-semibold text-white">Multa por Rescisão Antecipada:</span>
+                    <span className="ml-1 text-[9px] text-gray-400">(Padrão fixo em 20%, editável para este contrato)</span>
+                  </div>
+                  <div className="flex items-center gap-1">
+                    <input
+                      type="number"
+                      inputMode="decimal"
+                      min="0"
+                      max="100"
+                      value={earlyFineRatePct}
+                      onChange={(e) => {
+                        const val = Math.max(0, Number(e.target.value));
+                        setEarlyFineRatePct(val);
+                      }}
+                      className="w-14 px-2 py-0.5 bg-black border border-white/20 rounded text-amber-300 font-mono font-bold text-xs text-right"
+                    />
+                    <span className="text-amber-300 font-bold text-xs">%</span>
                   </div>
                 </div>
               )}
@@ -340,11 +416,11 @@ export function ConfirmFinalizeContractModal({
                         </div>
 
                         <div>
-                          <label className="text-[9px] text-gray-400 block mb-0.5">Preço por Litro (R$)</label>
+                          <label className="text-[9px] text-gray-400 block mb-0.5">Preço por Litro (R$ - padrão 7,00)</label>
                           <CurrencyInput
                             value={fuelPrice}
                             onChange={setFuelPrice}
-                            placeholder="5,80"
+                            placeholder="7,00"
                             className="w-full bg-[#141414] border border-white/15 rounded-lg px-2 py-1 text-xs text-white font-mono"
                           />
                         </div>
@@ -410,13 +486,16 @@ export function ConfirmFinalizeContractModal({
                   : 'bg-rose-500/10 border-rose-500/30 text-rose-300'
               }`}
             >
-              <div>
+              <div className="space-y-0.5">
                 <span className="text-[10px] uppercase font-bold block opacity-80">
                   {saldoFinal >= 0 ? 'Saldo a Devolver ao Motorista:' : 'Saldo Devedor a Cobrar do Motorista:'}
                 </span>
                 <span className="text-base font-extrabold font-mono">
                   {formatBRL(saldoFinal)}
                 </span>
+                <p className="text-[10px] opacity-80 font-mono">
+                  Caução (+{formatBRL(caucaoOriginal)}) - Total Descontos (-{formatBRL(totalDescontos)})
+                </p>
               </div>
 
               <button
