@@ -41,18 +41,31 @@ export function ConfirmFinalizeContractModal({
   const [daysUsed, setDaysUsed] = useState<number>(0);
   const [missingDays, setMissingDays] = useState<number>(0);
   const [earlyFineAmount, setEarlyFineAmount] = useState<number>(0);
-  const [tankCapacity, setTankCapacity] = useState<number>(50);
-  const [returnFuelLevel, setReturnFuelLevel] = useState<number>(0);
+  const [tankCapacity, setTankCapacity] = useState<number | ''>(0);
+  const [returnFuelLevel, setReturnFuelLevel] = useState<number>(8);
   const [fuelPrice, setFuelPrice] = useState<number>(5.80);
   const [returnDate, setReturnDate] = useState<string>(() => new Date().toISOString().split('T')[0]);
 
+  // Reset fields when opening modal for a vehicle
   useEffect(() => {
     if (isOpen && vehicle) {
       const paidPromises = (vehicle.promisePayments || [])
         .filter(p => p.isPaid)
         .reduce((sum, p) => sum + (p.amount || 0), 0);
       setCaucaoOriginal((vehicle.caucaoValor || 0) + paidPromises);
-      
+      setDescontoAvarias(0);
+      setDescontoCombustivel(0);
+      setDescontoMultas(0);
+      setObservacoesAcerto('');
+      setTankCapacity(0);
+      setReturnFuelLevel(8);
+      setReturnDate(new Date().toISOString().split('T')[0]);
+    }
+  }, [isOpen, vehicle?.id]);
+
+  // Recalculate pending rent and days when returnDate, earlyFineRatePct or vehicle changes
+  useEffect(() => {
+    if (isOpen && vehicle) {
       let calculatedPending = 0;
       let used = 0;
       let faltantes = 0;
@@ -60,7 +73,7 @@ export function ConfirmFinalizeContractModal({
 
       if (vehicle.startDate) {
         const start = new Date(vehicle.startDate + 'T12:00:00');
-        const returnDt = new Date(returnDate + 'T12:00:00');
+        const returnDt = new Date((returnDate || new Date().toISOString().split('T')[0]) + 'T12:00:00');
         used = Math.max(1, Math.floor((returnDt.getTime() - start.getTime()) / (1000 * 60 * 60 * 24))) + 1;
         const weeklyRate = vehicle.valorSemanal || vehicle.valorRecebido || 0;
         const dailyRate = weeklyRate > 0 ? weeklyRate / 7 : 0;
@@ -268,80 +281,99 @@ export function ConfirmFinalizeContractModal({
               </div>
 
               <div className="col-span-2 space-y-2 p-3 bg-black/40 border border-white/10 rounded-xl">
-                <div className="flex items-center justify-between">
-                  <label className="text-[10px] text-gray-300 block font-semibold flex items-center gap-1.5">
-                    <span>⛽ (-) Diferença de Combustível</span>
-                  </label>
-                  <span className="text-[10px] text-amber-300 font-mono">
-                    Faltante: {(((8 - returnFuelLevel) / 8) * tankCapacity).toFixed(1)}L ({formatBRL((((8 - returnFuelLevel) / 8) * tankCapacity) * fuelPrice)})
-                  </span>
-                </div>
+                {(() => {
+                  const capNum = typeof tankCapacity === 'number' ? tankCapacity : (Number(tankCapacity) || 0);
+                  const missingLiters = ((8 - returnFuelLevel) / 8) * capNum;
+                  const calculatedCost = missingLiters * (fuelPrice || 0);
 
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
-                  <div>
-                    <label className="text-[9px] text-gray-400 block mb-0.5">Capac. Tanque (L)</label>
-                    <input
-                      type="number"
-                      min="1"
-                      max="200"
-                      value={tankCapacity}
-                      onChange={(e) => setTankCapacity(Math.max(1, Number(e.target.value)))}
-                      className="w-full bg-[#141414] border border-white/15 rounded-lg px-2 py-1 text-xs text-white font-mono"
-                    />
-                  </div>
+                  return (
+                    <>
+                      <div className="flex items-center justify-between">
+                        <label className="text-[10px] text-gray-300 block font-semibold flex items-center gap-1.5">
+                          <span>⛽ (-) Diferença de Combustível</span>
+                        </label>
+                        <span className="text-[10px] text-amber-300 font-mono">
+                          Faltante: {missingLiters.toFixed(1)}L ({formatBRL(calculatedCost)})
+                        </span>
+                      </div>
 
-                  <div>
-                    <label className="text-[9px] text-gray-400 block mb-0.5">Nível na Devolução</label>
-                    <select
-                      value={returnFuelLevel}
-                      onChange={(e) => setReturnFuelLevel(Number(e.target.value))}
-                      className="w-full bg-[#141414] border border-white/15 rounded-lg px-2 py-1 text-xs text-white font-mono cursor-pointer"
-                    >
-                      <option value={0}>0/8 (Vazio - 100% faltante)</option>
-                      <option value={1}>1/8 (12.5% cheio)</option>
-                      <option value={2}>2/8 (25% - 1/4)</option>
-                      <option value={3}>3/8 (37.5% - 3/8)</option>
-                      <option value={4}>4/8 (50% - Meio tanque)</option>
-                      <option value={5}>5/8 (62.5% - 5/8)</option>
-                      <option value={6}>6/8 (75% - 3/4)</option>
-                      <option value={7}>7/8 (87.5% - 7/8)</option>
-                      <option value={8}>8/8 (Cheio - 0% faltante)</option>
-                    </select>
-                  </div>
+                      <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                        <div>
+                          <label className="text-[9px] text-gray-400 block mb-0.5">Capac. Tanque (L)</label>
+                          <input
+                            type="number"
+                            min="0"
+                            max="200"
+                            step="1"
+                            value={tankCapacity}
+                            onChange={(e) => {
+                              const val = e.target.value;
+                              if (val === '') {
+                                setTankCapacity('');
+                              } else {
+                                const num = Number(val);
+                                setTankCapacity(isNaN(num) ? '' : Math.max(0, num));
+                              }
+                            }}
+                            placeholder="0"
+                            className="w-full bg-[#141414] border border-white/15 rounded-lg px-2 py-1 text-xs text-white font-mono"
+                          />
+                        </div>
 
-                  <div>
-                    <label className="text-[9px] text-gray-400 block mb-0.5">Preço por Litro (R$)</label>
-                    <CurrencyInput
-                      value={fuelPrice}
-                      onChange={setFuelPrice}
-                      placeholder="5,80"
-                      className="w-full bg-[#141414] border border-white/15 rounded-lg px-2 py-1 text-xs text-white font-mono"
-                    />
-                  </div>
-                </div>
+                        <div>
+                          <label className="text-[9px] text-gray-400 block mb-0.5">Nível na Devolução</label>
+                          <select
+                            value={returnFuelLevel}
+                            onChange={(e) => setReturnFuelLevel(Number(e.target.value))}
+                            className="w-full bg-[#141414] border border-white/15 rounded-lg px-2 py-1 text-xs text-white font-mono cursor-pointer"
+                          >
+                            <option value={8}>8/8 (Cheio - 0% faltante)</option>
+                            <option value={7}>7/8 (87.5% - 7/8)</option>
+                            <option value={6}>6/8 (75% - 3/4)</option>
+                            <option value={5}>5/8 (62.5% - 5/8)</option>
+                            <option value={4}>4/8 (50% - Meio tanque)</option>
+                            <option value={3}>3/8 (37.5% - 3/8)</option>
+                            <option value={2}>2/8 (25% - 1/4)</option>
+                            <option value={1}>1/8 (12.5% cheio)</option>
+                            <option value={0}>0/8 (Vazio - 100% faltante)</option>
+                          </select>
+                        </div>
 
-                <div className="flex items-center justify-between pt-2 border-t border-white/5">
-                  <div className="flex items-center gap-2">
-                    <CurrencyInput
-                      value={descontoCombustivel}
-                      onChange={setDescontoCombustivel}
-                      placeholder="0,00"
-                      className="w-32 text-xs bg-[#141414] border border-emerald-500/30 rounded-lg px-2.5 py-1.5 text-emerald-300 font-mono font-bold"
-                    />
-                    <span className="text-[10px] text-gray-400">Valor cobrado (R$)</span>
-                  </div>
+                        <div>
+                          <label className="text-[9px] text-gray-400 block mb-0.5">Preço por Litro (R$)</label>
+                          <CurrencyInput
+                            value={fuelPrice}
+                            onChange={setFuelPrice}
+                            placeholder="5,80"
+                            className="w-full bg-[#141414] border border-white/15 rounded-lg px-2 py-1 text-xs text-white font-mono"
+                          />
+                        </div>
+                      </div>
 
-                  <button
-                    type="button"
-                    onClick={() => {
-                      const calculatedCost = (((8 - returnFuelLevel) / 8) * tankCapacity) * fuelPrice;
-                      setDescontoCombustivel(Number(calculatedCost.toFixed(2)));
-                    }}
-                    className="px-3 py-1.5 bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 border border-amber-500/40 rounded-lg text-xs font-bold transition-all cursor-pointer shadow-sm"
-                  >
-                    Aplicar Estimativa
-                  </button>
-                </div>
+                      <div className="flex items-center justify-between pt-2 border-t border-white/5">
+                        <div className="flex items-center gap-2">
+                          <CurrencyInput
+                            value={descontoCombustivel}
+                            onChange={setDescontoCombustivel}
+                            placeholder="0,00"
+                            className="w-32 text-xs bg-[#141414] border border-emerald-500/30 rounded-lg px-2.5 py-1.5 text-emerald-300 font-mono font-bold"
+                          />
+                          <span className="text-[10px] text-gray-400">Valor cobrado (R$)</span>
+                        </div>
+
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setDescontoCombustivel(Number(calculatedCost.toFixed(2)));
+                          }}
+                          className="px-3 py-1.5 bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 border border-amber-500/40 rounded-lg text-xs font-bold transition-all cursor-pointer shadow-sm"
+                        >
+                          Aplicar Estimativa
+                        </button>
+                      </div>
+                    </>
+                  );
+                })()}
               </div>
 
               <div className="col-span-2 sm:col-span-1">
