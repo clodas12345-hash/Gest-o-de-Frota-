@@ -282,9 +282,17 @@ export default function App() {
   const [selectedMonth, setSelectedMonth] = useState<number>(() => new Date().getMonth());
   const [selectedYear, setSelectedYear] = useState<number>(() => new Date().getFullYear());
   
-  
-  // Friday Vistoria check, toggle and completion state
-  const isTodayFriday = new Date().getDay() === 5;
+  // Vistoria scheduled days and hours check (Wednesday 10h+, Thursday 11h+, Friday 10h+)
+  const now = new Date();
+  const currentDay = now.getDay();
+  const currentHour = now.getHours();
+  const isVistoriaReminderDay = currentDay === 3 || currentDay === 4 || currentDay === 5;
+  const isVistoriaReminderHour = (
+    (currentDay === 3 && currentHour >= 10) ||
+    (currentDay === 4 && currentHour >= 11) ||
+    (currentDay === 5 && currentHour >= 10)
+  );
+  const isVistoriaReminderActive = isVistoriaReminderDay && isVistoriaReminderHour;
   const todayDateStr = new Date().toISOString().split('T')[0];
   const [fridayReminderDoneDate, setFridayReminderDoneDate] = useState<string>(() => {
     return localStorage.getItem('fleet_friday_reminder_done_date') || '';
@@ -3330,8 +3338,8 @@ export default function App() {
 
 
         
-        {/* Friday Vistoria Reminder Banner - Only shows on Fridays when enabled and not completed */}
-        {isTodayFriday && !disableFridayReminder && fridayReminderDoneDate !== todayDateStr && (
+        {/* Vistoria Reminder Banner - Only shows on scheduled days and hours when enabled and not completed */}
+        {isVistoriaReminderActive && !disableFridayReminder && fridayReminderDoneDate !== todayDateStr && (
           <div className="p-4 rounded-2xl border flex flex-col md:flex-row items-start md:items-center justify-between gap-4 transition-all shadow-xl bg-gradient-to-r from-purple-950/60 via-indigo-950/60 to-purple-900/60 border-purple-500/40 shadow-purple-900/20" id="friday-vistoria-banner">
             <div className="flex items-start gap-3">
               <div className="p-2.5 rounded-xl shrink-0 bg-purple-500/20 text-purple-300 border border-purple-500/30 animate-pulse">
@@ -3340,14 +3348,14 @@ export default function App() {
               <div>
                 <div className="flex items-center gap-2 flex-wrap">
                   <h3 className="text-xs font-bold text-white uppercase tracking-wider flex items-center gap-2">
-                    <span>📅 Lembrete de Vistoria Semanal (Toda Sexta-Feira)</span>
+                    <span>📅 Lembrete de Vistoria Programada (Quarta, Quinta e Sexta)</span>
                   </h3>
                   <span className="bg-purple-500/20 text-purple-300 border border-purple-500/30 px-2.5 py-0.5 rounded-full text-[10px] font-black animate-pulse">
-                    🚨 HOJE É SEXTA-FEIRA!
+                    🚨 VISTORIA AGENDADA HOJE
                   </span>
                 </div>
                 <p className="text-xs text-gray-300 mt-1">
-                  Sexta-feira é o dia oficial de solicitar e receber as vistorias de todos os carros da frota. Envie os links aos motoristas e conclua este aviso quando finalizar!
+                  Dias e horários estipulados de vistoria ativos (Quarta, Quinta e Sexta). Solicite e receba as fotos e vistorias dos carros da frota!
                 </p>
               </div>
             </div>

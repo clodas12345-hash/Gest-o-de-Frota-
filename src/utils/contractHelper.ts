@@ -10,13 +10,14 @@ export function generateNextContractNumber(
   const carIdentifier = cleanPlate || cleanCar || 'CARRO';
 
   const now = new Date();
-  const month = String(now.getMonth() + 1).padStart(2, '0');
   const year = now.getFullYear();
 
-  const allContractNumbers: string[] = [];
+  const usedNumbers = new Set<string>();
 
   vehicles.forEach(v => {
-    if (v.contractNumber) allContractNumbers.push(v.contractNumber);
+    if (v.contractNumber && v.contractNumber !== 'MINUTA / EM BRANCO') {
+      usedNumbers.add(v.contractNumber.trim());
+    }
   });
 
   try {
@@ -25,7 +26,9 @@ export function generateNextContractNumber(
       const finalized = JSON.parse(savedFinalized);
       if (Array.isArray(finalized)) {
         finalized.forEach((c: any) => {
-          if (c.contractNumber) allContractNumbers.push(c.contractNumber);
+          if (c.contractNumber && c.contractNumber !== 'MINUTA / EM BRANCO') {
+            usedNumbers.add(c.contractNumber.trim());
+          }
         });
       }
     }
@@ -33,8 +36,20 @@ export function generateNextContractNumber(
     // ignore
   }
 
+  try {
+    const savedUsed = localStorage.getItem('fleet_used_contract_numbers');
+    if (savedUsed) {
+      const parsed = JSON.parse(savedUsed);
+      if (Array.isArray(parsed)) {
+        parsed.forEach(n => usedNumbers.add(String(n).trim()));
+      }
+    }
+  } catch (e) {
+    // ignore
+  }
+
   let maxSeq = 0;
-  allContractNumbers.forEach(num => {
+  usedNumbers.forEach(num => {
     const match = num.match(/-(\d+)$/);
     if (match) {
       const seq = parseInt(match[1], 10);
@@ -44,9 +59,25 @@ export function generateNextContractNumber(
     }
   });
 
-  const nextSeq = maxSeq + 1;
-  const seqStr = String(nextSeq).padStart(2, '0');
+  let nextSeq = maxSeq + 1;
+  let candidate = '';
 
-  return `CT-${carIdentifier}-${year}-${seqStr}`;
+  do {
+    const seqStr = String(nextSeq).padStart(3, '0');
+    candidate = `CT-${carIdentifier}-${year}-${seqStr}`;
+    if (usedNumbers.has(candidate)) {
+      nextSeq++;
+    } else {
+      break;
+    }
+  } while (nextSeq < 100000);
+
+  usedNumbers.add(candidate);
+  try {
+    localStorage.setItem('fleet_used_contract_numbers', JSON.stringify(Array.from(usedNumbers)));
+  } catch (e) {
+    // ignore
+  }
+
+  return candidate;
 }
-

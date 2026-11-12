@@ -308,8 +308,8 @@ export const ContractEditorModal: React.FC<ContractEditorModalProps> = ({
   );
 
   return (
-    <div className="fixed inset-0 z-[120] flex items-center justify-center p-2 sm:p-4 bg-black/80 backdrop-blur-md animate-in fade-in duration-200">
-      <div className="relative w-full max-w-5xl h-[92vh] max-h-[900px] bg-[#121212] border border-white/10 rounded-2xl sm:rounded-3xl shadow-2xl flex flex-col overflow-hidden text-white">
+    <div className="fixed inset-0 z-[120] flex items-start sm:items-center justify-center p-2 sm:p-4 bg-black/80 backdrop-blur-md overflow-y-auto animate-in fade-in duration-200">
+      <div className="relative w-full max-w-5xl my-auto bg-[#121212] border border-white/10 rounded-2xl sm:rounded-3xl shadow-2xl flex flex-col text-white">
         
         {/* Toast Notification */}
         {toastMessage && (
@@ -423,7 +423,7 @@ export const ContractEditorModal: React.FC<ContractEditorModalProps> = ({
 
         {/* Tab 1: EDITAR CLÁUSULA POR CLÁUSULA */}
         {activeTab === 'clauses' && (
-          <div className="flex-1 flex flex-col min-h-0 bg-[#0d0d0d]">
+          <div className="flex flex-col bg-[#0d0d0d]">
             {/* Filter / Search header */}
             <div className="p-3 sm:p-4 border-b border-white/10 bg-[#141414] flex flex-col sm:flex-row gap-2.5 sm:items-center justify-between shrink-0">
               <div className="flex flex-1 items-center gap-2">
@@ -687,7 +687,7 @@ export const ContractEditorModal: React.FC<ContractEditorModalProps> = ({
 
         {/* Tab 2: EDITAR TODO O CONTRATO (TEXTO COMPLETO) */}
         {activeTab === 'fullText' && (
-          <div className="flex-1 flex flex-col min-h-0 bg-[#0d0d0d]">
+          <div className="flex flex-col bg-[#0d0d0d]">
             {/* Toolbar */}
             <div className="p-3 sm:p-4 border-b border-white/10 bg-[#141414] flex flex-wrap items-center justify-between gap-3 shrink-0">
               <div className="flex items-center gap-2">
@@ -748,12 +748,12 @@ export const ContractEditorModal: React.FC<ContractEditorModalProps> = ({
             </div>
 
             {/* Full text area */}
-            <div className="flex-1 p-3 sm:p-5 flex flex-col min-h-0">
+            <div className="p-3 sm:p-5 flex flex-col">
               <textarea
                 ref={textareaRef}
                 value={fullText}
                 onChange={(e) => setFullText(e.target.value)}
-                className="w-full flex-1 bg-black/70 border border-white/15 rounded-2xl p-4 sm:p-6 text-xs sm:text-sm text-gray-200 leading-relaxed font-mono focus:outline-hidden focus:border-blue-500 resize-none shadow-inner"
+                className="w-full h-[550px] sm:h-[650px] bg-black/70 border border-white/15 rounded-2xl p-4 sm:p-6 text-xs sm:text-sm text-gray-200 leading-relaxed font-mono focus:outline-hidden focus:border-blue-500 resize-y shadow-inner"
                 placeholder="Cole ou digite o texto completo do contrato..."
                 spellCheck={false}
               />
@@ -763,7 +763,7 @@ export const ContractEditorModal: React.FC<ContractEditorModalProps> = ({
 
         {/* Tab 3: PRÉ-VISUALIZAÇÃO COM DADOS REAIS */}
         {activeTab === 'preview' && (
-          <div className="flex-1 flex flex-col min-h-0 bg-[#0d0d0d]">
+          <div className="flex flex-col bg-[#0d0d0d]">
             {/* Vehicle selector for preview */}
             <div className="p-3 sm:p-4 border-b border-white/10 bg-[#141414] flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 shrink-0">
               <div className="flex items-center gap-2">
@@ -817,7 +817,7 @@ export const ContractEditorModal: React.FC<ContractEditorModalProps> = ({
         )}
 
         {/* Modal Footer */}
-        <div className="px-5 py-3 border-t border-white/10 bg-[#141414] flex items-center justify-between shrink-0">
+        <div className="px-5 py-3 border-t border-white/10 bg-[#141414] rounded-b-2xl sm:rounded-b-3xl flex items-center justify-between shadow-2xl">
           <div className="text-[11px] text-gray-400 flex items-center gap-1.5">
             <Info className="w-3.5 h-3.5 text-blue-400" />
             <span>As modificações salvas são aplicadas automaticamente nos novos contratos gerados em PDF.</span>
