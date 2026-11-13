@@ -12,6 +12,8 @@
         "expenseLogs": { "type": "array" },
         "vistorias": { "type": "array" },
         "finalizedContracts": { "type": "array" },
+        "contractClauses": { "type": "array" },
+        "contractFullText": { "type": "string" },
         "updatedAt": { "type": "string" }
       }
     }

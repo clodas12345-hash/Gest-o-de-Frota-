@@ -68,6 +68,7 @@ export const ContractEditorModal: React.FC<ContractEditorModalProps> = ({
   // Full Text mode state
   const [fullText, setFullText] = useState('');
   const [isFullTextCustom, setIsFullTextCustom] = useState(false);
+  const [isFullTextDirty, setIsFullTextDirty] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
   // Preview state
@@ -95,6 +96,7 @@ export const ContractEditorModal: React.FC<ContractEditorModalProps> = ({
         setIsFullTextCustom(false);
       }
 
+      setIsFullTextDirty(false);
       setEditingClauseId(null);
       setIsAddingNewClause(false);
       if (vehicles.length > 0 && !previewVehicleId) {
@@ -138,7 +140,7 @@ export const ContractEditorModal: React.FC<ContractEditorModalProps> = ({
   const handleSaveSingleClause = () => {
     if (!editingClauseId) return;
     if (!editingText.trim()) {
-      alert('O texto da cláusula não pode ficar em branco.');
+      showToast('O texto da cláusula não pode ficar em branco.', 'warn');
       return;
     }
 
@@ -158,8 +160,10 @@ export const ContractEditorModal: React.FC<ContractEditorModalProps> = ({
     setClauses(updated);
     saveContractClauses(updated);
     
-    // Also regenerate full text default representation
-    setFullText(buildDefaultFullContractText(updated));
+    // Only regenerate full text preview when not using a custom full text override
+    if (!isFullTextCustom && !isFullTextDirty) {
+      setFullText(buildDefaultFullContractText(updated));
+    }
 
     setEditingClauseId(null);
     showToast(`✅ Cláusula "${editingLabel || 'selecionada'}" atualizada com sucesso!`);
@@ -168,7 +172,7 @@ export const ContractEditorModal: React.FC<ContractEditorModalProps> = ({
 
   const handleCreateNewClause = () => {
     if (!newText.trim() || !newLabel.trim()) {
-      alert('Preencha a identificação da cláusula e o respectivo texto.');
+      showToast('Preencha a identificação da cláusula e o respectivo texto.', 'warn');
       return;
     }
 
@@ -184,7 +188,9 @@ export const ContractEditorModal: React.FC<ContractEditorModalProps> = ({
     const updated = [...clauses, newClause];
     setClauses(updated);
     saveContractClauses(updated);
-    setFullText(buildDefaultFullContractText(updated));
+    if (!isFullTextCustom && !isFullTextDirty) {
+      setFullText(buildDefaultFullContractText(updated));
+    }
 
     setIsAddingNewClause(false);
     setNewLabel('Cláusula Adicional');
@@ -199,7 +205,9 @@ export const ContractEditorModal: React.FC<ContractEditorModalProps> = ({
       const updated = clauses.filter(c => c.id !== id);
       setClauses(updated);
       saveContractClauses(updated);
-      setFullText(buildDefaultFullContractText(updated));
+      if (!isFullTextCustom && !isFullTextDirty) {
+        setFullText(buildDefaultFullContractText(updated));
+      }
       showToast(`🗑️ Cláusula "${label}" removida.`);
       if (onContractUpdated) onContractUpdated();
     }
@@ -209,7 +217,9 @@ export const ContractEditorModal: React.FC<ContractEditorModalProps> = ({
     if (window.confirm('Atenção: Deseja restaurar todas as cláusulas individuais para a redação padrão original do sistema? Suas edições por cláusula serão redefinidas.')) {
       const defaults = resetContractClauses();
       setClauses(defaults);
-      setFullText(buildDefaultFullContractText(defaults));
+      if (!isFullTextCustom && !isFullTextDirty) {
+        setFullText(buildDefaultFullContractText(defaults));
+      }
       showToast('🔄 Cláusulas restauradas para o padrão de fábrica.', 'info');
       if (onContractUpdated) onContractUpdated();
     }
@@ -217,30 +227,73 @@ export const ContractEditorModal: React.FC<ContractEditorModalProps> = ({
 
   const handleSaveFullText = () => {
     if (!fullText.trim()) {
-      alert('O texto do contrato não pode ficar vazio.');
+      showToast('O texto do contrato não pode ficar vazio.', 'warn');
       return;
     }
 
-    saveFullContractTextTemplate(fullText);
+    const savedLocally = saveFullContractTextTemplate(fullText);
     setIsFullTextCustom(true);
-    showToast('✅ Todo o contrato personalizado foi salvo com sucesso! O novo modelo será utilizado na geração de novos PDFs.');
+    setIsFullTextDirty(false);
     if (onContractUpdated) onContractUpdated();
+    if (savedLocally) {
+      showToast('✅ Todo o contrato personalizado foi salvo com sucesso! O novo modelo será utilizado na geração de novos PDFs.');
+    } else {
+      showToast('⚠️ Armazenamento local cheio, mas o contrato foi sincronizado na sessão/nuvem.', 'warn');
+    }
   };
 
   const handleResetFullText = () => {
     if (window.confirm('Deseja descartar o texto livre e voltar a usar a montagem automática pelas cláusulas individuais?')) {
       resetFullContractTextTemplate();
       setIsFullTextCustom(false);
+      setIsFullTextDirty(false);
       setFullText(buildDefaultFullContractText(clauses));
       showToast('🔄 Texto completo redefinido para usar as cláusulas estruturadas.', 'info');
       if (onContractUpdated) onContractUpdated();
     }
   };
 
+  const handleCloseAndCommitPendingEdits = () => {
+    let didAutoSave = false;
+
+    if (editingClauseId && editingText.trim()) {
+      const updated = clauses.map(c => {
+        if (c.id === editingClauseId) {
+          return {
+            ...c,
+            clauseLabel: editingLabel.trim() || c.clauseLabel,
+            title: editingTitle.trim() || c.title,
+            text: editingText.trim(),
+            section: editingSection.trim() || c.section
+          };
+        }
+        return c;
+      });
+      setClauses(updated);
+      saveContractClauses(updated);
+      setEditingClauseId(null);
+      didAutoSave = true;
+    }
+
+    if (isFullTextDirty && fullText.trim().length > 0) {
+      saveFullContractTextTemplate(fullText);
+      setIsFullTextCustom(true);
+      setIsFullTextDirty(false);
+      didAutoSave = true;
+    }
+
+    if (didAutoSave && onContractUpdated) {
+      onContractUpdated();
+    }
+
+    onClose();
+  };
+
   const insertVariableIntoFullText = (variableKey: string) => {
     const token = `{${variableKey}}`;
     if (!textareaRef.current) {
       setFullText(prev => prev + ' ' + token);
+      setIsFullTextDirty(true);
       showToast(`Inserido: ${token}`, 'info');
       return;
     }
@@ -252,6 +305,7 @@ export const ContractEditorModal: React.FC<ContractEditorModalProps> = ({
 
     const updated = current.substring(0, start) + token + current.substring(end);
     setFullText(updated);
+    setIsFullTextDirty(true);
 
     setTimeout(() => {
       textarea.focus();
@@ -303,21 +357,33 @@ export const ContractEditorModal: React.FC<ContractEditorModalProps> = ({
   };
 
   const renderedPreviewText = replaceClauseVariables(
-    isFullTextCustom ? fullText : buildDefaultFullContractText(clauses),
+    (isFullTextCustom || isFullTextDirty) ? fullText : buildDefaultFullContractText(clauses),
     sampleVariables
   );
 
   return (
     <div className="fixed inset-0 z-[120] flex items-start sm:items-center justify-center p-2 sm:p-4 bg-black/80 backdrop-blur-md overflow-y-auto animate-in fade-in duration-200">
-      <div className="relative w-full max-w-5xl my-auto bg-[#121212] border border-white/10 rounded-2xl sm:rounded-3xl shadow-2xl flex flex-col text-white">
-        
-        {/* Toast Notification */}
-        {toastMessage && (
-          <div className="absolute top-4 left-1/2 -translate-x-1/2 z-50 bg-emerald-600 text-white px-4 py-2 rounded-xl text-xs font-bold shadow-2xl flex items-center gap-2 animate-in slide-in-from-top-4">
+      {/* Toast Notification (fixed so it remains visible even when scrolled on mobile) */}
+      {toastMessage && (
+        <div
+          className={`fixed top-4 left-1/2 -translate-x-1/2 z-[200] px-4 py-2.5 rounded-xl text-xs font-bold shadow-2xl flex items-center gap-2 max-w-[92vw] animate-in slide-in-from-top-4 ${
+            toastMessage.type === 'warn'
+              ? 'bg-amber-600 text-white'
+              : toastMessage.type === 'info'
+                ? 'bg-blue-600 text-white'
+                : 'bg-emerald-600 text-white'
+          }`}
+        >
+          {toastMessage.type === 'warn' ? (
+            <AlertTriangle className="w-4 h-4 shrink-0" />
+          ) : (
             <CheckCircle2 className="w-4 h-4 shrink-0" />
-            <span>{toastMessage.text}</span>
-          </div>
-        )}
+          )}
+          <span>{toastMessage.text}</span>
+        </div>
+      )}
+
+      <div className="relative w-full max-w-5xl my-auto bg-[#121212] border border-white/10 rounded-2xl sm:rounded-3xl shadow-2xl flex flex-col text-white">
 
         {/* Modal Header */}
         <div className="px-5 py-4 border-b border-white/10 flex items-center justify-between bg-[#161616] shrink-0">
@@ -344,7 +410,7 @@ export const ContractEditorModal: React.FC<ContractEditorModalProps> = ({
 
           <button
             type="button"
-            onClick={onClose}
+            onClick={handleCloseAndCommitPendingEdits}
             className="p-2 text-gray-400 hover:text-white bg-white/5 hover:bg-white/10 rounded-xl transition-all cursor-pointer"
             title="Fechar editor"
           >
@@ -706,6 +772,9 @@ export const ContractEditorModal: React.FC<ContractEditorModalProps> = ({
                   onClick={() => {
                     const generated = buildDefaultFullContractText(clauses);
                     setFullText(generated);
+                    if (isFullTextCustom) {
+                      setIsFullTextDirty(true);
+                    }
                     showToast('Texto recarregado a partir das cláusulas individuais!', 'info');
                   }}
                   className="px-3 py-1.5 bg-white/5 hover:bg-white/10 text-gray-300 rounded-xl text-xs font-semibold flex items-center gap-1.5 transition-all cursor-pointer"
@@ -752,7 +821,10 @@ export const ContractEditorModal: React.FC<ContractEditorModalProps> = ({
               <textarea
                 ref={textareaRef}
                 value={fullText}
-                onChange={(e) => setFullText(e.target.value)}
+                onChange={(e) => {
+                  setFullText(e.target.value);
+                  setIsFullTextDirty(true);
+                }}
                 className="w-full h-[550px] sm:h-[650px] bg-black/70 border border-white/15 rounded-2xl p-4 sm:p-6 text-xs sm:text-sm text-gray-200 leading-relaxed font-mono focus:outline-hidden focus:border-blue-500 resize-y shadow-inner"
                 placeholder="Cole ou digite o texto completo do contrato..."
                 spellCheck={false}
@@ -825,7 +897,7 @@ export const ContractEditorModal: React.FC<ContractEditorModalProps> = ({
 
           <button
             type="button"
-            onClick={onClose}
+            onClick={handleCloseAndCommitPendingEdits}
             className="px-5 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded-xl text-xs font-bold transition-all shadow-md shadow-blue-500/20 cursor-pointer"
           >
             Concluir e Fechar

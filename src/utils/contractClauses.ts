@@ -270,30 +270,99 @@ export const DEFAULT_CONTRACT_CLAUSES: ContractClause[] = [
 ];
 
 const STORAGE_KEY = 'fleet_contract_clauses_custom';
+export const FULL_TEXT_STORAGE_KEY = 'fleet_contract_full_text_custom';
+
+let inMemoryClauses: ContractClause[] | null = null;
+let inMemoryFullText: string | null | undefined = undefined;
+
+function freeStorageSpaceForTemplates(): void {
+  try {
+    // 1. Remove redundant snapshot cache first (fleet_vehicles is already stored separately)
+    localStorage.removeItem('fleet_vehicles_last_known');
+  } catch (e) {}
+
+  try {
+    // 2. Trim oversized base64 document data URLs inside fleet_vehicles cache if still tight
+    const rawVehicles = localStorage.getItem('fleet_vehicles');
+    if (rawVehicles && rawVehicles.length > 500000) {
+      const parsed = JSON.parse(rawVehicles);
+      if (Array.isArray(parsed)) {
+        const lean = parsed.map((v: any) => ({
+          ...v,
+          documents: Array.isArray(v.documents)
+            ? v.documents.map((d: any) => ({
+                ...d,
+                contentUrl: d?.contentUrl && d.contentUrl.length > 50000 ? '' : d?.contentUrl
+              }))
+            : []
+        }));
+        localStorage.setItem('fleet_vehicles', JSON.stringify(lean));
+      }
+    }
+  } catch (e) {}
+
+  try {
+    // 3. Trim oversized base64 photos inside fleet_vistorias cache if still tight
+    const rawVistorias = localStorage.getItem('fleet_vistorias');
+    if (rawVistorias && rawVistorias.length > 500000) {
+      const parsed = JSON.parse(rawVistorias);
+      if (Array.isArray(parsed)) {
+        const lean = parsed.map((vist: any) => ({
+          ...vist,
+          pdfDataUrl: vist?.pdfDataUrl && vist.pdfDataUrl.length > 50000 ? '' : vist?.pdfDataUrl,
+          photos: Array.isArray(vist.photos)
+            ? vist.photos.filter((p: any) => typeof p === 'string' && p.length <= 50000)
+            : []
+        }));
+        localStorage.setItem('fleet_vistorias', JSON.stringify(lean));
+      }
+    }
+  } catch (e) {}
+}
+
+function safeLocalStorageSet(key: string, value: string): boolean {
+  try {
+    localStorage.setItem(key, value);
+    return true;
+  } catch (e) {
+    console.warn(`Erro ao salvar ${key} no localStorage, tentando liberar espaço:`, e);
+    freeStorageSpaceForTemplates();
+    try {
+      localStorage.setItem(key, value);
+      return true;
+    } catch (e2) {
+      console.error(`Falha definitiva ao gravar ${key} no localStorage:`, e2);
+      return false;
+    }
+  }
+}
 
 export function getSavedContractClauses(): ContractClause[] {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
-    if (!raw) return DEFAULT_CONTRACT_CLAUSES;
-    const parsed = JSON.parse(raw);
-    if (Array.isArray(parsed) && parsed.length > 0) {
-      return parsed;
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed) && parsed.length > 0) {
+        inMemoryClauses = parsed;
+        return parsed;
+      }
     }
   } catch (e) {
     console.warn('Erro ao ler cláusulas salvas do localStorage:', e);
   }
+  if (inMemoryClauses && inMemoryClauses.length > 0) {
+    return inMemoryClauses;
+  }
   return DEFAULT_CONTRACT_CLAUSES;
 }
 
-export function saveContractClauses(clauses: ContractClause[]): void {
-  try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(clauses));
-  } catch (e) {
-    console.warn('Erro ao salvar cláusulas no localStorage:', e);
-  }
+export function saveContractClauses(clauses: ContractClause[]): boolean {
+  inMemoryClauses = clauses;
+  return safeLocalStorageSet(STORAGE_KEY, JSON.stringify(clauses));
 }
 
 export function resetContractClauses(): ContractClause[] {
+  inMemoryClauses = null;
   try {
     localStorage.removeItem(STORAGE_KEY);
   } catch (e) {
@@ -301,8 +370,6 @@ export function resetContractClauses(): ContractClause[] {
   }
   return DEFAULT_CONTRACT_CLAUSES;
 }
-
-export const FULL_TEXT_STORAGE_KEY = 'fleet_contract_full_text_custom';
 
 export interface ContractVariableMeta {
   key: string;
@@ -359,15 +426,24 @@ export function buildDefaultFullContractText(clauses: ContractClause[] = DEFAULT
 
 As partes acima qualificadas têm, entre si, justo e acordado o presente Contrato de Locação de Veículo Automotor, que se regerá pelas seguintes cláusulas e condições:\n`;
 
+  let hasForoSection = false;
   for (const [secTitle, secClauses] of Object.entries(sections)) {
-    full += `\n${secTitle.toUpperCase()}\n`;
+    const upperTitle = secTitle.toUpperCase();
+    if (upperTitle.includes('DO FORO')) {
+      hasForoSection = true;
+    }
+    full += `\n${upperTitle}\n`;
 
     secClauses.forEach((c) => {
       full += `* ${c.clauseLabel}${c.title ? ` (${c.title})` : ''}: ${c.text}\n`;
     });
   }
 
-  full += `\n13. DO FORO E DISPOSIÇÕES FINAIS\n`;
+  if (!hasForoSection) {
+    full += `\n13. DO FORO E DISPOSIÇÕES FINAIS\n`;
+  } else {
+    full += `\n`;
+  }
   full += `E por estarem assim justas e contratadas, as partes assinam o presente instrumento em 02 (duas) vias de igual teor e forma para um só efeito legal.\n\n`;
   full += `São Paulo/SP, {DATA_ATUAL}.\n\n\n`;
   full += `_______________________________________\n{LOCADOR_NOME}\n(Locador)\n\n`;
@@ -378,26 +454,37 @@ As partes acima qualificadas têm, entre si, justo e acordado o presente Contrat
 
 export function getFullContractTextTemplate(): string | null {
   try {
-    return localStorage.getItem(FULL_TEXT_STORAGE_KEY);
-  } catch (e) {
-    console.warn('Erro ao ler texto completo do contrato:', e);
-    return null;
-  }
-}
-
-export function saveFullContractTextTemplate(text: string | null): void {
-  try {
-    if (text === null || text.trim() === '') {
-      localStorage.removeItem(FULL_TEXT_STORAGE_KEY);
-    } else {
-      localStorage.setItem(FULL_TEXT_STORAGE_KEY, text);
+    const stored = localStorage.getItem(FULL_TEXT_STORAGE_KEY);
+    if (stored !== null) {
+      inMemoryFullText = stored;
+      return stored;
     }
   } catch (e) {
-    console.warn('Erro ao salvar texto completo do contrato:', e);
+    console.warn('Erro ao ler texto completo do contrato:', e);
   }
+  if (inMemoryFullText !== undefined) {
+    return inMemoryFullText;
+  }
+  return null;
+}
+
+export function saveFullContractTextTemplate(text: string | null): boolean {
+  if (text === null || text.trim() === '') {
+    inMemoryFullText = null;
+    try {
+      localStorage.removeItem(FULL_TEXT_STORAGE_KEY);
+      return true;
+    } catch (e) {
+      console.warn('Erro ao remover texto completo do contrato:', e);
+      return false;
+    }
+  }
+  inMemoryFullText = text;
+  return safeLocalStorageSet(FULL_TEXT_STORAGE_KEY, text);
 }
 
 export function resetFullContractTextTemplate(): void {
+  inMemoryFullText = null;
   try {
     localStorage.removeItem(FULL_TEXT_STORAGE_KEY);
   } catch (e) {

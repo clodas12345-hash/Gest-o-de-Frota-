@@ -194,92 +194,94 @@ export function FinalizedContractsModal({
   const totalArchivedCount = approvedVistorias.length + allVehicleDocs.length + contracts.length;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-6 bg-black/85 backdrop-blur-md animate-fadeIn">
-      <div className="bg-[#111111] border border-white/10 rounded-2xl w-full max-w-5xl max-h-[92vh] flex flex-col shadow-2xl overflow-hidden">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-0 sm:p-4 bg-black/85 backdrop-blur-md animate-fadeIn">
+      <div className="bg-[#111111] border-0 sm:border sm:border-white/10 rounded-none sm:rounded-2xl w-full max-w-5xl h-[100dvh] sm:h-auto sm:max-h-[94vh] flex flex-col shadow-2xl overflow-hidden">
         
-        {/* Modal Header */}
-        <div className="p-4 sm:p-5 border-b border-white/10 flex items-center justify-between bg-gradient-to-r from-amber-500/15 via-amber-500/5 to-transparent flex-wrap gap-3">
-          <div className="flex items-center gap-3">
-            <div className="p-2.5 bg-amber-500/10 text-amber-400 rounded-xl border border-amber-500/20 shadow-[0_0_15px_rgba(245,158,11,0.2)] shrink-0">
-              <FolderArchive className="w-5 h-5" />
+        {/* Modal Header (slim single row on mobile) */}
+        <div className="px-3.5 py-2.5 sm:px-5 sm:py-4 border-b border-white/10 flex items-center justify-between bg-gradient-to-r from-amber-500/15 via-amber-500/5 to-transparent gap-2 shrink-0">
+          <div className="flex items-center gap-2.5 sm:gap-3 min-w-0">
+            <div className="p-2 sm:p-2.5 bg-amber-500/10 text-amber-400 rounded-xl border border-amber-500/20 shadow-[0_0_15px_rgba(245,158,11,0.2)] shrink-0">
+              <FolderArchive className="w-4 h-4 sm:w-5 sm:h-5" />
             </div>
-            <div>
-              <div className="flex items-center gap-2 flex-wrap">
-                <h2 className="text-base font-bold text-white tracking-tight">
-                  Arquivo Geral: Vistorias Aprovadas, Documentos & Contratos
+            <div className="min-w-0">
+              <div className="flex items-center gap-2">
+                <h2 className="text-sm sm:text-base font-bold text-white tracking-tight truncate">
+                  Arquivo Geral: Vistorias, Documentos & Contratos
                 </h2>
-                <span className="text-xs font-mono font-bold text-amber-400 bg-amber-500/10 px-2.5 py-0.5 rounded-full border border-amber-500/20">
-                  {totalArchivedCount} itens salvos
+                <span className="text-[10px] sm:text-xs font-mono font-bold text-amber-400 bg-amber-500/10 px-2 py-0.5 rounded-full border border-amber-500/20 shrink-0">
+                  {totalArchivedCount}
                 </span>
               </div>
-              <p className="text-xs text-gray-400 mt-0.5">
+              <p className="hidden sm:block text-xs text-gray-400 mt-0.5">
                 Central unificada para salvar, imprimir e fazer backup de todos os contratos, vistorias aprovadas e documentos da frota.
               </p>
             </div>
           </div>
 
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
             {onDownloadBackup && (
               <button
                 type="button"
                 onClick={onDownloadBackup}
-                className="px-3.5 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded-xl text-xs font-bold flex items-center gap-1.5 transition-all shadow-md shadow-blue-500/20 cursor-pointer"
+                className="px-2.5 py-1.5 sm:px-3.5 sm:py-2 bg-blue-600 hover:bg-blue-500 text-white rounded-xl text-[11px] sm:text-xs font-bold flex items-center gap-1.5 transition-all shadow-md shadow-blue-500/20 cursor-pointer"
                 title="Fazer backup completo em arquivo .json"
               >
-                <HardDriveDownload className="w-4 h-4" />
-                <span>Backup Geral</span>
+                <HardDriveDownload className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
+                <span className="hidden sm:inline">Backup Geral</span>
+                <span className="sm:hidden">Backup</span>
               </button>
             )}
             <button
               onClick={onClose}
-              className="p-2 text-gray-400 hover:text-white bg-white/5 hover:bg-white/10 rounded-xl transition-colors cursor-pointer"
+              className="p-1.5 sm:p-2 text-gray-400 hover:text-white bg-white/5 hover:bg-white/10 rounded-xl transition-colors cursor-pointer"
               title="Fechar pasta de arquivo"
             >
-              <X className="w-5 h-5" />
+              <X className="w-4 h-4 sm:w-5 sm:h-5" />
             </button>
           </div>
         </div>
 
-        {/* Tab Selector & Search Row */}
-        <div className="p-3 sm:p-4 border-b border-white/5 bg-white/[0.01] flex flex-col md:flex-row items-stretch md:items-center justify-between gap-3">
-          {/* Tabs */}
-          <div className="flex items-center gap-1.5 overflow-x-auto pb-1 md:pb-0 scrollbar-hide">
-            {[
-              { id: 'all', label: `Todos (${totalArchivedCount})` },
-              { id: 'vistorias', label: `Vistorias Aprovadas (${approvedVistorias.length})` },
-              { id: 'documentos', label: `Documentos & Contratos Ativos (${allVehicleDocs.length})` },
-              { id: 'contratos', label: `Contratos Encerrados (${filteredContracts.length})` },
-            ].map(tab => (
-              <button
-                key={tab.id}
-                type="button"
-                onClick={() => setActiveArchiveTab(tab.id as any)}
-                className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all whitespace-nowrap cursor-pointer ${
-                  activeArchiveTab === tab.id
-                    ? 'bg-amber-500 text-slate-950 shadow-md shadow-amber-500/20'
-                    : 'bg-white/5 text-gray-300 hover:bg-white/10 border border-white/5'
-                }`}
-              >
-                {tab.label}
-              </button>
-            ))}
+        {/* Main Content List (includes tabs/search on mobile so scrolling maximizes viewing space) */}
+        <div className="flex-1 overflow-y-auto overscroll-contain">
+          {/* Tab Selector & Search Row */}
+          <div className="px-3 py-2.5 sm:px-5 sm:py-3 border-b border-white/5 bg-white/[0.01] flex flex-col md:flex-row items-stretch md:items-center justify-between gap-2 sm:gap-3">
+            {/* Tabs */}
+            <div className="flex items-center gap-1.5 overflow-x-auto pb-0.5 md:pb-0 scrollbar-hide">
+              {[
+                { id: 'all', label: `Todos (${totalArchivedCount})` },
+                { id: 'vistorias', label: `Vistorias Aprovadas (${approvedVistorias.length})` },
+                { id: 'documentos', label: `Documentos & Contratos Ativos (${allVehicleDocs.length})` },
+                { id: 'contratos', label: `Contratos Encerrados (${filteredContracts.length})` },
+              ].map(tab => (
+                <button
+                  key={tab.id}
+                  type="button"
+                  onClick={() => setActiveArchiveTab(tab.id as any)}
+                  className={`px-2.5 py-1.5 rounded-xl text-[11px] sm:text-xs font-bold transition-all whitespace-nowrap cursor-pointer ${
+                    activeArchiveTab === tab.id
+                      ? 'bg-amber-500 text-slate-950 shadow-md shadow-amber-500/20'
+                      : 'bg-white/5 text-gray-300 hover:bg-white/10 border border-white/5'
+                  }`}
+                >
+                  {tab.label}
+                </button>
+              ))}
+            </div>
+
+            {/* Search */}
+            <div className="relative w-full md:w-64 shrink-0">
+              <Search className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-gray-500 absolute left-3 top-1/2 -translate-y-1/2" />
+              <input
+                type="text"
+                placeholder="Filtrar por placa, carro, tipo..."
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                className="w-full text-xs bg-white/[0.04] border border-white/10 rounded-xl pl-8 sm:pl-9 pr-3 py-1.5 sm:py-2 text-white placeholder-gray-500 focus:outline-hidden focus:border-amber-500/50"
+              />
+            </div>
           </div>
 
-          {/* Search */}
-          <div className="relative w-full md:w-64 shrink-0">
-            <Search className="w-4 h-4 text-gray-500 absolute left-3 top-2.5" />
-            <input
-              type="text"
-              placeholder="Filtrar por placa, carro, tipo..."
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              className="w-full text-xs bg-white/[0.04] border border-white/10 rounded-xl pl-9 pr-3 py-2 text-white placeholder-gray-500 focus:outline-hidden focus:border-amber-500/50"
-            />
-          </div>
-        </div>
-
-        {/* Main Content List */}
-        <div className="flex-1 overflow-y-auto p-4 sm:p-6 space-y-6">
+          <div className="p-3 sm:p-5 space-y-5">
           
           {/* Section 1: Approved Vistorias */}
           {(activeArchiveTab === 'all' || activeArchiveTab === 'vistorias') && (
@@ -289,7 +291,7 @@ export function FinalizedContractsModal({
                   <ClipboardCheck className="w-4 h-4" />
                   <span>Laudos de Vistoria Aprovados ({approvedVistorias.length})</span>
                 </h3>
-                <span className="text-[11px] text-gray-500">Prontos para imprimir, salvar e anexar</span>
+                <span className="hidden sm:inline text-[11px] text-gray-500">Prontos para imprimir, salvar e anexar</span>
               </div>
 
               {approvedVistorias.length === 0 ? (
@@ -372,9 +374,9 @@ export function FinalizedContractsModal({
               <div className="flex items-center justify-between border-b border-white/5 pb-2">
                 <h3 className="text-xs font-bold text-blue-400 uppercase tracking-wider flex items-center gap-1.5">
                   <FileText className="w-4 h-4" />
-                  <span>Documentos, Contratos de Locação & CRLVs da Frota ({allVehicleDocs.length})</span>
+                  <span>Documentos, Contratos & CRLVs ({allVehicleDocs.length})</span>
                 </h3>
-                <span className="text-[11px] text-gray-500">Arquivos anexados diretamente aos veículos</span>
+                <span className="hidden sm:inline text-[11px] text-gray-500">Arquivos anexados diretamente aos veículos</span>
               </div>
 
               {allVehicleDocs.length === 0 ? (
@@ -480,7 +482,7 @@ export function FinalizedContractsModal({
                   <FolderArchive className="w-4 h-4" />
                   <span>Contratos Encerrados ({filteredContracts.length})</span>
                 </h3>
-                <span className="text-[11px] text-gray-500">Histórico de locações concluídas</span>
+                <span className="hidden sm:inline text-[11px] text-gray-500">Histórico de locações concluídas</span>
               </div>
 
               {filteredContracts.length === 0 ? (
@@ -569,31 +571,32 @@ export function FinalizedContractsModal({
               )}
             </div>
           )}
+          </div>
         </div>
 
-        {/* Modal Footer */}
-        <div className="p-4 border-t border-white/10 bg-[#141414] flex items-center justify-between flex-wrap gap-2">
-          <span className="text-xs text-gray-400 font-mono">
+        {/* Modal Footer (compact single bar) */}
+        <div className="px-3.5 py-2.5 sm:px-5 sm:py-3 border-t border-white/10 bg-[#141414] flex items-center justify-between gap-2 shrink-0">
+          <span className="hidden sm:inline text-xs text-gray-400 font-mono">
             {totalArchivedCount} item(ns) arquivado(s)
           </span>
-          <div className="flex items-center gap-2">
+          <div className="flex items-center justify-between sm:justify-end gap-2 w-full sm:w-auto">
             {onDownloadBackup && (
               <button
                 type="button"
                 onClick={onDownloadBackup}
-                className="px-3.5 py-1.5 bg-blue-600/20 hover:bg-blue-600 text-blue-300 hover:text-white border border-blue-500/30 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-colors cursor-pointer"
+                className="px-3 py-1.5 bg-blue-600/20 hover:bg-blue-600 text-blue-300 hover:text-white border border-blue-500/30 rounded-xl text-[11px] sm:text-xs font-bold flex items-center gap-1.5 transition-colors cursor-pointer"
               >
                 <HardDriveDownload className="w-3.5 h-3.5" />
-                <span>Salvar Backup Completo (.JSON)</span>
+                <span>Backup (.JSON)</span>
               </button>
             )}
             <button
               type="button"
               onClick={onClose}
-              className="px-4 py-1.5 text-xs font-bold text-gray-300 hover:text-white bg-white/5 hover:bg-white/10 border border-white/10 rounded-xl transition-all cursor-pointer flex items-center gap-1.5"
+              className="px-3.5 py-1.5 text-[11px] sm:text-xs font-bold text-gray-300 hover:text-white bg-white/5 hover:bg-white/10 border border-white/10 rounded-xl transition-all cursor-pointer flex items-center gap-1.5 ml-auto sm:ml-0"
               title="Fechar pasta"
             >
-              <X className="w-4 h-4" />
+              <X className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
               <span>Fechar Pasta</span>
             </button>
           </div>
@@ -693,8 +696,8 @@ export function FinalizedContractsModal({
 
         {/* PDF Viewer Sub-modal / Preview with Print & Save */}
         {selectedPdfPreview && (
-          <div className="fixed inset-0 z-60 flex items-center justify-center p-2 sm:p-4 bg-black/90 backdrop-blur-md">
-            <div className="bg-[#111111] border border-white/10 rounded-2xl w-full max-w-4xl h-[88vh] flex flex-col shadow-2xl overflow-hidden">
+          <div className="fixed inset-0 z-60 flex items-center justify-center p-0 sm:p-4 bg-black/90 backdrop-blur-md">
+            <div className="bg-[#111111] border-0 sm:border sm:border-white/10 rounded-none sm:rounded-2xl w-full max-w-4xl h-[100dvh] sm:h-[90vh] flex flex-col shadow-2xl overflow-hidden">
               <div className="p-3.5 border-b border-white/10 flex justify-between items-center bg-white/[0.02] flex-wrap gap-2">
                 <div className="flex items-center gap-2 min-w-0">
                   <FileText className="w-5 h-5 text-amber-400 shrink-0" />

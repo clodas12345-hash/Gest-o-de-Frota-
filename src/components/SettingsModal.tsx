@@ -73,6 +73,7 @@ interface SettingsModalProps {
   onSwitchExpenseToMaint?: (log: ExpenseLog, originalLog?: ExpenseLog) => void;
   onShowDeleteConfirm?: (title: string, description: string, onConfirm: () => void) => void;
   initialTab?: 'settings' | 'calendar' | 'charts' | 'history' | 'contract';
+  onContractUpdated?: () => void;
 }
 
 export function SettingsModal({
@@ -104,7 +105,8 @@ export function SettingsModal({
   onSwitchMaintToExpense,
   onSwitchExpenseToMaint,
   onShowDeleteConfirm,
-  initialTab = 'settings'
+  initialTab = 'settings',
+  onContractUpdated
 }: SettingsModalProps) {
   const [permissionState, setPermissionState] = useState<'granted' | 'denied' | 'default'>('default');
   const [notifPrefs, setNotifPrefs] = useState<Record<NotificationEventKey, boolean>>(() => getNotificationPreferences());
@@ -190,6 +192,7 @@ export function SettingsModal({
     );
     setContractClauses(updated);
     saveContractClauses(updated);
+    if (onContractUpdated) onContractUpdated();
     setEditingClauseId(null);
     setEditingClauseText('');
     alert('Cláusula atualizada com sucesso! Ela será aplicada nos novos contratos gerados.');
@@ -199,6 +202,7 @@ export function SettingsModal({
     if (window.confirm('Deseja realmente resetar todas as cláusulas para o padrão original do sistema? Suas alterações serão perdidas.')) {
       const defaults = resetContractClauses();
       setContractClauses(defaults);
+      if (onContractUpdated) onContractUpdated();
       alert('Cláusulas resetadas para o padrão.');
     }
   };

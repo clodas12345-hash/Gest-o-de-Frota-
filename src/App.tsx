@@ -47,6 +47,7 @@ import { InterestCalculatorModal } from './components/InterestCalculatorModal';
 import { RegisterDriverModal } from './components/RegisterDriverModal';
 import { ContractEditorModal } from './components/ContractEditorModal';
 import { generateVehiclePDF, generateVistoriaPDF, generateExecutiveMonthlyPDF } from './utils/pdfGenerator';
+import { getSavedContractClauses, saveContractClauses, getFullContractTextTemplate, saveFullContractTextTemplate } from './utils/contractClauses';
 import { sendAppNotification, requestNotificationPermission, scheduleVistoriaReminders, cancelVistoriaReminders, VISTORIA_REMINDER_SLOTS, isNotificationEventEnabled } from './utils/notifications';
 import logoImg from './assets/logo.png';
 
@@ -807,6 +808,36 @@ export default function App() {
     }
   };
 
+  const syncContractTemplatesToCloud = () => {
+    lastUpdateTimestampRef.current['contractTemplates'] = Date.now();
+    if (typeof window !== 'undefined' && window.location.hostname.includes('ais-pre')) {
+      return;
+    }
+    if (isQuotaExhausted) return;
+    try {
+      const clauses = getSavedContractClauses();
+      const fullText = getFullContractTextTemplate();
+      const payload = sanitizeForCloud({
+        contractClauses: clauses,
+        contractFullText: fullText ?? null,
+        updatedAt: new Date().toISOString()
+      });
+      lastSyncedJsonRef.current['contractTemplates'] = JSON.stringify({
+        contractClauses: clauses,
+        contractFullText: fullText ?? null
+      });
+      setDoc(doc(db, 'fleetData', 'main'), payload, { merge: true }).catch((err: any) => {
+        if (err?.message?.includes('quota') || err?.code === 'resource-exhausted' || err?.message?.includes('Quota')) {
+          setIsQuotaExhausted(true);
+        } else {
+          console.warn('Error syncing contract templates to cloud:', err);
+        }
+      });
+    } catch (err) {
+      console.warn('Error preparing contract templates cloud sync:', err);
+    }
+  };
+
   // Load initial data from Firestore and setup real-time listener
   useEffect(() => {
     let unsubscribe: () => void = () => {};
@@ -849,6 +880,12 @@ export default function App() {
           if (d.finalizedContracts && Array.isArray(d.finalizedContracts)) {
             setFinalizedContracts(d.finalizedContracts);
             lastSyncedJsonRef.current['finalizedContracts'] = JSON.stringify(d.finalizedContracts);
+          }
+          if (d.contractClauses && Array.isArray(d.contractClauses) && d.contractClauses.length > 0) {
+            saveContractClauses(d.contractClauses);
+          }
+          if (d.contractFullText !== undefined) {
+            saveFullContractTextTemplate(typeof d.contractFullText === 'string' ? d.contractFullText : null);
           }
         } else {
           // Initialize cloud if missing
@@ -944,6 +981,15 @@ export default function App() {
           if (d.finalizedContracts && Array.isArray(d.finalizedContracts)) {
             lastSyncedJsonRef.current['finalizedContracts'] = JSON.stringify(d.finalizedContracts);
             setFinalizedContracts(d.finalizedContracts);
+          }
+          const lastContractEdit = lastUpdateTimestampRef.current['contractTemplates'] || 0;
+          if (Date.now() - lastContractEdit >= 4000) {
+            if (d.contractClauses && Array.isArray(d.contractClauses) && d.contractClauses.length > 0) {
+              saveContractClauses(d.contractClauses);
+            }
+            if (d.contractFullText !== undefined) {
+              saveFullContractTextTemplate(typeof d.contractFullText === 'string' ? d.contractFullText : null);
+            }
           }
         }
       }, (err: any) => {
@@ -3690,6 +3736,7 @@ export default function App() {
         isOpen={isContractEditorOpen}
         onClose={() => setIsContractEditorOpen(false)}
         vehicles={sortedVehicles}
+        onContractUpdated={syncContractTemplatesToCloud}
       />
 
       {/* Global Document Upload Modal */}
@@ -3765,6 +3812,7 @@ export default function App() {
         onShowDeleteConfirm={handleShowDeleteConfirm}
         onOpenBatchOdometer={() => setIsBatchOdometerOpen(true)}
         initialTab={settingsInitialTab}
+        onContractUpdated={syncContractTemplatesToCloud}
       />
 
       {/* Centro de Notificações Modal */}

@@ -740,26 +740,34 @@ export async function generateRentalContractPDF(
     y += 1.4;
   };
 
-  // 1. DAS PARTES
-  addSectionTitle('1. DAS PARTES');
-  if (contract.hideLandlordPersonalData) {
-    addClause(
-      '• LOCADOR',
-      '(Dados cadastrais e pessoais do Locador omitidos nesta minuta prévia para leitura — constarão devidamente preenchidos na via definitiva para assinatura).'
-    );
-    addClause(
-      '• LOCATÁRIO',
-      '[Nome Completo], portador(a) da CNH nº [Número da CNH] com EAR (atividade remunerada), CPF nº [Número do CPF], RG nº [Número do RG], residente e domiciliado(a) à [Endereço Completo]. Telefone: [Número de Telefone].'
-    );
-  } else {
-    addClause(
-      '• LOCADOR',
-      `${contract.landlordName || 'Cláudio Oliveira da Silva'}, portador do CPF nº ${contract.landlordCpfCnpj || '065.426.576-30'} e RG nº ${contract.landlordRg || '39.508.321-7'}, residente e domiciliado à ${contract.landlordAddress || 'Rua Manuel Leiroz, 230, apto 1306 - Cangaíba, São Paulo/SP, CEP 03735-180'}.`
-    );
-    addClause(
-      '• LOCATÁRIO',
-      `${contract.tenantName || '[Nome Completo]'}, portador(a) da CNH nº ${contract.tenantCnh || '[Número da CNH]'} com EAR (atividade remunerada), CPF nº ${contract.tenantCpfCnpj || '[Número do CPF]'}, RG nº ${contract.tenantRg || '[Número do RG]'}, residente e domiciliado(a) à ${contract.tenantAddress || '[Endereço Completo]'}. Telefone: ${contract.tenantPhone || '[Número de Telefone]'}${contract.tenantEmail ? `, E-mail: ${contract.tenantEmail}` : ''}.`
-    );
+  const savedClauses = getSavedContractClauses();
+  const clauseMap = new Map(savedClauses.map(c => [c.id, c]));
+  const customFullText = getFullContractTextTemplate();
+  const hasCustomFullText = Boolean(customFullText && customFullText.trim().length > 0);
+  const customIncludesParties = hasCustomFullText && /1\.\s*DAS\s+PARTES/i.test(customFullText!);
+
+  // 1. DAS PARTES (omitido se o modelo personalizado já traz 1. DAS PARTES com dados completos)
+  if (!customIncludesParties || contract.hideLandlordPersonalData) {
+    addSectionTitle('1. DAS PARTES');
+    if (contract.hideLandlordPersonalData) {
+      addClause(
+        '• LOCADOR',
+        '(Dados cadastrais e pessoais do Locador omitidos nesta minuta prévia para leitura — constarão devidamente preenchidos na via definitiva para assinatura).'
+      );
+      addClause(
+        '• LOCATÁRIO',
+        '[Nome Completo], portador(a) da CNH nº [Número da CNH] com EAR (atividade remunerada), CPF nº [Número do CPF], RG nº [Número do RG], residente e domiciliado(a) à [Endereço Completo]. Telefone: [Número de Telefone].'
+      );
+    } else {
+      addClause(
+        '• LOCADOR',
+        `${contract.landlordName || 'Cláudio Oliveira da Silva'}, portador do CPF nº ${contract.landlordCpfCnpj || '065.426.576-30'} e RG nº ${contract.landlordRg || '39.508.321-7'}, residente e domiciliado à ${contract.landlordAddress || 'Rua Manuel Leiroz, 230, apto 1306 - Cangaíba, São Paulo/SP, CEP 03735-180'}.`
+      );
+      addClause(
+        '• LOCATÁRIO',
+        `${contract.tenantName || '[Nome Completo]'}, portador(a) da CNH nº ${contract.tenantCnh || '[Número da CNH]'} com EAR (atividade remunerada), CPF nº ${contract.tenantCpfCnpj || '[Número do CPF]'}, RG nº ${contract.tenantRg || '[Número do RG]'}, residente e domiciliado(a) à ${contract.tenantAddress || '[Endereço Completo]'}. Telefone: ${contract.tenantPhone || '[Número de Telefone]'}${contract.tenantEmail ? `, E-mail: ${contract.tenantEmail}` : ''}.`
+      );
+    }
   }
 
   // Load configured clauses and prepare variable substitution
@@ -824,11 +832,10 @@ export async function generateRentalContractPDF(
     LOCATARIO_CPF: contract.tenantCpfCnpj || '[Número do CPF]',
     LOCATARIO_RG: contract.tenantRg || '[Número do RG]',
     LOCATARIO_ENDERECO: contract.tenantAddress || '[Endereço Completo]',
-    LOCATARIO_FONE: contract.tenantPhone || '[Número de Telefone]'
+    LOCATARIO_FONE: contract.tenantPhone || '[Número de Telefone]',
+    LOCATARIO_EMAIL: contract.tenantEmail || '',
+    DATA_ATUAL: dateFormatted
   };
-
-  const savedClauses = getSavedContractClauses();
-  const clauseMap = new Map(savedClauses.map(c => [c.id, c]));
 
   const getClause = (id: string, defaultLabel: string, defaultTpl: string) => {
     const c = clauseMap.get(id);
@@ -839,9 +846,19 @@ export async function generateRentalContractPDF(
   };
 
   let sectionIndex = 12;
-  const customFullText = getFullContractTextTemplate();
-  if (customFullText && customFullText.trim().length > 0) {
-    const replacedFullText = replaceClauseVariables(customFullText, variables);
+  let customIncludesForo = false;
+  if (hasCustomFullText && customFullText) {
+    let textToRender = customFullText;
+    if (contract.hideLandlordPersonalData && customIncludesParties) {
+      // Remove the personal 1. DAS PARTES block if this is an anonymized preview
+      textToRender = textToRender.replace(/1\.\s*DAS\s+PARTES[\s\S]*?(?=\n\s*(?:2\.|As partes acima))/i, '');
+    }
+    let replacedFullText = replaceClauseVariables(textToRender, variables);
+    customIncludesForo = /DO\s+FORO|E\s+por\s+estarem\s+assim\s+justas/i.test(replacedFullText);
+
+    // Strip trailing plain-text signature block if present so vector signature lines draw cleanly below
+    replacedFullText = replacedFullText.replace(/\n*\s*São Paulo\/SP,[\s\S]*?_{5,}[\s\S]*$/i, '').replace(/\n*\s*_{5,}[\s\S]*$/, '');
+
     const lines = replacedFullText.split(/\r?\n/);
     let currentParagraph = '';
 
@@ -854,7 +871,7 @@ export async function generateRentalContractPDF(
         }
         continue;
       }
-      if (line.startsWith('---') || line.startsWith('===') || line.startsWith('CONTRATO DE LOCAÇÃO')) {
+      if (line.startsWith('---') || line.startsWith('===') || line.startsWith('CONTRATO DE LOCAÇÃO') || line.startsWith('TRANSPORTE PRIVADO DE PASSAGEIROS')) {
         continue;
       }
       if (/^[0-9]+\.\s+[A-ZÀ-ÿ\s/()\-]+$/.test(line) || (/^[A-ZÀ-ÿ\s/()\-]{4,}$/.test(line) && !line.includes(':') && line.length < 50)) {
@@ -1141,18 +1158,26 @@ export async function generateRentalContractPDF(
   }
   }
 
-  // DO FORO E DISPOSIÇÕES FINAIS
-  addSectionTitle(`${sectionIndex}. DO FORO E DISPOSIÇÕES FINAIS`);
-  const c21 = getClause(
-    'clausula_21_foro',
-    'Cláusula 21ª',
-    'Para dirimir quaisquer controvérsias ou litígios oriundos do presente contrato, as partes elegem expressamente o Foro da Comarca de São Paulo/SP, renunciando a qualquer outro, por mais privilegiado que seja.'
-  );
-  addClause(c21.label, c21.text);
-  addClause(
-    '',
-    'E por estarem assim justas e contratadas, as partes assinam o presente instrumento em 02 (duas) vias de igual teor e forma para um só efeito legal.'
-  );
+  // DO FORO E DISPOSIÇÕES FINAIS (não duplicar quando o texto completo personalizado já inclui)
+  if (!customIncludesForo) {
+    addSectionTitle(`${sectionIndex}. DO FORO E DISPOSIÇÕES FINAIS`);
+    const c21 = clauseMap.has('clausula_22_foro')
+      ? getClause(
+          'clausula_22_foro',
+          'Cláusula 22ª',
+          'Para dirimir quaisquer controvérsias ou litígios oriundos do presente contrato, as partes elegem expressamente o Foro da Comarca de São Paulo/SP, renunciando a qualquer outro, por mais privilegiado que seja.'
+        )
+      : getClause(
+          'clausula_21_foro',
+          'Cláusula 21ª',
+          'Para dirimir quaisquer controvérsias ou litígios oriundos do presente contrato, as partes elegem expressamente o Foro da Comarca de São Paulo/SP, renunciando a qualquer outro, por mais privilegiado que seja.'
+        );
+    addClause(c21.label, c21.text);
+    addClause(
+      '',
+      'E por estarem assim justas e contratadas, as partes assinam o presente instrumento em 02 (duas) vias de igual teor e forma para um só efeito legal.'
+    );
+  }
 
   // Local, data e assinaturas
   checkPageBreak(40);
