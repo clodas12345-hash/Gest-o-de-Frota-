@@ -29,8 +29,13 @@ import {
   saveFullContractTextTemplate,
   resetFullContractTextTemplate,
   buildDefaultFullContractText,
+  parseFullTextToClauses,
+  rebuildFullTextWithClauses,
+  groupClausesByTopic,
+  sortClausesByTopic,
   replaceClauseVariables
 } from '../utils/contractClauses';
+import { valorPorExtensoReais } from '../utils/pdfGenerator';
 import { Vehicle } from '../types';
 
 interface ContractEditorModalProps {
@@ -85,14 +90,19 @@ export const ContractEditorModal: React.FC<ContractEditorModalProps> = ({
   useEffect(() => {
     if (isOpen) {
       const savedClauses = getSavedContractClauses();
-      setClauses(savedClauses);
-
       const customFull = getFullContractTextTemplate();
       if (customFull && customFull.trim().length > 0) {
+        const syncedClauses = sortClausesByTopic(parseFullTextToClauses(customFull, savedClauses));
+        setClauses(syncedClauses);
+        if (JSON.stringify(syncedClauses) !== JSON.stringify(savedClauses)) {
+          saveContractClauses(syncedClauses);
+        }
         setFullText(customFull);
         setIsFullTextCustom(true);
       } else {
-        setFullText(buildDefaultFullContractText(savedClauses));
+        const orderedClauses = sortClausesByTopic(savedClauses);
+        setClauses(orderedClauses);
+        setFullText(buildDefaultFullContractText(orderedClauses));
         setIsFullTextCustom(false);
       }
 
@@ -107,8 +117,8 @@ export const ContractEditorModal: React.FC<ContractEditorModalProps> = ({
 
   if (!isOpen) return null;
 
-  // Sections list for filtering
-  const sections = Array.from(new Set(clauses.map(c => c.section || 'GERAL')));
+  // Topic groups & filtered clauses organized strictly by topic
+  const sections = groupClausesByTopic(clauses).map(g => g.topic);
 
   const filteredClauses = clauses.filter(c => {
     const matchesSection = selectedSection === 'ALL' || c.section === selectedSection;
@@ -120,6 +130,8 @@ export const ContractEditorModal: React.FC<ContractEditorModalProps> = ({
       (c.section && c.section.toLowerCase().includes(term));
     return matchesSection && matchesTerm;
   });
+
+  const groupedFilteredClauses = groupClausesByTopic(filteredClauses);
 
   const handleStartEditClause = (c: ContractClause) => {
     setEditingClauseId(c.id);
@@ -137,6 +149,22 @@ export const ContractEditorModal: React.FC<ContractEditorModalProps> = ({
     setEditingText('');
   };
 
+  const syncFullTextFromClauses = (updatedClauses: ContractClause[], referenceText: string = fullText) => {
+    const rebuilt = rebuildFullTextWithClauses(updatedClauses, referenceText);
+    setFullText(rebuilt);
+    if (isFullTextCustom || isFullTextDirty) {
+      const defaultForClauses = buildDefaultFullContractText(updatedClauses);
+      if (rebuilt.trim() === defaultForClauses.trim()) {
+        resetFullContractTextTemplate();
+        setIsFullTextCustom(false);
+      } else {
+        saveFullContractTextTemplate(rebuilt);
+        setIsFullTextCustom(true);
+      }
+      setIsFullTextDirty(false);
+    }
+  };
+
   const handleSaveSingleClause = () => {
     if (!editingClauseId) return;
     if (!editingText.trim()) {
@@ -144,7 +172,7 @@ export const ContractEditorModal: React.FC<ContractEditorModalProps> = ({
       return;
     }
 
-    const updated = clauses.map(c => {
+    const updated = sortClausesByTopic(clauses.map(c => {
       if (c.id === editingClauseId) {
         return {
           ...c,
@@ -155,15 +183,11 @@ export const ContractEditorModal: React.FC<ContractEditorModalProps> = ({
         };
       }
       return c;
-    });
+    }));
 
     setClauses(updated);
     saveContractClauses(updated);
-    
-    // Only regenerate full text preview when not using a custom full text override
-    if (!isFullTextCustom && !isFullTextDirty) {
-      setFullText(buildDefaultFullContractText(updated));
-    }
+    syncFullTextFromClauses(updated);
 
     setEditingClauseId(null);
     showToast(`✅ Cláusula "${editingLabel || 'selecionada'}" atualizada com sucesso!`);
@@ -185,12 +209,10 @@ export const ContractEditorModal: React.FC<ContractEditorModalProps> = ({
       isCustom: true
     };
 
-    const updated = [...clauses, newClause];
+    const updated = sortClausesByTopic([...clauses, newClause]);
     setClauses(updated);
     saveContractClauses(updated);
-    if (!isFullTextCustom && !isFullTextDirty) {
-      setFullText(buildDefaultFullContractText(updated));
-    }
+    syncFullTextFromClauses(updated);
 
     setIsAddingNewClause(false);
     setNewLabel('Cláusula Adicional');
@@ -202,25 +224,24 @@ export const ContractEditorModal: React.FC<ContractEditorModalProps> = ({
 
   const handleDeleteClause = (id: string, label: string) => {
     if (window.confirm(`Deseja realmente remover a cláusula "${label}"?`)) {
-      const updated = clauses.filter(c => c.id !== id);
+      const updated = sortClausesByTopic(clauses.filter(c => c.id !== id));
       setClauses(updated);
       saveContractClauses(updated);
-      if (!isFullTextCustom && !isFullTextDirty) {
-        setFullText(buildDefaultFullContractText(updated));
-      }
+      syncFullTextFromClauses(updated);
       showToast(`🗑️ Cláusula "${label}" removida.`);
       if (onContractUpdated) onContractUpdated();
     }
   };
 
   const handleResetAllClauses = () => {
-    if (window.confirm('Atenção: Deseja restaurar todas as cláusulas individuais para a redação padrão original do sistema? Suas edições por cláusula serão redefinidas.')) {
-      const defaults = resetContractClauses();
+    if (window.confirm('Atenção: Deseja restaurar todas as cláusulas individuais para a redação padrão original do sistema? Suas edições serão redefinidas em todas as abas.')) {
+      const defaults = sortClausesByTopic(resetContractClauses());
+      resetFullContractTextTemplate();
       setClauses(defaults);
-      if (!isFullTextCustom && !isFullTextDirty) {
-        setFullText(buildDefaultFullContractText(defaults));
-      }
-      showToast('🔄 Cláusulas restauradas para o padrão de fábrica.', 'info');
+      setFullText(buildDefaultFullContractText(defaults));
+      setIsFullTextCustom(false);
+      setIsFullTextDirty(false);
+      showToast('🔄 Contrato e cláusulas restaurados para o padrão original.', 'info');
       if (onContractUpdated) onContractUpdated();
     }
   };
@@ -231,24 +252,38 @@ export const ContractEditorModal: React.FC<ContractEditorModalProps> = ({
       return;
     }
 
+    const syncedClauses = sortClausesByTopic(parseFullTextToClauses(fullText, clauses));
+    setClauses(syncedClauses);
+    saveContractClauses(syncedClauses);
+
+    const defaultFromParsed = buildDefaultFullContractText(syncedClauses);
+    if (fullText.trim() === defaultFromParsed.trim()) {
+      resetFullContractTextTemplate();
+      setIsFullTextCustom(false);
+      setIsFullTextDirty(false);
+      if (onContractUpdated) onContractUpdated();
+      showToast('✅ Todo o contrato foi salvo e sincronizado em todas as abas!');
+      return;
+    }
+
     const savedLocally = saveFullContractTextTemplate(fullText);
     setIsFullTextCustom(true);
     setIsFullTextDirty(false);
     if (onContractUpdated) onContractUpdated();
     if (savedLocally) {
-      showToast('✅ Todo o contrato personalizado foi salvo com sucesso! O novo modelo será utilizado na geração de novos PDFs.');
+      showToast('✅ Todo o contrato personalizado foi salvo e sincronizado em todas as abas!');
     } else {
       showToast('⚠️ Armazenamento local cheio, mas o contrato foi sincronizado na sessão/nuvem.', 'warn');
     }
   };
 
   const handleResetFullText = () => {
-    if (window.confirm('Deseja descartar o texto livre e voltar a usar a montagem automática pelas cláusulas individuais?')) {
+    if (window.confirm('Deseja descartar alterações do texto livre e recarregar o modelo estruturado das cláusulas?')) {
       resetFullContractTextTemplate();
       setIsFullTextCustom(false);
       setIsFullTextDirty(false);
       setFullText(buildDefaultFullContractText(clauses));
-      showToast('🔄 Texto completo redefinido para usar as cláusulas estruturadas.', 'info');
+      showToast('🔄 Texto completo sincronizado com as cláusulas.', 'info');
       if (onContractUpdated) onContractUpdated();
     }
   };
@@ -257,7 +292,7 @@ export const ContractEditorModal: React.FC<ContractEditorModalProps> = ({
     let didAutoSave = false;
 
     if (editingClauseId && editingText.trim()) {
-      const updated = clauses.map(c => {
+      const updated = sortClausesByTopic(clauses.map(c => {
         if (c.id === editingClauseId) {
           return {
             ...c,
@@ -268,16 +303,26 @@ export const ContractEditorModal: React.FC<ContractEditorModalProps> = ({
           };
         }
         return c;
-      });
+      }));
       setClauses(updated);
       saveContractClauses(updated);
+      syncFullTextFromClauses(updated);
       setEditingClauseId(null);
       didAutoSave = true;
     }
 
     if (isFullTextDirty && fullText.trim().length > 0) {
-      saveFullContractTextTemplate(fullText);
-      setIsFullTextCustom(true);
+      const syncedClauses = sortClausesByTopic(parseFullTextToClauses(fullText, clauses));
+      setClauses(syncedClauses);
+      saveContractClauses(syncedClauses);
+      const defaultFromParsed = buildDefaultFullContractText(syncedClauses);
+      if (fullText.trim() === defaultFromParsed.trim()) {
+        resetFullContractTextTemplate();
+        setIsFullTextCustom(false);
+      } else {
+        saveFullContractTextTemplate(fullText);
+        setIsFullTextCustom(true);
+      }
       setIsFullTextDirty(false);
       didAutoSave = true;
     }
@@ -315,49 +360,55 @@ export const ContractEditorModal: React.FC<ContractEditorModalProps> = ({
     showToast(`Inserido: ${token}`, 'info');
   };
 
-  // Build sample preview variables
+  // Build sample preview variables aligned with RentalContractModal and pdfGenerator
   const selectedVeh = vehicles.find(v => v.id === previewVehicleId) || vehicles[0];
+  const rentNum = selectedVeh?.valorSemanal && Number(selectedVeh.valorSemanal) > 0 ? Number(selectedVeh.valorSemanal) : 960;
+  const caucaoNum = (() => {
+    const paidPromises = (selectedVeh?.promisePayments || [])
+      .filter(p => p.isPaid)
+      .reduce((acc, p) => acc + (p.amount || 0), 0);
+    const total = (selectedVeh?.caucaoValor || 0) + paidPromises;
+    return total > 0 ? total : 1920;
+  })();
+  const fineRateNum = Number(localStorage.getItem('fleet_fine_rate_default') || '10');
+  const interestRateNum = Number(localStorage.getItem('fleet_daily_interest_rate_default') || '1');
+
   const sampleVariables: Record<string, string> = {
-    LOCADOR_NOME: 'Guilherme K. Dias',
-    LOCADOR_CPF: '065.426.576-30',
-    LOCADOR_RG: '39.508.321-7',
-    LOCADOR_ENDERECO: 'Rua Manuel Leiroz, 230, apto 1306 - Cangaíba, São Paulo/SP, CEP 03735-180',
+    LOCADOR_NOME: localStorage.getItem('fleet_landlord_name') || 'Cláudio Oliveira da Silva',
+    LOCADOR_CPF: localStorage.getItem('fleet_landlord_cpf') || '065.426.576-30',
+    LOCADOR_RG: localStorage.getItem('fleet_landlord_rg') || '39.508.321-7',
+    LOCADOR_ENDERECO: localStorage.getItem('fleet_landlord_address') || 'Rua Manuel Leiroz, 230, apto 1306 - Cangaíba, São Paulo/SP, CEP 03735-180',
     LOCATARIO_NOME: selectedVeh?.driver || 'Carlos Eduardo da Silva',
     LOCATARIO_CPF: selectedVeh?.tenantCpfCnpj || '341.892.108-44',
     LOCATARIO_RG: selectedVeh?.tenantRg || '44.892.108-9',
     LOCATARIO_CNH: selectedVeh?.tenantCnh || '08912347101',
     LOCATARIO_ENDERECO: selectedVeh?.tenantAddress || 'Av. Celso Garcia, 1200 - São Paulo/SP',
     LOCATARIO_FONE: selectedVeh?.driverPhone || '(11) 98765-4321',
+    LOCATARIO_EMAIL: selectedVeh?.tenantEmail || '',
     MARCA_MODELO: selectedVeh ? `${selectedVeh.brand} ${selectedVeh.model}` : 'Chevrolet Onix Plus',
     ANO_MODELO: selectedVeh ? `${selectedVeh.yearFab || selectedVeh.year}/${selectedVeh.yearModel || selectedVeh.year}` : '2023/2024',
     PLACA: selectedVeh?.plate || 'TDD-5I76',
     COR: selectedVeh?.color || 'Branco',
     KM_INICIAL: selectedVeh ? (selectedVeh.initialKm || selectedVeh.currentKm || 0).toLocaleString('pt-BR') : '18.601',
-    VALOR_SEMANAL: selectedVeh?.valorSemanal ? selectedVeh.valorSemanal.toLocaleString('pt-BR', { minimumFractionDigits: 2 }) : '650,00',
-    VALOR_SEMANAL_EXTENSO: 'seiscentos e cinquenta reais',
-    VALOR_CAUCAO: (() => {
-      const paidPromises = (selectedVeh?.promisePayments || [])
-        .filter(p => p.isPaid)
-        .reduce((acc, p) => acc + (p.amount || 0), 0);
-      const total = (selectedVeh?.caucaoValor || 0) + paidPromises;
-      return total > 0 ? total.toLocaleString('pt-BR', { minimumFractionDigits: 2 }) : '1.200,00';
-    })(),
-    VALOR_CAUCAO_EXTENSO: 'mil e duzentos reais',
+    VALOR_SEMANAL: rentNum.toLocaleString('pt-BR', { minimumFractionDigits: 2 }),
+    VALOR_SEMANAL_EXTENSO: valorPorExtensoReais(rentNum),
+    VALOR_CAUCAO: caucaoNum.toLocaleString('pt-BR', { minimumFractionDigits: 2 }),
+    VALOR_CAUCAO_EXTENSO: valorPorExtensoReais(caucaoNum),
     DATA_INICIO: selectedVeh?.startDate ? new Date(selectedVeh.startDate + 'T12:00:00').toLocaleDateString('pt-BR') : new Date().toLocaleDateString('pt-BR'),
     DIA_VENCIMENTO: 'toda segunda-feira até às 23h59',
-    CHAVE_PIX: '11953292570',
-    TAXA_MULTA: '10',
-    TAXA_MULTA_EXTENSO: 'dez por cento',
-    TAXA_JUROS: '1',
+    CHAVE_PIX: localStorage.getItem('fleet_landlord_pix') || localStorage.getItem('fleet_landlord_phone') || '11953292570',
+    TAXA_MULTA: String(fineRateNum),
+    TAXA_MULTA_EXTENSO: fineRateNum === 10 ? 'dez por cento' : `${fineRateNum}%`,
+    TAXA_JUROS: String(interestRateNum),
     LIMITE_KM: '5.000 km por mês',
     OFICINA_NOME: '',
     SEGURADORA_NOME: 'Loovi Seguros',
-    SEGURADORA_FONES: 'Assistência 24h: 0800 948 4888 | Furto/Roubo: 0800 607 2007',
+    SEGURADORA_FONES: 'Assistência 24h: 0800 948 4888 | Furto/Roubo: 0800 607 2007 | Central: 4000 1762',
     DATA_ATUAL: new Date().toLocaleDateString('pt-BR', { day: '2-digit', month: 'long', year: 'numeric' })
   };
 
   const renderedPreviewText = replaceClauseVariables(
-    (isFullTextCustom || isFullTextDirty) ? fullText : buildDefaultFullContractText(clauses),
+    fullText || buildDefaultFullContractText(clauses),
     sampleVariables
   );
 
@@ -622,130 +673,161 @@ export const ContractEditorModal: React.FC<ContractEditorModalProps> = ({
                 </div>
               )}
 
-              {filteredClauses.length === 0 ? (
+              {groupedFilteredClauses.length === 0 ? (
                 <div className="py-12 text-center text-gray-500 text-xs">
                   Nenhuma cláusula encontrada para "{searchTerm}".
                 </div>
               ) : (
-                filteredClauses.map((clause) => {
-                  const isEditingThis = editingClauseId === clause.id;
-
-                  return (
+                <div className="space-y-5">
+                  {groupedFilteredClauses.map(({ topic, clauses: topicClauses }) => (
                     <div
-                      key={clause.id}
-                      className={`p-4 rounded-2xl border transition-all ${
-                        isEditingThis
-                          ? 'bg-blue-950/20 border-blue-500/50 shadow-xl ring-1 ring-blue-500/30'
-                          : 'bg-white/[0.03] border-white/10 hover:border-white/20'
-                      }`}
+                      key={topic}
+                      className="rounded-2xl border border-white/10 bg-[#121216] overflow-hidden shadow-lg"
                     >
-                      {/* Clause Title & Actions Bar */}
-                      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 pb-2.5 border-b border-white/5">
-                        <div className="flex flex-wrap items-center gap-2">
-                          <span className="text-[10px] font-mono font-bold bg-blue-600/20 text-blue-300 border border-blue-500/30 px-2.5 py-0.5 rounded-lg">
-                            {clause.clauseLabel}
-                          </span>
-                          <span className="text-[10px] text-gray-400 font-medium">
-                            {clause.section}
-                          </span>
-                          <h4 className="text-xs font-bold text-white uppercase tracking-tight">
-                            {clause.title}
-                          </h4>
-                          {clause.isCustom && (
-                            <span className="text-[9px] bg-purple-500/20 text-purple-300 border border-purple-500/30 px-2 py-0.5 rounded-full font-bold">
-                              Personalizada
-                            </span>
-                          )}
+                      {/* Topic Group Header */}
+                      <div className="px-4 py-3 bg-gradient-to-r from-blue-950/60 via-[#171923] to-[#141418] border-b border-white/10 flex items-center justify-between gap-2">
+                        <div className="flex items-center gap-2.5 min-w-0">
+                          <span className="w-1.5 h-4 rounded-full bg-blue-500 shrink-0" />
+                          <h3 className="text-xs sm:text-sm font-extrabold text-blue-200 uppercase tracking-wide truncate">
+                            {topic}
+                          </h3>
                         </div>
-
-                        {!isEditingThis ? (
-                          <div className="flex items-center gap-1.5 self-end sm:self-auto">
-                            <button
-                              type="button"
-                              onClick={() => handleStartEditClause(clause)}
-                              className="px-3 py-1 bg-blue-600/15 hover:bg-blue-600/30 text-blue-300 border border-blue-500/30 rounded-lg text-xs font-semibold flex items-center gap-1 transition-all cursor-pointer"
-                              title="Editar o texto desta cláusula"
-                            >
-                              <Edit3 className="w-3.5 h-3.5" />
-                              <span>Editar</span>
-                            </button>
-                            {clause.isCustom && (
-                              <button
-                                type="button"
-                                onClick={() => handleDeleteClause(clause.id, clause.clauseLabel)}
-                                className="p-1 text-gray-500 hover:text-rose-400 bg-white/5 hover:bg-rose-500/10 rounded-lg transition-all"
-                                title="Excluir cláusula personalizada"
-                              >
-                                <Trash2 className="w-3.5 h-3.5" />
-                              </button>
-                            )}
-                          </div>
-                        ) : (
-                          <div className="flex items-center gap-2 self-end sm:self-auto">
-                            <button
-                              type="button"
-                              onClick={handleCancelEditClause}
-                              className="px-3 py-1 text-xs font-semibold text-gray-400 hover:text-white"
-                            >
-                              Cancelar
-                            </button>
-                            <button
-                              type="button"
-                              onClick={handleSaveSingleClause}
-                              className="px-3.5 py-1 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg text-xs font-bold flex items-center gap-1.5 shadow-md shadow-emerald-500/20 cursor-pointer"
-                            >
-                              <Check className="w-3.5 h-3.5" />
-                              <span>Salvar Cláusula</span>
-                            </button>
-                          </div>
-                        )}
+                        <span className="text-[10px] font-bold bg-blue-600/20 text-blue-300 border border-blue-500/30 px-2.5 py-0.5 rounded-full shrink-0">
+                          {topicClauses.length} {topicClauses.length === 1 ? 'cláusula' : 'cláusulas'}
+                        </span>
                       </div>
 
-                      {/* Clause Content Area */}
-                      <div className="pt-3">
-                        {isEditingThis ? (
-                          <div className="space-y-3">
-                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                              <div>
-                                <label className="text-[10px] text-gray-400 block mb-0.5">Identificação</label>
-                                <input
-                                  type="text"
-                                  value={editingLabel}
-                                  onChange={(e) => setEditingLabel(e.target.value)}
-                                  className="w-full bg-black/60 border border-white/20 rounded-lg px-2.5 py-1 text-xs text-white"
-                                />
-                              </div>
-                              <div>
-                                <label className="text-[10px] text-gray-400 block mb-0.5">Título Curto</label>
-                                <input
-                                  type="text"
-                                  value={editingTitle}
-                                  onChange={(e) => setEditingTitle(e.target.value)}
-                                  className="w-full bg-black/60 border border-white/20 rounded-lg px-2.5 py-1 text-xs text-white"
-                                />
-                              </div>
-                            </div>
+                      {/* Topic Clauses */}
+                      <div className="p-3 sm:p-4 space-y-3">
+                        {topicClauses.map((clause) => {
+                          const isEditingThis = editingClauseId === clause.id;
 
-                            <div>
-                              <label className="text-[10px] text-gray-400 block mb-0.5">Texto Jurídico da Cláusula</label>
-                              <textarea
-                                value={editingText}
-                                onChange={(e) => setEditingText(e.target.value)}
-                                rows={4}
-                                className="w-full bg-black/60 border border-white/20 rounded-xl p-3 text-xs text-white focus:outline-hidden focus:border-blue-500 leading-relaxed font-sans resize-y"
-                                placeholder="Digite o texto da cláusula..."
-                              />
+                          return (
+                            <div
+                              key={clause.id}
+                              className={`p-3.5 sm:p-4 rounded-xl border transition-all ${
+                                isEditingThis
+                                  ? 'bg-blue-950/25 border-blue-500/50 shadow-xl ring-1 ring-blue-500/30'
+                                  : 'bg-white/[0.03] border-white/10 hover:border-white/20'
+                              }`}
+                            >
+                              {/* Clause Title & Actions Bar */}
+                              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 pb-2.5 border-b border-white/5">
+                                <div className="flex flex-wrap items-center gap-2">
+                                  <span className="text-[10px] font-mono font-bold bg-blue-600/20 text-blue-300 border border-blue-500/30 px-2.5 py-0.5 rounded-lg">
+                                    {clause.clauseLabel}
+                                  </span>
+                                  <h4 className="text-xs font-bold text-white uppercase tracking-tight">
+                                    {clause.title}
+                                  </h4>
+                                  {clause.isCustom && (
+                                    <span className="text-[9px] bg-purple-500/20 text-purple-300 border border-purple-500/30 px-2 py-0.5 rounded-full font-bold">
+                                      Personalizada
+                                    </span>
+                                  )}
+                                </div>
+
+                                {!isEditingThis ? (
+                                  <div className="flex items-center gap-1.5 self-end sm:self-auto">
+                                    <button
+                                      type="button"
+                                      onClick={() => handleStartEditClause(clause)}
+                                      className="px-3 py-1 bg-blue-600/15 hover:bg-blue-600/30 text-blue-300 border border-blue-500/30 rounded-lg text-xs font-semibold flex items-center gap-1 transition-all cursor-pointer"
+                                      title="Editar o texto desta cláusula"
+                                    >
+                                      <Edit3 className="w-3.5 h-3.5" />
+                                      <span>Editar</span>
+                                    </button>
+                                    {clause.isCustom && (
+                                      <button
+                                        type="button"
+                                        onClick={() => handleDeleteClause(clause.id, clause.clauseLabel)}
+                                        className="p-1 text-gray-500 hover:text-rose-400 bg-white/5 hover:bg-rose-500/10 rounded-lg transition-all"
+                                        title="Excluir cláusula personalizada"
+                                      >
+                                        <Trash2 className="w-3.5 h-3.5" />
+                                      </button>
+                                    )}
+                                  </div>
+                                ) : (
+                                  <div className="flex items-center gap-2 self-end sm:self-auto">
+                                    <button
+                                      type="button"
+                                      onClick={handleCancelEditClause}
+                                      className="px-3 py-1 text-xs font-semibold text-gray-400 hover:text-white"
+                                    >
+                                      Cancelar
+                                    </button>
+                                    <button
+                                      type="button"
+                                      onClick={handleSaveSingleClause}
+                                      className="px-3.5 py-1 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg text-xs font-bold flex items-center gap-1.5 shadow-md shadow-emerald-500/20 cursor-pointer"
+                                    >
+                                      <Check className="w-3.5 h-3.5" />
+                                      <span>Salvar Cláusula</span>
+                                    </button>
+                                  </div>
+                                )}
+                              </div>
+
+                              {/* Clause Content Area */}
+                              <div className="pt-3">
+                                {isEditingThis ? (
+                                  <div className="space-y-3">
+                                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                                      <div>
+                                        <label className="text-[10px] text-gray-400 block mb-0.5">Tópico / Seção</label>
+                                        <input
+                                          type="text"
+                                          value={editingSection}
+                                          onChange={(e) => setEditingSection(e.target.value)}
+                                          className="w-full bg-black/60 border border-white/20 rounded-lg px-2.5 py-1 text-xs text-white"
+                                        />
+                                      </div>
+                                      <div>
+                                        <label className="text-[10px] text-gray-400 block mb-0.5">Identificação</label>
+                                        <input
+                                          type="text"
+                                          value={editingLabel}
+                                          onChange={(e) => setEditingLabel(e.target.value)}
+                                          className="w-full bg-black/60 border border-white/20 rounded-lg px-2.5 py-1 text-xs text-white"
+                                        />
+                                      </div>
+                                      <div>
+                                        <label className="text-[10px] text-gray-400 block mb-0.5">Título Curto</label>
+                                        <input
+                                          type="text"
+                                          value={editingTitle}
+                                          onChange={(e) => setEditingTitle(e.target.value)}
+                                          className="w-full bg-black/60 border border-white/20 rounded-lg px-2.5 py-1 text-xs text-white"
+                                        />
+                                      </div>
+                                    </div>
+
+                                    <div>
+                                      <label className="text-[10px] text-gray-400 block mb-0.5">Texto Jurídico da Cláusula</label>
+                                      <textarea
+                                        value={editingText}
+                                        onChange={(e) => setEditingText(e.target.value)}
+                                        rows={4}
+                                        className="w-full bg-black/60 border border-white/20 rounded-xl p-3 text-xs text-white focus:outline-hidden focus:border-blue-500 leading-relaxed font-sans resize-y"
+                                        placeholder="Digite o texto da cláusula..."
+                                      />
+                                    </div>
+                                  </div>
+                                ) : (
+                                  <p className="text-xs text-gray-300 leading-relaxed font-normal select-text">
+                                    {clause.text}
+                                  </p>
+                                )}
+                              </div>
                             </div>
-                          </div>
-                        ) : (
-                          <p className="text-xs text-gray-300 leading-relaxed font-normal select-text">
-                            {clause.text}
-                          </p>
-                        )}
+                          );
+                        })}
                       </div>
                     </div>
-                  );
-                })
+                  ))}
+                </div>
               )}
             </div>
           </div>

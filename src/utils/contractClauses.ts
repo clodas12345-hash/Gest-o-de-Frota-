@@ -378,10 +378,10 @@ export interface ContractVariableMeta {
 }
 
 export const CONTRACT_VARIABLES: ContractVariableMeta[] = [
-  { key: 'LOCADOR_NOME', label: 'Nome do Locador', example: 'Guilherme K. Dias' },
-  { key: 'LOCADOR_CPF', label: 'CPF do Locador', example: '381.892.108-44' },
+  { key: 'LOCADOR_NOME', label: 'Nome do Locador', example: 'Cláudio Oliveira da Silva' },
+  { key: 'LOCADOR_CPF', label: 'CPF do Locador', example: '065.426.576-30' },
   { key: 'LOCADOR_RG', label: 'RG do Locador', example: '39.508.321-7' },
-  { key: 'LOCADOR_ENDERECO', label: 'Endereço do Locador', example: 'Rua Manuel Leiroz, 230 - São Paulo/SP' },
+  { key: 'LOCADOR_ENDERECO', label: 'Endereço do Locador', example: 'Rua Manuel Leiroz, 230, apto 1306 - Cangaíba, São Paulo/SP, CEP 03735-180' },
   { key: 'LOCATARIO_NOME', label: 'Nome do Motorista/Locatário', example: 'Carlos Eduardo Silva' },
   { key: 'LOCATARIO_CPF', label: 'CPF do Motorista', example: '341.892.108-44' },
   { key: 'LOCATARIO_RG', label: 'RG do Motorista', example: '44.123.456-7' },
@@ -410,13 +410,46 @@ export const CONTRACT_VARIABLES: ContractVariableMeta[] = [
   { key: 'DATA_ATUAL', label: 'Data Atual Formatada', example: '11 de novembro de 2026' }
 ];
 
-export function buildDefaultFullContractText(clauses: ContractClause[] = DEFAULT_CONTRACT_CLAUSES): string {
-  const sections: Record<string, ContractClause[]> = {};
+export interface ContractTopicGroup {
+  topic: string;
+  clauses: ContractClause[];
+}
+
+export function groupClausesByTopic(clauses: ContractClause[]): ContractTopicGroup[] {
+  const map = new Map<string, ContractClause[]>();
   clauses.forEach((c) => {
-    const sec = c.section || 'DISPOSIÇÕES GERAIS';
-    if (!sections[sec]) sections[sec] = [];
-    sections[sec].push(c);
+    const topic = (c.section || 'DISPOSIÇÕES GERAIS').trim();
+    if (!map.has(topic)) map.set(topic, []);
+    map.get(topic)!.push(c);
   });
+
+  const groups: ContractTopicGroup[] = Array.from(map.entries()).map(([topic, items]) => ({
+    topic,
+    clauses: items
+  }));
+
+  const getTopicOrder = (topic: string): number => {
+    const upper = topic.toUpperCase();
+    const numMatch = topic.match(/^(\d+)\./);
+    if (numMatch) {
+      const n = Number(numMatch[1]);
+      if (upper.includes('DO FORO')) return 10000 + n;
+      return n;
+    }
+    if (upper.includes('DO FORO')) return 10000;
+    return 9000;
+  };
+
+  groups.sort((a, b) => getTopicOrder(a.topic) - getTopicOrder(b.topic));
+  return groups;
+}
+
+export function sortClausesByTopic(clauses: ContractClause[]): ContractClause[] {
+  return groupClausesByTopic(clauses).flatMap((g) => g.clauses);
+}
+
+export function buildDefaultFullContractText(clauses: ContractClause[] = DEFAULT_CONTRACT_CLAUSES): string {
+  const topicGroups = groupClausesByTopic(clauses);
 
   let full = `CONTRATO DE LOCAÇÃO DE VEÍCULO AUTOMOTOR PARA TRANSPORTE PRIVADO DE PASSAGEIROS POR APLICATIVO
 
@@ -427,8 +460,8 @@ export function buildDefaultFullContractText(clauses: ContractClause[] = DEFAULT
 As partes acima qualificadas têm, entre si, justo e acordado o presente Contrato de Locação de Veículo Automotor, que se regerá pelas seguintes cláusulas e condições:\n`;
 
   let hasForoSection = false;
-  for (const [secTitle, secClauses] of Object.entries(sections)) {
-    const upperTitle = secTitle.toUpperCase();
+  for (const { topic, clauses: secClauses } of topicGroups) {
+    const upperTitle = topic.toUpperCase();
     if (upperTitle.includes('DO FORO')) {
       hasForoSection = true;
     }
@@ -492,11 +525,177 @@ export function resetFullContractTextTemplate(): void {
   }
 }
 
+export function parseFullTextToClauses(
+  fullText: string,
+  existingClauses: ContractClause[] = DEFAULT_CONTRACT_CLAUSES
+): ContractClause[] {
+  if (!fullText || !fullText.trim()) return existingClauses;
+
+  const lines = fullText.split(/\r?\n/);
+  const hasPartiesHeader = /1\.\s*DAS\s+PARTES/i.test(fullText);
+  let inPartiesPreamble = hasPartiesHeader;
+  let currentSection = '';
+  const parsed: ContractClause[] = [];
+
+  const pool = [...existingClauses, ...DEFAULT_CONTRACT_CLAUSES];
+  const usedIds = new Set<string>();
+
+  const findMatchedMeta = (section: string, label: string, title: string): ContractClause | undefined => {
+    const normLabel = label.trim().toLowerCase();
+    const normTitle = title.trim().toLowerCase();
+    const normSec = section.trim().toLowerCase();
+
+    const exact = pool.find(
+      (c) =>
+        !usedIds.has(c.id) &&
+        c.clauseLabel.trim().toLowerCase() === normLabel &&
+        c.title.trim().toLowerCase() === normTitle
+    );
+    if (exact) return exact;
+
+    const byLabelAndSec = pool.find(
+      (c) =>
+        !usedIds.has(c.id) &&
+        c.clauseLabel.trim().toLowerCase() === normLabel &&
+        c.section.trim().toLowerCase() === normSec
+    );
+    if (byLabelAndSec) return byLabelAndSec;
+
+    const byLabel = pool.find(
+      (c) => !usedIds.has(c.id) && c.clauseLabel.trim().toLowerCase() === normLabel
+    );
+    return byLabel;
+  };
+
+  for (let i = 0; i < lines.length; i++) {
+    const trimmed = lines[i].trim();
+    if (!trimmed) continue;
+
+    if (
+      /^E\s+por\s+estarem\s+assim\s+justas/i.test(trimmed) ||
+      /^São\s+Paulo\/SP,/i.test(trimmed) ||
+      /^_{5,}/.test(trimmed)
+    ) {
+      break;
+    }
+
+    if (
+      trimmed.startsWith('CONTRATO DE LOCAÇÃO') ||
+      trimmed.startsWith('TRANSPORTE PRIVADO DE PASSAGEIROS') ||
+      trimmed === 'APLICATIVO' ||
+      /^-{3,}$/.test(trimmed) ||
+      /^={3,}$/.test(trimmed)
+    ) {
+      continue;
+    }
+
+    if (/^1\.\s*DAS\s+PARTES$/i.test(trimmed)) {
+      inPartiesPreamble = true;
+      continue;
+    }
+
+    const isSectionHeader =
+      !trimmed.startsWith('*') &&
+      !trimmed.startsWith('•') &&
+      (/^\d+\.\s+[^\n:]{2,90}$/.test(trimmed) ||
+        (/^[A-ZÀ-Ÿ0-9\s/()\-]{4,80}$/.test(trimmed) && !trimmed.includes(':')));
+
+    if (isSectionHeader) {
+      inPartiesPreamble = false;
+      currentSection = trimmed;
+      continue;
+    }
+
+    if (inPartiesPreamble) {
+      continue;
+    }
+
+    if (trimmed.startsWith('*') || /^Cláusula\s+\d+/i.test(trimmed) || /^•\s*Parágrafo/i.test(trimmed)) {
+      const content = trimmed.replace(/^\*\s*/, '').trim();
+      const colonIdx = content.indexOf(':');
+      let clauseLabel = '';
+      let title = '';
+      let text = '';
+
+      if (colonIdx > 0 && colonIdx < 120) {
+        const prefix = content.slice(0, colonIdx).trim();
+        text = content.slice(colonIdx + 1).trim();
+        const parenMatch = prefix.match(/^(.+?)\s*\(([^()]+)\)$/);
+        if (parenMatch) {
+          clauseLabel = parenMatch[1].trim();
+          title = parenMatch[2].trim();
+        } else {
+          clauseLabel = prefix;
+        }
+      } else {
+        clauseLabel = `Cláusula ${parsed.length + 1}ª`;
+        text = content;
+      }
+
+      const sec = currentSection || 'DISPOSIÇÕES GERAIS';
+      const matched = findMatchedMeta(sec, clauseLabel, title);
+      const id = matched?.id || `parsed_clause_${parsed.length + 1}_${Date.now()}`;
+      usedIds.add(id);
+
+      parsed.push({
+        id,
+        section: sec,
+        clauseLabel,
+        title: title || matched?.title || '',
+        text,
+        isCustom: matched ? matched.isCustom : !DEFAULT_CONTRACT_CLAUSES.some((d) => d.id === id)
+      });
+    } else if (parsed.length > 0) {
+      // Continuation line of the previous clause
+      parsed[parsed.length - 1].text = `${parsed[parsed.length - 1].text} ${trimmed}`.trim();
+    }
+  }
+
+  return parsed.length > 0 ? parsed : existingClauses;
+}
+
+export function rebuildFullTextWithClauses(
+  clauses: ContractClause[],
+  referenceFullText?: string | null
+): string {
+  const defaultGenerated = buildDefaultFullContractText(clauses);
+  if (!referenceFullText || !referenceFullText.trim()) {
+    return defaultGenerated;
+  }
+
+  const normalizedRef = referenceFullText.trim();
+  // Locate the first body section header (e.g., "\n2. DO OBJETO") and closing signature anchor
+  const bodyStartMatch = normalizedRef.match(/\n(?=\d+\.\s+(?!DAS\s+PARTES\b)[A-ZÀ-Ÿ])/);
+  const closingMatch = normalizedRef.match(/\n(?=E\s+por\s+estarem\s+assim\s+justas|São\s+Paulo\/SP,|_____)/i);
+
+  if (!bodyStartMatch || bodyStartMatch.index === undefined) {
+    return defaultGenerated;
+  }
+
+  const customPreamble = normalizedRef.slice(0, bodyStartMatch.index).trimEnd();
+  const customClosing =
+    closingMatch && closingMatch.index !== undefined
+      ? normalizedRef.slice(closingMatch.index).trimStart()
+      : `E por estarem assim justas e contratadas, as partes assinam o presente instrumento em 02 (duas) vias de igual teor e forma para um só efeito legal.\n\nSão Paulo/SP, {DATA_ATUAL}.\n\n\n_______________________________________\n{LOCADOR_NOME}\n(Locador)\n\n_______________________________________\n{LOCATARIO_NOME}\n(Locatário)\n`;
+
+  const topicGroups = groupClausesByTopic(clauses);
+
+  let sectionsText = '';
+  for (const { topic, clauses: secClauses } of topicGroups) {
+    sectionsText += `\n${topic.toUpperCase()}\n`;
+    secClauses.forEach((c) => {
+      sectionsText += `* ${c.clauseLabel}${c.title ? ` (${c.title})` : ''}: ${c.text}\n`;
+    });
+  }
+
+  return `${customPreamble}\n${sectionsText}\n${customClosing}`;
+}
+
 export function replaceClauseVariables(template: string, variables: Record<string, string>): string {
   let result = template;
   for (const [key, value] of Object.entries(variables)) {
     const pattern = new RegExp(`\\{${key}\\}`, 'g');
     result = result.replace(pattern, value || '');
   }
-  return result;
+  return result.replace(/[ \t]+\./g, '.');
 }

@@ -1,6 +1,6 @@
 import { jsPDF } from 'jspdf';
 import { Vehicle, MaintenanceLog, ExpenseLog, Vistoria, FuelLog } from '../types';
-import { getSavedContractClauses, replaceClauseVariables, getFullContractTextTemplate } from './contractClauses';
+import { getSavedContractClauses, replaceClauseVariables, getFullContractTextTemplate, groupClausesByTopic } from './contractClauses';
 
 export async function urlToDataUrl(url: string): Promise<{ dataUrl: string; format: 'PNG' | 'JPEG' } | null> {
   if (!url) return null;
@@ -595,7 +595,7 @@ export interface RentalContractData {
   hideLandlordPersonalData?: boolean;
 }
 
-function valorPorExtensoReais(valor: number): string {
+export function valorPorExtensoReais(valor: number): string {
   const rounded = Math.round(valor);
   if (rounded === 960) return 'novecentos e sessenta reais';
   if (rounded === 1920) return 'mil novecentos e vinte reais';
@@ -845,8 +845,8 @@ export async function generateRentalContractPDF(
     return { label, text };
   };
 
-  let sectionIndex = 12;
-  let customIncludesForo = false;
+  let hasForoSection = false;
+  let hasClosingBoilerplate = false;
   if (hasCustomFullText && customFullText) {
     let textToRender = customFullText;
     if (contract.hideLandlordPersonalData && customIncludesParties) {
@@ -854,7 +854,8 @@ export async function generateRentalContractPDF(
       textToRender = textToRender.replace(/1\.\s*DAS\s+PARTES[\s\S]*?(?=\n\s*(?:2\.|As partes acima))/i, '');
     }
     let replacedFullText = replaceClauseVariables(textToRender, variables);
-    customIncludesForo = /DO\s+FORO|E\s+por\s+estarem\s+assim\s+justas/i.test(replacedFullText);
+    hasForoSection = /DO\s+FORO/i.test(replacedFullText);
+    hasClosingBoilerplate = /E\s+por\s+estarem\s+assim\s+justas/i.test(replacedFullText);
 
     // Strip trailing plain-text signature block if present so vector signature lines draw cleanly below
     replacedFullText = replacedFullText.replace(/\n*\s*São Paulo\/SP,[\s\S]*?_{5,}[\s\S]*$/i, '').replace(/\n*\s*_{5,}[\s\S]*$/, '');
@@ -862,317 +863,99 @@ export async function generateRentalContractPDF(
     const lines = replacedFullText.split(/\r?\n/);
     let currentParagraph = '';
 
+    const flushParagraph = () => {
+      if (!currentParagraph) return;
+      const cleaned = currentParagraph.trim();
+      if (cleaned.startsWith('*') || /^Cláusula\s+\d+/i.test(cleaned) || /^•\s*Parágrafo/i.test(cleaned)) {
+        const body = cleaned.replace(/^\*\s*/, '');
+        const colonIdx = body.indexOf(':');
+        if (colonIdx > 0 && colonIdx < 120) {
+          addClause(body.slice(0, colonIdx).trim(), body.slice(colonIdx + 1).trim());
+        } else {
+          addClause('', body);
+        }
+      } else {
+        addClause('', cleaned);
+      }
+      currentParagraph = '';
+    };
+
     for (const rawLine of lines) {
       const line = rawLine.trim();
       if (!line) {
-        if (currentParagraph) {
-          addClause('', currentParagraph);
-          currentParagraph = '';
-        }
+        flushParagraph();
         continue;
       }
-      if (line.startsWith('---') || line.startsWith('===') || line.startsWith('CONTRATO DE LOCAÇÃO') || line.startsWith('TRANSPORTE PRIVADO DE PASSAGEIROS')) {
+      if (
+        line.startsWith('---') ||
+        line.startsWith('===') ||
+        line.startsWith('CONTRATO DE LOCAÇÃO') ||
+        line.startsWith('TRANSPORTE PRIVADO DE PASSAGEIROS') ||
+        line === 'APLICATIVO'
+      ) {
         continue;
       }
-      if (/^[0-9]+\.\s+[A-ZÀ-ÿ\s/()\-]+$/.test(line) || (/^[A-ZÀ-ÿ\s/()\-]{4,}$/.test(line) && !line.includes(':') && line.length < 50)) {
-        if (currentParagraph) {
-          addClause('', currentParagraph);
-          currentParagraph = '';
-        }
-        addSectionTitle(line);
+      if (
+        (!line.startsWith('*') && !line.startsWith('•') && /^[0-9]+\.\s+[^\n:]{2,90}$/.test(line)) ||
+        (!line.startsWith('*') && !line.startsWith('•') && /^[A-ZÀ-ÿ0-9\s/()\-]{4,80}$/.test(line) && !line.includes(':'))
+      ) {
+        flushParagraph();
+        addSectionTitle(line.toUpperCase());
+      } else if (line.startsWith('*') || line.startsWith('•')) {
+        flushParagraph();
+        currentParagraph = line;
       } else {
         currentParagraph = currentParagraph ? `${currentParagraph} ${line}` : line;
       }
     }
-    if (currentParagraph) {
-      addClause('', currentParagraph);
-    }
+    flushParagraph();
   } else {
-    // 2. DO OBJETO
-    addSectionTitle('2. DO OBJETO');
-    const c1 = getClause(
-      'clausula_1_objeto',
-      'Cláusula 1ª',
-      `O objeto deste contrato é a locação do veículo de propriedade do LOCADOR, com as seguintes características: Marca/Modelo: {MARCA_MODELO} | Ano/Modelo: {ANO_MODELO} | Placa: {PLACA} | Cor: {COR}. O veículo é entregue com tanque cheio (álcool/gasolina) e quilometragem inicial de {KM_INICIAL} km.`
-    );
-    addClause(c1.label, c1.text);
+    const topicGroups = groupClausesByTopic(savedClauses);
 
-    // 3. DA FINALIDADE EXCLUSIVA
-  addSectionTitle('3. DA FINALIDADE EXCLUSIVA');
-  const c2 = getClause(
-    'clausula_2_finalidade',
-    'Cláusula 2ª',
-    'O veículo destina-se exclusivamente à prestação de serviços de transporte privado de passageiros por meio de aplicativos regulamentados (ex.: Uber, 99, InDrive).'
-  );
-  addClause(c2.label, c2.text);
+    const renderSection = (secTitle: string, secClauses: typeof savedClauses) => {
+      const upperTitle = secTitle.toUpperCase();
+      if (upperTitle.includes('DO FORO')) {
+        hasForoSection = true;
+      }
+      addSectionTitle(upperTitle);
+      secClauses.forEach((c) => {
+        const label = `${c.clauseLabel}${c.title ? ` (${c.title})` : ''}`;
+        const text = replaceClauseVariables(c.text, variables);
+        addClause(label, text);
+      });
+    };
 
-  const c2p = getClause(
-    'clausula_2_paragrafo',
-    '• Parágrafo Único',
-    'É expressamente proibida a sublocação, o empréstimo ou a cessão a terceiros (mesmo que parentes), sob pena de rescisão imediata e retomada do veículo.'
-  );
-  addClause(c2p.label, c2p.text);
-
-  // 4. DO PRAZO E RENOVAÇÃO
-  addSectionTitle('4. DO PRAZO E RENOVAÇÃO');
-  const c3 = getClause(
-    'clausula_3_prazo',
-    'Cláusula 3ª',
-    'A vigência tem início em {DATA_INICIO}, com duração inicial de 30 (trinta) dias, renovável automaticamente a cada 7 (sete) dias, por prazo indeterminado.'
-  );
-  addClause(c3.label, c3.text);
-
-  const c4 = getClause(
-    'clausula_4_rescisao',
-    'Cláusula 4ª',
-    'A rescisão por qualquer das partes exige aviso prévio por escrito com antecedência mínima de 48 (quarenta e oito) horas, ressalvadas as hipóteses de retomada imediata previstas neste instrumento.'
-  );
-  addClause(c4.label, c4.text);
-
-  // 5. DOS VALORES, PAGAMENTO E CAUÇÃO
-  addSectionTitle('5. DOS VALORES, PAGAMENTO E CAUÇÃO');
-  const c5 = getClause(
-    'clausula_5_valores',
-    'Cláusula 5ª',
-    'O aluguel semanal é de R$ {VALOR_SEMANAL} ({VALOR_SEMANAL_EXTENSO}). A primeira semana é paga no prazo de 7 (sete) dias corridos a contar da retirada do veículo, e os pagamentos subsequentes ocorrem {DIA_VENCIMENTO}, via PIX para a chave (telefone) {CHAVE_PIX}.'
-  );
-  addClause(c5.label, c5.text);
-
-  const c6 = getClause(
-    'clausula_6_mora',
-    'Cláusula 6ª (Multa, Juros e Bloqueio por Atraso)',
-    'O não pagamento do aluguel ou dos valores acessórios até às 23h59 da data de vencimento constitui o LOCATÁRIO em mora automática, gerando multa fixa de {TAXA_MULTA}% ({TAXA_MULTA_EXTENSO}) sobre o valor da semana vencida, acrescida de juros moratórios de {TAXA_JUROS}% ao mês (pro rata die) logo a partir do 1º (primeiro) dia de atraso. Caso o pagamento não seja regularizado, o LOCADOR notificará o LOCATÁRIO, via aplicativo, SMS ou WhatsApp, para que estacione o veículo em local seguro, realizando o bloqueio remoto do veículo, sem prejuízo de outras sanções legais.'
-  );
-  addClause(c6.label, c6.text);
-
-  const c7 = getClause(
-    'clausula_7_caucao',
-    'Cláusula 7ª (Caução)',
-    'O LOCATÁRIO pagará R$ {VALOR_CAUCAO} ({VALOR_CAUCAO_EXTENSO}) a título de caução à vista, no ato da retirada do veículo. O valor da caução não pode, em hipótese alguma, ser utilizado para abatimento ou pagamento de aluguel semanal, sendo restituído integralmente em até 30 (trinta) dias após a devolução do veículo, desde que inexistam danos, multas ou pendências financeiras.'
-  );
-  addClause(c7.label, c7.text);
-
-  const c8 = getClause(
-    'clausula_8_semparar',
-    'Cláusula 8ª (Sem Parar)',
-    'O LOCADOR será reembolsado integralmente pelo LOCATÁRIO na primeira semana de cada mês, mediante a apresentação de extrato detalhado de utilização do sistema de pedágio/estacionamento automático.'
-  );
-  addClause(c8.label, c8.text);
-
-  // 6. DAS MULTAS DE TRÂNSITO
-  addSectionTitle('6. DAS MULTAS DE TRÂNSITO');
-  const c9 = getClause(
-    'clausula_9_multas',
-    'Cláusula 9ª',
-    'O LOCATÁRIO é o único responsável pelas multas de trânsito cometidas durante a vigência do contrato, contadas desde a retirada até a efetiva devolução do veículo, ainda que a notificação seja emitida ou entregue após a restituição do automóvel ou da caução. Infrações cometidas após a devolução formal do veículo não são de responsabilidade do LOCATÁRIO.'
-  );
-  addClause(c9.label, c9.text);
-
-  const c9p1 = getClause(
-    'clausula_9_paragrafo_1',
-    '• Parágrafo Primeiro',
-    'O valor das multas de trânsito será cobrado junto ao aluguel semanal 15 dias após a notificação, integrando o montante devido para todos os efeitos, inclusive incidência de mora, multa e bloqueio previstos na Cláusula 6ª.'
-  );
-  addClause(c9p1.label, c9p1.text);
-
-  const c9p2 = getClause(
-    'clausula_9_paragrafo_2',
-    '• Parágrafo Segundo',
-    'Multas de infrações cometidas durante a vigência do contrato, mas notificadas após a devolução do veículo, deverão ser pagas em até 15 (quinze) dias corridos a contar da notificação, sob pena de execução e cobrança judicial. A data e o horário da infração registrados no órgão competente definem a responsabilidade temporal.'
-  );
-  addClause(c9p2.label, c9p2.text);
-
-  // 7. DA MANUTENÇÃO, USO E SEGURANÇA
-  addSectionTitle('7. DA MANUTENÇÃO, USO E SEGURANÇA');
-  const c10 = getClause(
-    'clausula_10_manutencao',
-    'Cláusula 10ª',
-    'O veículo possui limite de quilometragem de {LIMITE_KM} rodados por mês. Caso este limite seja ultrapassado e torne-se necessário antecipar a revisão, os custos da manutenção preventiva antecipada serão rateados em 50/50 entre LOCADOR e LOCATÁRIO. A manutenção preventiva regular ocorre a cada 7.000 km rodados{OFICINA_NOME}.'
-  );
-  addClause(c10.label, c10.text);
-
-  const c10p = getClause(
-    'clausula_10_paragrafo',
-    '• Parágrafo Único',
-    'Despesas com troca de óleo e filtros correm por conta do LOCADOR; o desgaste natural de peças de uso periódico é dividido igualmente (50/50); e eventuais danos decorrentes de mau uso, imperícia ou negligência são de responsabilidade integral do LOCATÁRIO.'
-  );
-  addClause(c10p.label, c10p.text);
-
-  const c11 = getClause(
-    'clausula_11_seguranca',
-    'Cláusula 11ª',
-    'É expressamente proibido fumar no interior do veículo. O veículo é equipado com rastreador e câmeras internas/externas, sendo proibida qualquer tentativa de obstrução, violação ou desligamento desses dispositivos.'
-  );
-  addClause(c11.label, c11.text);
-
-  const c12 = getClause(
-    'clausula_12_combustivel',
-    'Cláusula 12ª',
-    'Caso a luz de injeção acenda por suspeita de abastecimento com combustível de baixa qualidade, o LOCATÁRIO obriga-se a realizar a troca imediata do combustível para a devida verificação e solução do problema.'
-  );
-  addClause(c12.label, c12.text);
-
-  const c13 = getClause(
-    'clausula_13_bloqueio',
-    'Cláusula 13ª (Bloqueio Remoto e Retomada Imediata)',
-    'O LOCADOR poderá realizar o bloqueio remoto do veículo e declarar o contrato rescindido com retomada imediata, sem aviso prévio, nas seguintes hipóteses: (i) inadimplência superior a 2 (dois) dias; (ii) uso indevido, sublocação ou condução por terceiros não autorizados; (iii) abandono do veículo; ou (iv) descumprimento de qualquer cláusula deste instrumento. O bloqueio remoto não desobriga o LOCATÁRIO do pagamento dos valores devidos da locação.'
-  );
-  addClause(c13.label, c13.text);
-
-  const c13p = getClause(
-    'clausula_13_paragrafo',
-    '• Parágrafo Único',
-    'A recusa injustificada em restituir o veículo ao LOCADOR após a rescisão ou notificação de retomada configurará crime de Apropriação Indébita (art. 168 do Código Penal), autorizando o acionamento imediato das autoridades policiais e medidas judiciais de busca e apreensão.'
-  );
-  addClause(c13p.label, c13p.text);
-
-  const c14 = getClause(
-    'clausula_14_modificacoes',
-    'Cláusula 14ª (Modificações e Documentos)',
-    'É proibido modificar, adesivar, plotar, remover peças ou instalar equipamentos no veículo sem autorização prévia e por escrito do LOCADOR. O LOCATÁRIO deverá portar e manter o CRLV (físico ou digital) válido e acessível durante a condução, devolvendo-o incontinenti ao término do contrato e abstendo-se de entregá-lo a terceiros.'
-  );
-  addClause(c14.label, c14.text);
-
-  // 8. DA DEVOLUÇÃO E AVARIAS
-  addSectionTitle('8. DA DEVOLUÇÃO E AVARIAS');
-  const c15 = getClause(
-    'clausula_15_avarias',
-    'Cláusula 15ª',
-    'Em caso de avarias decorrentes de mau uso que exijam reparo em oficina, o LOCATÁRIO arcará com o valor integral do conserto em até 20 (vinte) dias corridos da ocorrência, restando expressamente estabelecido que a obrigatoriedade do pagamento do aluguel com o carro parado continua sendo do LOCATÁRIO.'
-  );
-  addClause(c15.label, c15.text);
-
-  const c16 = getClause(
-    'clausula_16_termos_devolucao',
-    'Cláusula 16ª (Termos de Devolução)',
-    'O veículo deverá ser devolvido limpo, com o tanque de combustível no mesmo nível da retirada e acompanhado das fotos/vídeos comparativos de vistoria.'
-  );
-  addClause(c16.label, c16.text);
-
-  const c16p1 = getClause(
-    'clausula_16_paragrafo_1',
-    '• Parágrafo Primeiro',
-    'Caso o veículo seja devolvido com combustível abaixo do nível da retirada, o LOCATÁRIO reembolsará o valor correspondente. Se for devolvido em condições de sujeira excessiva que exijam higienização profissional, será cobrada a taxa correspondente de R$ 150,00 (ou o valor equivalente à higienização).'
-  );
-  addClause(c16p1.label, c16p1.text);
-
-  const c16p2 = getClause(
-    'clausula_16_paragrafo_2',
-    '• Parágrafo Segundo',
-    'A devolução realizada após o horário combinado implicará a cobrança de diária proporcional de 1/7 do valor do aluguel semanal por dia de atraso, sem prejuízo das penalidades por quebra contratual.'
-  );
-  addClause(c16p2.label, c16p2.text);
-
-  // 9. DA VISTORIA E MONITORAMENTO (LGPD)
-  addSectionTitle('9. DA VISTORIA E MONITORAMENTO (LGPD)');
-  const c17 = getClause(
-    'clausula_17_vistoria',
-    'Cláusula 17ª',
-    'É obrigatório o registro fotográfico e em vídeo do painel, pneus e lataria no momento da retirada e da devolução. O LOCATÁRIO obriga-se, ainda, a enviar a vistoria semanal por aplicativo ou WhatsApp em dia e horário previamente ajustados com o LOCADOR.'
-  );
-  addClause(c17.label, c17.text);
-
-  const c18 = getClause(
-    'clausula_18_lgpd',
-    'Cláusula 18ª (Privacidade e LGPD)',
-    'O LOCATÁRIO autoriza expressamente o monitoramento do veículo por meio de rastreador e câmeras, abrangendo localização em tempo real, rotas, velocidades, imagens e áudio interno, para fins estritos de segurança, gestão de frota, prevenção de fraudes e defesa jurídica em eventuais litígios, em total conformidade com a Lei nº 13.709/2018 (LGPD).'
-  );
-  addClause(c18.label, c18.text);
-
-  // 10. DOS SINISTROS E TRATATIVAS COM TERCEIROS
-  addSectionTitle('10. DOS SINISTROS E TRATATIVAS COM TERCEIROS');
-  const c19 = getClause(
-    'clausula_19_sinistros',
-    'Cláusula 19ª',
-    'Em caso de acidente, colisão, furto, roubo ou qualquer sinistro envolvendo terceiros, o LOCATÁRIO deverá comunicar o LOCADOR imediatamente e registrar o respectivo Boletim de Ocorrência (B.O.).'
-  );
-  addClause(c19.label, c19.text);
-
-  const c19p1 = getClause(
-    'clausula_19_paragrafo_1',
-    '• Parágrafo Primeiro',
-    'Qualquer negociação, acordo, tratativa ou contato com terceiros envolvidos ou com as seguradoras respectivas deverá ser conduzido e autorizado estritamente pelo LOCADOR. É vedado ao LOCATÁRIO firmar acordos ou prometer pagamentos em nome do proprietário.'
-  );
-  addClause(c19p1.label, c19p1.text);
-
-  const c19p2 = getClause(
-    'clausula_19_paragrafo_2',
-    '• Parágrafo Segundo',
-    'O CPF e os documentos pessoais do LOCATÁRIO não poderão ser utilizados por terceiros para abertura de reclamações, processos ou acionamentos de seguros, sendo tal prerrogativa exclusiva do LOCADOR.'
-  );
-  addClause(c19p2.label, c19p2.text);
-
-  const c19p3 = getClause(
-    'clausula_19_paragrafo_3',
-    '• Parágrafo Terceiro',
-    'A violação desta cláusula caracteriza infração contratual grave, ensejando rescisão imediata do contrato e responsabilização civil e criminal do LOCATÁRIO por eventuais prejuízos.'
-  );
-  addClause(c19p3.label, c19p3.text);
-
-  // 11. DO SEGURO (LOOVI SEGUROS)
-  addSectionTitle(`11. DO SEGURO (${insCompany.toUpperCase()})`);
-  const c20 = getClause(
-    'clausula_20_seguro',
-    'Cláusula 20ª',
-    `O veículo possui apólice de seguro contratada junto à Loovi Seguros (${insCompany}), contemplando assistência 24 horas, cobertura para furto/roubo, colisão completa (danos próprios e a terceiros), carro reserva e proteção de vidros.`
-  );
-  addClause(c20.label, c20.text);
-
-  const c20p1 = getClause(
-    'clausula_20_paragrafo_1',
-    '• Parágrafo Primeiro',
-    'Em caso de sinistro com necessidade de acionamento do seguro, a franquia e eventuais despesas acessórias serão de responsabilidade integral do LOCATÁRIO.'
-  );
-  addClause(c20p1.label, c20p1.text);
-
-  const c20p2 = getClause(
-    'clausula_20_paragrafo_2',
-    '• Parágrafo Segundo',
-    'É permitido apenas 01 (um) acionamento por mês para serviços de assistência 24 horas. Acionamentos adicionais correrão exclusivamente por conta do LOCATÁRIO.'
-  );
-  addClause(c20p2.label, c20p2.text);
-
-  const c20p3 = getClause(
-    'clausula_20_paragrafo_3',
-    '• Parágrafo Terceiro',
-    `Contatos de emergência do seguro: ${insPhones}.`
-  );
-  addClause(c20p3.label, c20p3.text);
-
-  // Cláusulas personalizadas criadas pelo usuário
-  const customClausesList = savedClauses.filter(c => c.isCustom);
-  if (customClausesList.length > 0) {
-    addSectionTitle('CLÁUSULAS ADICIONAIS PERSONALIZADAS');
-    customClausesList.forEach(cc => {
-      const text = replaceClauseVariables(cc.text, variables);
-      addClause(cc.clauseLabel, text);
+    topicGroups.forEach(({ topic, clauses: secClauses }) => {
+      if (topic.toUpperCase().includes('DO FORO') && contract.customClauses && contract.customClauses.trim().length > 0) {
+        addSectionTitle('CONDIÇÕES ESPECÍFICAS ADICIONAIS');
+        addClause('', contract.customClauses.trim());
+      }
+      renderSection(topic, secClauses);
     });
+
+    if (!topicGroups.some((g) => g.topic.toUpperCase().includes('DO FORO')) && contract.customClauses && contract.customClauses.trim().length > 0) {
+      addSectionTitle('CONDIÇÕES ESPECÍFICAS ADICIONAIS');
+      addClause('', contract.customClauses.trim());
+    }
   }
 
-  // Cláusulas especiais informadas no formulário (opcional)
-  sectionIndex = 12;
-  if (contract.customClauses && contract.customClauses.trim().length > 0) {
-    addSectionTitle(`${sectionIndex}. OBSERVAÇÕES E CONDIÇÕES ESPECÍFICAS`);
-    addClause('', contract.customClauses.trim());
-    sectionIndex++;
-  }
-  }
-
-  // DO FORO E DISPOSIÇÕES FINAIS (não duplicar quando o texto completo personalizado já inclui)
-  if (!customIncludesForo) {
-    addSectionTitle(`${sectionIndex}. DO FORO E DISPOSIÇÕES FINAIS`);
-    const c21 = clauseMap.has('clausula_22_foro')
+  // DO FORO E DISPOSIÇÕES FINAIS (garantir que sempre conste sem duplicar seção já renderizada)
+  if (!hasForoSection) {
+    addSectionTitle('13. DO FORO E DISPOSIÇÕES FINAIS');
+    const c22 = clauseMap.has('clausula_22_foro')
       ? getClause(
           'clausula_22_foro',
-          'Cláusula 22ª',
+          'Cláusula 22ª (Eleição de Foro)',
           'Para dirimir quaisquer controvérsias ou litígios oriundos do presente contrato, as partes elegem expressamente o Foro da Comarca de São Paulo/SP, renunciando a qualquer outro, por mais privilegiado que seja.'
         )
       : getClause(
           'clausula_21_foro',
-          'Cláusula 21ª',
+          'Cláusula 21ª (Eleição de Foro)',
           'Para dirimir quaisquer controvérsias ou litígios oriundos do presente contrato, as partes elegem expressamente o Foro da Comarca de São Paulo/SP, renunciando a qualquer outro, por mais privilegiado que seja.'
         );
-    addClause(c21.label, c21.text);
+    addClause(c22.label, c22.text);
+  }
+  if (!hasClosingBoilerplate) {
     addClause(
       '',
       'E por estarem assim justas e contratadas, as partes assinam o presente instrumento em 02 (duas) vias de igual teor e forma para um só efeito legal.'

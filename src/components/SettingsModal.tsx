@@ -39,7 +39,17 @@ import {
   setNotificationPreferences,
   DEFAULT_NOTIFICATION_PREFERENCES
 } from '../utils/notifications';
-import { ContractClause, getSavedContractClauses, saveContractClauses, resetContractClauses } from '../utils/contractClauses';
+import {
+  ContractClause,
+  getSavedContractClauses,
+  saveContractClauses,
+  resetContractClauses,
+  getFullContractTextTemplate,
+  saveFullContractTextTemplate,
+  resetFullContractTextTemplate,
+  parseFullTextToClauses,
+  rebuildFullTextWithClauses
+} from '../utils/contractClauses';
 
 interface SettingsModalProps {
   isOpen: boolean;
@@ -74,6 +84,7 @@ interface SettingsModalProps {
   onShowDeleteConfirm?: (title: string, description: string, onConfirm: () => void) => void;
   initialTab?: 'settings' | 'calendar' | 'charts' | 'history' | 'contract';
   onContractUpdated?: () => void;
+  onOpenContractEditor?: () => void;
 }
 
 export function SettingsModal({
@@ -106,7 +117,8 @@ export function SettingsModal({
   onSwitchExpenseToMaint,
   onShowDeleteConfirm,
   initialTab = 'settings',
-  onContractUpdated
+  onContractUpdated,
+  onOpenContractEditor
 }: SettingsModalProps) {
   const [permissionState, setPermissionState] = useState<'granted' | 'denied' | 'default'>('default');
   const [notifPrefs, setNotifPrefs] = useState<Record<NotificationEventKey, boolean>>(() => getNotificationPreferences());
@@ -153,6 +165,11 @@ export function SettingsModal({
 
   useEffect(() => {
     if (isOpen) {
+      if (initialTab === 'contract' && onOpenContractEditor) {
+        onClose();
+        onOpenContractEditor();
+        return;
+      }
       setMainTab(initialTab);
       setNotifPrefs(getNotificationPreferences());
       checkNotificationPermission().then((granted) => {
@@ -161,8 +178,8 @@ export function SettingsModal({
       setLandlordName(localStorage.getItem('fleet_landlord_name') || 'Cláudio Oliveira da Silva');
       setLandlordCpfCnpj(localStorage.getItem('fleet_landlord_cpf') || '065.426.576-30');
       setLandlordRg(localStorage.getItem('fleet_landlord_rg') || '39.508.321-7');
-      setLandlordPhone(localStorage.getItem('fleet_landlord_phone') || '(11) 95329-2570');
       setLandlordAddress(localStorage.getItem('fleet_landlord_address') || 'Rua Manuel Leiroz, 230, apto 1306 - Cangaíba, São Paulo/SP, CEP: 03735-180');
+      setLandlordPhone(localStorage.getItem('fleet_landlord_phone') || '(11) 95329-2570');
       setPixKey(localStorage.getItem('fleet_landlord_pix') || '11953292570');
       
       const savedFine = localStorage.getItem('fleet_fine_rate_default');
@@ -172,7 +189,13 @@ export function SettingsModal({
       const savedEarlyFine = localStorage.getItem('fleet_early_return_fine_rate_default');
       setEarlyFineRate(savedEarlyFine ? Number(savedEarlyFine) : 20.0);
       
-      setContractClauses(getSavedContractClauses());
+      const savedClauses = getSavedContractClauses();
+      const customFull = getFullContractTextTemplate();
+      setContractClauses(
+        customFull && customFull.trim().length > 0
+          ? parseFullTextToClauses(customFull, savedClauses)
+          : savedClauses
+      );
     }
   }, [isOpen, initialTab]);
 
@@ -192,18 +215,21 @@ export function SettingsModal({
     );
     setContractClauses(updated);
     saveContractClauses(updated);
+    const customFull = getFullContractTextTemplate();
+    if (customFull && customFull.trim().length > 0) {
+      saveFullContractTextTemplate(rebuildFullTextWithClauses(updated, customFull));
+    }
     if (onContractUpdated) onContractUpdated();
     setEditingClauseId(null);
     setEditingClauseText('');
-    alert('Cláusula atualizada com sucesso! Ela será aplicada nos novos contratos gerados.');
   };
 
   const handleResetClauses = () => {
     if (window.confirm('Deseja realmente resetar todas as cláusulas para o padrão original do sistema? Suas alterações serão perdidas.')) {
       const defaults = resetContractClauses();
+      resetFullContractTextTemplate();
       setContractClauses(defaults);
       if (onContractUpdated) onContractUpdated();
-      alert('Cláusulas resetadas para o padrão.');
     }
   };
 
@@ -356,7 +382,14 @@ export function SettingsModal({
 
           <button
             type="button"
-            onClick={() => setMainTab('contract' as any)}
+            onClick={() => {
+              if (onOpenContractEditor) {
+                onClose();
+                onOpenContractEditor();
+              } else {
+                setMainTab('contract' as any);
+              }
+            }}
             className={`flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer border shrink-0 ${
               (mainTab as any) === 'contract'
                 ? 'bg-rose-600 text-white border-rose-400/50 shadow-md shadow-rose-500/20'
@@ -364,7 +397,7 @@ export function SettingsModal({
             }`}
           >
             <FileText className="w-3.5 h-3.5" />
-            <span>Editar Cláusulas do Contrato</span>
+            <span>Editor de Contrato</span>
           </button>
         </div>
 

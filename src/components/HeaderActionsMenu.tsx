@@ -152,7 +152,7 @@ export function HeaderActionsMenu({
               </button>
             </div>
 
-            {/* Option 1: Adicionar Carro */}
+            {/* Grupo 1: Veículos & Motoristas */}
             <button
               type="button"
               onClick={() => handleAction(onAddVehicle)}
@@ -167,90 +167,6 @@ export function HeaderActionsMenu({
               </div>
             </button>
 
-            {/* Option: Cadastrar Motorista */}
-            {onOpenRegisterDriver && (
-              <button
-                type="button"
-                onClick={() => handleAction(onOpenRegisterDriver)}
-                className="w-full flex items-center gap-3 p-3 rounded-xl bg-indigo-500/10 hover:bg-indigo-500/20 text-left group transition-all cursor-pointer border border-indigo-500/20 hover:border-indigo-500/40"
-              >
-                <div className="p-2 bg-indigo-600 text-white rounded-lg group-hover:scale-105 transition-transform shadow-md shadow-indigo-500/20">
-                  <User className="w-4 h-4" />
-                </div>
-                <div>
-                  <p className="text-xs font-bold text-white group-hover:text-indigo-300">Cadastrar Motorista</p>
-                  <p className="text-[10px] text-gray-400">Puxar do celular e vincular a um veículo</p>
-                </div>
-              </button>
-            )}
-
-            {/* Option: Editor de Contrato & Cláusulas */}
-            {onOpenContractEditor && (
-              <button
-                type="button"
-                onClick={() => handleAction(onOpenContractEditor)}
-                className="w-full flex items-center gap-3 p-3 rounded-xl bg-purple-500/10 hover:bg-purple-500/20 text-left group transition-all cursor-pointer border border-purple-500/20 hover:border-purple-500/40"
-              >
-                <div className="p-2 bg-purple-600 text-white rounded-lg group-hover:scale-105 transition-transform shadow-md shadow-purple-500/20">
-                  <Edit3 className="w-4 h-4" />
-                </div>
-                <div>
-                  <p className="text-xs font-bold text-white group-hover:text-purple-300">Editor de Contrato</p>
-                  <p className="text-[10px] text-gray-400">Editar 1 cláusula ou todo o contrato</p>
-                </div>
-              </button>
-            )}
-
-            {/* Option: Nova Manutenção */}
-            <button
-              type="button"
-              onClick={() => handleAction(() => onOpenLogForm('maintenance'))}
-              className="w-full flex items-center gap-3 p-3 rounded-xl bg-amber-500/10 hover:bg-amber-500/20 text-left group transition-all cursor-pointer border border-amber-500/20 hover:border-amber-500/40"
-            >
-              <div className="p-2 bg-amber-600 text-white rounded-lg group-hover:scale-105 transition-transform shadow-md shadow-amber-500/20">
-                <Wrench className="w-4 h-4" />
-              </div>
-              <div>
-                <p className="text-xs font-bold text-white group-hover:text-amber-300">Nova Manutenção</p>
-                <p className="text-[10px] text-gray-400">Adicionar novos dados de peças, oficinas e reparos</p>
-              </div>
-            </button>
-
-            {/* Option: Histórico de Manutenções por Carro */}
-            {onOpenMaintenanceHistory && (
-              <button
-                type="button"
-                onClick={() => handleAction(onOpenMaintenanceHistory)}
-                className="w-full flex items-center gap-3 p-3 rounded-xl bg-orange-500/10 hover:bg-orange-500/20 text-left group transition-all cursor-pointer border border-orange-500/20 hover:border-orange-500/40"
-              >
-                <div className="p-2 bg-orange-600 text-white rounded-lg group-hover:scale-105 transition-transform shadow-md shadow-orange-500/20">
-                  <Wrench className="w-4 h-4" />
-                </div>
-                <div>
-                  <p className="text-xs font-bold text-white group-hover:text-orange-300">Histórico de Manutenções</p>
-                  <p className="text-[10px] text-gray-400">Detentor de todos os dados separados por carros</p>
-                </div>
-              </button>
-            )}
-
-            {/* Option: Gerar Contrato de Locação */}
-            {onOpenRentalContract && (
-              <button
-                type="button"
-                onClick={() => handleAction(onOpenRentalContract)}
-                className="w-full flex items-center gap-3 p-3 rounded-xl bg-emerald-500/10 hover:bg-emerald-500/20 text-left group transition-all cursor-pointer border border-emerald-500/20 hover:border-emerald-500/40"
-              >
-                <div className="p-2 bg-emerald-600 text-white rounded-lg group-hover:scale-105 transition-transform shadow-md shadow-emerald-500/20">
-                  <FileText className="w-4 h-4" />
-                </div>
-                <div>
-                  <p className="text-xs font-bold text-white group-hover:text-emerald-300">Gerar Contrato de Locação</p>
-                  <p className="text-[10px] text-gray-400">Dados do locatário e PDF oficial</p>
-                </div>
-              </button>
-            )}
-
-            {/* Option: Modo Odômetro (KM em Lote) */}
             {onOpenBatchOdometer && (
               <button
                 type="button"
@@ -267,24 +183,71 @@ export function HeaderActionsMenu({
               </button>
             )}
 
-            {/* Option: Relatório Mensal PDF (Contador) */}
-            {onDownloadExecutivePdf && (
+            {onOpenRegisterDriver && (
               <button
                 type="button"
-                onClick={() => handleAction(onDownloadExecutivePdf)}
-                className="w-full flex items-center gap-3 p-3 rounded-xl bg-emerald-500/10 hover:bg-emerald-500/20 text-left group transition-all cursor-pointer border border-emerald-500/20 hover:border-emerald-500/40"
+                onClick={() => handleAction(onOpenRegisterDriver)}
+                className="w-full flex items-center gap-3 p-3 rounded-xl bg-indigo-500/10 hover:bg-indigo-500/20 text-left group transition-all cursor-pointer border border-indigo-500/20 hover:border-indigo-500/40"
               >
-                <div className="p-2 bg-emerald-500 text-slate-950 rounded-lg group-hover:scale-105 transition-transform shadow-md shadow-emerald-500/20">
-                  <FileDown className="w-4 h-4" />
+                <div className="p-2 bg-indigo-600 text-white rounded-lg group-hover:scale-105 transition-transform shadow-md shadow-indigo-500/20">
+                  <User className="w-4 h-4" />
                 </div>
                 <div>
-                  <p className="text-xs font-bold text-white group-hover:text-emerald-300">Relatório Mensal PDF (Contador)</p>
-                  <p className="text-[10px] text-gray-400">Resumo executivo de 1 página em PDF</p>
+                  <p className="text-xs font-bold text-white group-hover:text-indigo-300">Cadastrar Motorista</p>
+                  <p className="text-[10px] text-gray-400">Puxar do celular e vincular a um veículo</p>
                 </div>
               </button>
             )}
 
-            {/* Option 2: Contratos Finalizados */}
+            <button
+              type="button"
+              onClick={() => handleAction(onOpenAgenda)}
+              className="w-full flex items-center gap-3 p-3 rounded-xl bg-teal-500/10 hover:bg-teal-500/20 text-left group transition-all cursor-pointer border border-teal-500/20 hover:border-teal-500/40"
+            >
+              <div className="p-2 bg-teal-600 text-white rounded-lg group-hover:scale-105 transition-transform shadow-md shadow-teal-500/20">
+                <BookOpen className="w-4 h-4" />
+              </div>
+              <div>
+                <p className="text-xs font-bold text-white group-hover:text-teal-300">Agenda Telefônica & Locatários</p>
+                <p className="text-[10px] text-gray-400">Contatos, telefones e regiões</p>
+              </div>
+            </button>
+
+            <div className="my-1 border-t border-white/10" />
+
+            {/* Grupo 2: Contratos & Documentos */}
+            {onOpenRentalContract && (
+              <button
+                type="button"
+                onClick={() => handleAction(onOpenRentalContract)}
+                className="w-full flex items-center gap-3 p-3 rounded-xl bg-emerald-500/10 hover:bg-emerald-500/20 text-left group transition-all cursor-pointer border border-emerald-500/20 hover:border-emerald-500/40"
+              >
+                <div className="p-2 bg-emerald-600 text-white rounded-lg group-hover:scale-105 transition-transform shadow-md shadow-emerald-500/20">
+                  <FileText className="w-4 h-4" />
+                </div>
+                <div>
+                  <p className="text-xs font-bold text-white group-hover:text-emerald-300">Gerar Contrato de Locação</p>
+                  <p className="text-[10px] text-gray-400">Dados do locatário e PDF oficial</p>
+                </div>
+              </button>
+            )}
+
+            {onOpenContractEditor && (
+              <button
+                type="button"
+                onClick={() => handleAction(onOpenContractEditor)}
+                className="w-full flex items-center gap-3 p-3 rounded-xl bg-purple-500/10 hover:bg-purple-500/20 text-left group transition-all cursor-pointer border border-purple-500/20 hover:border-purple-500/40"
+              >
+                <div className="p-2 bg-purple-600 text-white rounded-lg group-hover:scale-105 transition-transform shadow-md shadow-purple-500/20">
+                  <Edit3 className="w-4 h-4" />
+                </div>
+                <div>
+                  <p className="text-xs font-bold text-white group-hover:text-purple-300">Editor de Contrato</p>
+                  <p className="text-[10px] text-gray-400">Editar 1 cláusula ou todo o contrato</p>
+                </div>
+              </button>
+            )}
+
             <button
               type="button"
               onClick={() => handleAction(onOpenFinalizedContracts)}
@@ -310,7 +273,72 @@ export function HeaderActionsMenu({
               )}
             </button>
 
-            {/* Option: Centro de Notificações */}
+            <button
+              type="button"
+              onClick={() => handleAction(onOpenDocumentUpload)}
+              className="w-full flex items-center gap-3 p-2.5 rounded-xl hover:bg-white/5 text-left group transition-colors cursor-pointer border border-transparent hover:border-white/10"
+            >
+              <div className="p-1.5 bg-blue-500/20 text-blue-400 rounded-lg">
+                <Paperclip className="w-4 h-4" />
+              </div>
+              <div>
+                <p className="text-xs font-semibold text-gray-200 group-hover:text-white">Carregar Documento</p>
+                <p className="text-[10px] text-gray-400">Contratos, fotos e arquivos</p>
+              </div>
+            </button>
+
+            <div className="my-1 border-t border-white/10" />
+
+            {/* Grupo 3: Manutenções & Relatórios */}
+            <button
+              type="button"
+              onClick={() => handleAction(() => onOpenLogForm('maintenance'))}
+              className="w-full flex items-center gap-3 p-3 rounded-xl bg-amber-500/10 hover:bg-amber-500/20 text-left group transition-all cursor-pointer border border-amber-500/20 hover:border-amber-500/40"
+            >
+              <div className="p-2 bg-amber-600 text-white rounded-lg group-hover:scale-105 transition-transform shadow-md shadow-amber-500/20">
+                <Wrench className="w-4 h-4" />
+              </div>
+              <div>
+                <p className="text-xs font-bold text-white group-hover:text-amber-300">Nova Manutenção</p>
+                <p className="text-[10px] text-gray-400">Adicionar novos dados de peças, oficinas e reparos</p>
+              </div>
+            </button>
+
+            {onOpenMaintenanceHistory && (
+              <button
+                type="button"
+                onClick={() => handleAction(onOpenMaintenanceHistory)}
+                className="w-full flex items-center gap-3 p-3 rounded-xl bg-orange-500/10 hover:bg-orange-500/20 text-left group transition-all cursor-pointer border border-orange-500/20 hover:border-orange-500/40"
+              >
+                <div className="p-2 bg-orange-600 text-white rounded-lg group-hover:scale-105 transition-transform shadow-md shadow-orange-500/20">
+                  <Wrench className="w-4 h-4" />
+                </div>
+                <div>
+                  <p className="text-xs font-bold text-white group-hover:text-orange-300">Histórico de Manutenções</p>
+                  <p className="text-[10px] text-gray-400">Detentor de todos os dados separados por carros</p>
+                </div>
+              </button>
+            )}
+
+            {onDownloadExecutivePdf && (
+              <button
+                type="button"
+                onClick={() => handleAction(onDownloadExecutivePdf)}
+                className="w-full flex items-center gap-3 p-3 rounded-xl bg-emerald-500/10 hover:bg-emerald-500/20 text-left group transition-all cursor-pointer border border-emerald-500/20 hover:border-emerald-500/40"
+              >
+                <div className="p-2 bg-emerald-500 text-slate-950 rounded-lg group-hover:scale-105 transition-transform shadow-md shadow-emerald-500/20">
+                  <FileDown className="w-4 h-4" />
+                </div>
+                <div>
+                  <p className="text-xs font-bold text-white group-hover:text-emerald-300">Relatório Mensal PDF (Contador)</p>
+                  <p className="text-[10px] text-gray-400">Resumo executivo de 1 página em PDF</p>
+                </div>
+              </button>
+            )}
+
+            <div className="my-1 border-t border-white/10" />
+
+            {/* Grupo 4: Sistema & Notificações */}
             {onOpenNotificationCenter && (
               <button
                 type="button"
@@ -327,7 +355,6 @@ export function HeaderActionsMenu({
               </button>
             )}
 
-            {/* Option: Configurações */}
             {onOpenSettings && (
               <button
                 type="button"
@@ -343,38 +370,6 @@ export function HeaderActionsMenu({
                 </div>
               </button>
             )}
-
-            <div className="my-1 border-t border-white/10" />
-
-            {/* Option: Agenda de Contatos & Locatários */}
-            <button
-              type="button"
-              onClick={() => handleAction(onOpenAgenda)}
-              className="w-full flex items-center gap-3 p-3 rounded-xl bg-teal-500/10 hover:bg-teal-500/20 text-left group transition-all cursor-pointer border border-teal-500/20 hover:border-teal-500/40"
-            >
-              <div className="p-2 bg-teal-600 text-white rounded-lg group-hover:scale-105 transition-transform shadow-md shadow-teal-500/20">
-                <BookOpen className="w-4 h-4" />
-              </div>
-              <div>
-                <p className="text-xs font-bold text-white group-hover:text-teal-300">Agenda Telefônica & Locatários</p>
-                <p className="text-[10px] text-gray-400">Contatos, telefones e regiões</p>
-              </div>
-            </button>
-
-            {/* Option 5: Enviar Documento */}
-            <button
-              type="button"
-              onClick={() => handleAction(onOpenDocumentUpload)}
-              className="w-full flex items-center gap-3 p-2.5 rounded-xl hover:bg-white/5 text-left group transition-colors cursor-pointer border border-transparent hover:border-white/10"
-            >
-              <div className="p-1.5 bg-blue-500/20 text-blue-400 rounded-lg">
-                <Paperclip className="w-4 h-4" />
-              </div>
-              <div>
-                <p className="text-xs font-semibold text-gray-200 group-hover:text-white">Carregar Documento</p>
-                <p className="text-[10px] text-gray-400">Contratos, fotos e arquivos</p>
-              </div>
-            </button>
 
             <div className="my-1 border-t border-white/10" />
 

@@ -3813,6 +3813,7 @@ export default function App() {
         onOpenBatchOdometer={() => setIsBatchOdometerOpen(true)}
         initialTab={settingsInitialTab}
         onContractUpdated={syncContractTemplatesToCloud}
+        onOpenContractEditor={() => setIsContractEditorOpen(true)}
       />
 
       {/* Centro de Notificações Modal */}
@@ -3850,8 +3851,7 @@ export default function App() {
         onSaveContact={handleSaveContact}
         onOpenContractSettings={() => {
           setIsRentalContractOpen(false);
-          setSettingsInitialTab('contract');
-          setIsSettingsOpen(true);
+          setIsContractEditorOpen(true);
         }}
         onOpenContractEditor={() => {
           setIsRentalContractOpen(false);
