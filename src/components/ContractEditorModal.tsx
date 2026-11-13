@@ -75,6 +75,8 @@ export const ContractEditorModal: React.FC<ContractEditorModalProps> = ({
   const [isFullTextCustom, setIsFullTextCustom] = useState(false);
   const [isFullTextDirty, setIsFullTextDirty] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const fullTextSyncTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const clauseSyncTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Preview state
   const [previewVehicleId, setPreviewVehicleId] = useState<string>(vehicles[0]?.id || '');
@@ -113,6 +115,10 @@ export const ContractEditorModal: React.FC<ContractEditorModalProps> = ({
         setPreviewVehicleId(vehicles[0].id);
       }
     }
+    return () => {
+      if (fullTextSyncTimerRef.current) clearTimeout(fullTextSyncTimerRef.current);
+      if (clauseSyncTimerRef.current) clearTimeout(clauseSyncTimerRef.current);
+    };
   }, [isOpen]);
 
   if (!isOpen) return null;
@@ -134,6 +140,13 @@ export const ContractEditorModal: React.FC<ContractEditorModalProps> = ({
   const groupedFilteredClauses = groupClausesByTopic(filteredClauses);
 
   const handleStartEditClause = (c: ContractClause) => {
+    if (clauseSyncTimerRef.current) {
+      clearTimeout(clauseSyncTimerRef.current);
+      clauseSyncTimerRef.current = null;
+    }
+    if (editingClauseId && editingClauseId !== c.id && editingText.trim()) {
+      commitEditingClause(false);
+    }
     setEditingClauseId(c.id);
     setEditingLabel(c.clauseLabel);
     setEditingTitle(c.title);
@@ -143,6 +156,10 @@ export const ContractEditorModal: React.FC<ContractEditorModalProps> = ({
   };
 
   const handleCancelEditClause = () => {
+    if (clauseSyncTimerRef.current) {
+      clearTimeout(clauseSyncTimerRef.current);
+      clauseSyncTimerRef.current = null;
+    }
     setEditingClauseId(null);
     setEditingLabel('');
     setEditingTitle('');
@@ -152,25 +169,95 @@ export const ContractEditorModal: React.FC<ContractEditorModalProps> = ({
   const syncFullTextFromClauses = (updatedClauses: ContractClause[], referenceText: string = fullText) => {
     const rebuilt = rebuildFullTextWithClauses(updatedClauses, referenceText);
     setFullText(rebuilt);
-    if (isFullTextCustom || isFullTextDirty) {
-      const defaultForClauses = buildDefaultFullContractText(updatedClauses);
-      if (rebuilt.trim() === defaultForClauses.trim()) {
-        resetFullContractTextTemplate();
-        setIsFullTextCustom(false);
-      } else {
-        saveFullContractTextTemplate(rebuilt);
-        setIsFullTextCustom(true);
-      }
-      setIsFullTextDirty(false);
+    const defaultForClauses = buildDefaultFullContractText(updatedClauses);
+    if (rebuilt.trim() === defaultForClauses.trim()) {
+      resetFullContractTextTemplate();
+      setIsFullTextCustom(false);
+    } else {
+      saveFullContractTextTemplate(rebuilt);
+      setIsFullTextCustom(true);
     }
+    setIsFullTextDirty(false);
   };
 
-  const handleSaveSingleClause = () => {
-    if (!editingClauseId) return;
-    if (!editingText.trim()) {
-      showToast('O texto da cláusula não pode ficar em branco.', 'warn');
-      return;
+  const commitFullTextSync = (
+    textToSync: string,
+    currentClauses: ContractClause[] = clauses,
+    showSuccessToast: boolean = false
+  ): boolean => {
+    if (!textToSync.trim()) return true;
+    const syncedClauses = sortClausesByTopic(parseFullTextToClauses(textToSync, currentClauses));
+    setClauses(syncedClauses);
+    saveContractClauses(syncedClauses);
+
+    const defaultFromParsed = buildDefaultFullContractText(syncedClauses);
+    let savedLocally = true;
+    if (textToSync.trim() === defaultFromParsed.trim()) {
+      resetFullContractTextTemplate();
+      setIsFullTextCustom(false);
+    } else {
+      savedLocally = saveFullContractTextTemplate(textToSync);
+      setIsFullTextCustom(true);
     }
+    setIsFullTextDirty(false);
+    if (onContractUpdated) onContractUpdated();
+
+    if (showSuccessToast) {
+      if (savedLocally) {
+        showToast('✅ Todo o contrato foi salvo e sincronizado em todas as abas!');
+      } else {
+        showToast('⚠️ Armazenamento local cheio, mas o contrato foi sincronizado na sessão/nuvem.', 'warn');
+      }
+    }
+    return savedLocally;
+  };
+
+  const handleFullTextChange = (nextText: string) => {
+    setFullText(nextText);
+    setIsFullTextDirty(true);
+
+    const liveClauses = sortClausesByTopic(parseFullTextToClauses(nextText, clauses));
+    setClauses(liveClauses);
+
+    if (fullTextSyncTimerRef.current) clearTimeout(fullTextSyncTimerRef.current);
+    fullTextSyncTimerRef.current = setTimeout(() => {
+      commitFullTextSync(nextText, liveClauses, false);
+    }, 500);
+  };
+
+  const scheduleLiveClauseSync = (
+    nextSection: string,
+    nextLabel: string,
+    nextTitle: string,
+    nextText: string
+  ) => {
+    if (!editingClauseId || !nextText.trim()) return;
+    if (clauseSyncTimerRef.current) clearTimeout(clauseSyncTimerRef.current);
+    clauseSyncTimerRef.current = setTimeout(() => {
+      const updated = clauses.map(c =>
+        c.id === editingClauseId
+          ? {
+              ...c,
+              section: nextSection.trim() || c.section,
+              clauseLabel: nextLabel.trim() || c.clauseLabel,
+              title: nextTitle.trim() || c.title,
+              text: nextText.trim()
+            }
+          : c
+      );
+      setClauses(updated);
+      saveContractClauses(updated);
+      syncFullTextFromClauses(updated);
+      if (onContractUpdated) onContractUpdated();
+    }, 500);
+  };
+
+  const commitEditingClause = (closeEditMode: boolean = true) => {
+    if (!editingClauseId || !editingText.trim()) {
+      if (closeEditMode) setEditingClauseId(null);
+      return false;
+    }
+    if (clauseSyncTimerRef.current) clearTimeout(clauseSyncTimerRef.current);
 
     const updated = sortClausesByTopic(clauses.map(c => {
       if (c.id === editingClauseId) {
@@ -188,10 +275,43 @@ export const ContractEditorModal: React.FC<ContractEditorModalProps> = ({
     setClauses(updated);
     saveContractClauses(updated);
     syncFullTextFromClauses(updated);
-
-    setEditingClauseId(null);
-    showToast(`✅ Cláusula "${editingLabel || 'selecionada'}" atualizada com sucesso!`);
+    if (closeEditMode) setEditingClauseId(null);
     if (onContractUpdated) onContractUpdated();
+    return true;
+  };
+
+  const handleSwitchTab = (targetTab: 'clauses' | 'fullText' | 'preview') => {
+    if (targetTab === activeTab) return;
+
+    if (fullTextSyncTimerRef.current) {
+      clearTimeout(fullTextSyncTimerRef.current);
+      fullTextSyncTimerRef.current = null;
+    }
+    if (clauseSyncTimerRef.current) {
+      clearTimeout(clauseSyncTimerRef.current);
+      clauseSyncTimerRef.current = null;
+    }
+
+    if (activeTab === 'clauses' && editingClauseId) {
+      commitEditingClause(true);
+    }
+
+    if (activeTab === 'fullText' && isFullTextDirty && fullText.trim().length > 0) {
+      commitFullTextSync(fullText, clauses, false);
+    }
+
+    setActiveTab(targetTab);
+  };
+
+  const handleSaveSingleClause = () => {
+    if (!editingClauseId) return;
+    if (!editingText.trim()) {
+      showToast('O texto da cláusula não pode ficar em branco.', 'warn');
+      return;
+    }
+
+    commitEditingClause(true);
+    showToast(`✅ Cláusula "${editingLabel || 'selecionada'}" atualizada e sincronizada com todo o contrato!`);
   };
 
   const handleCreateNewClause = () => {
@@ -218,7 +338,7 @@ export const ContractEditorModal: React.FC<ContractEditorModalProps> = ({
     setNewLabel('Cláusula Adicional');
     setNewTitle('');
     setNewText('');
-    showToast('✅ Nova cláusula adicionada com sucesso!');
+    showToast('✅ Nova cláusula adicionada e sincronizada com todo o contrato!');
     if (onContractUpdated) onContractUpdated();
   };
 
@@ -228,7 +348,7 @@ export const ContractEditorModal: React.FC<ContractEditorModalProps> = ({
       setClauses(updated);
       saveContractClauses(updated);
       syncFullTextFromClauses(updated);
-      showToast(`🗑️ Cláusula "${label}" removida.`);
+      showToast(`🗑️ Cláusula "${label}" removida e sincronizada.`);
       if (onContractUpdated) onContractUpdated();
     }
   };
@@ -251,34 +371,13 @@ export const ContractEditorModal: React.FC<ContractEditorModalProps> = ({
       showToast('O texto do contrato não pode ficar vazio.', 'warn');
       return;
     }
-
-    const syncedClauses = sortClausesByTopic(parseFullTextToClauses(fullText, clauses));
-    setClauses(syncedClauses);
-    saveContractClauses(syncedClauses);
-
-    const defaultFromParsed = buildDefaultFullContractText(syncedClauses);
-    if (fullText.trim() === defaultFromParsed.trim()) {
-      resetFullContractTextTemplate();
-      setIsFullTextCustom(false);
-      setIsFullTextDirty(false);
-      if (onContractUpdated) onContractUpdated();
-      showToast('✅ Todo o contrato foi salvo e sincronizado em todas as abas!');
-      return;
-    }
-
-    const savedLocally = saveFullContractTextTemplate(fullText);
-    setIsFullTextCustom(true);
-    setIsFullTextDirty(false);
-    if (onContractUpdated) onContractUpdated();
-    if (savedLocally) {
-      showToast('✅ Todo o contrato personalizado foi salvo e sincronizado em todas as abas!');
-    } else {
-      showToast('⚠️ Armazenamento local cheio, mas o contrato foi sincronizado na sessão/nuvem.', 'warn');
-    }
+    if (fullTextSyncTimerRef.current) clearTimeout(fullTextSyncTimerRef.current);
+    commitFullTextSync(fullText, clauses, true);
   };
 
   const handleResetFullText = () => {
     if (window.confirm('Deseja descartar alterações do texto livre e recarregar o modelo estruturado das cláusulas?')) {
+      if (fullTextSyncTimerRef.current) clearTimeout(fullTextSyncTimerRef.current);
       resetFullContractTextTemplate();
       setIsFullTextCustom(false);
       setIsFullTextDirty(false);
@@ -289,46 +388,15 @@ export const ContractEditorModal: React.FC<ContractEditorModalProps> = ({
   };
 
   const handleCloseAndCommitPendingEdits = () => {
-    let didAutoSave = false;
+    if (fullTextSyncTimerRef.current) clearTimeout(fullTextSyncTimerRef.current);
+    if (clauseSyncTimerRef.current) clearTimeout(clauseSyncTimerRef.current);
 
     if (editingClauseId && editingText.trim()) {
-      const updated = sortClausesByTopic(clauses.map(c => {
-        if (c.id === editingClauseId) {
-          return {
-            ...c,
-            clauseLabel: editingLabel.trim() || c.clauseLabel,
-            title: editingTitle.trim() || c.title,
-            text: editingText.trim(),
-            section: editingSection.trim() || c.section
-          };
-        }
-        return c;
-      }));
-      setClauses(updated);
-      saveContractClauses(updated);
-      syncFullTextFromClauses(updated);
-      setEditingClauseId(null);
-      didAutoSave = true;
+      commitEditingClause(true);
     }
 
     if (isFullTextDirty && fullText.trim().length > 0) {
-      const syncedClauses = sortClausesByTopic(parseFullTextToClauses(fullText, clauses));
-      setClauses(syncedClauses);
-      saveContractClauses(syncedClauses);
-      const defaultFromParsed = buildDefaultFullContractText(syncedClauses);
-      if (fullText.trim() === defaultFromParsed.trim()) {
-        resetFullContractTextTemplate();
-        setIsFullTextCustom(false);
-      } else {
-        saveFullContractTextTemplate(fullText);
-        setIsFullTextCustom(true);
-      }
-      setIsFullTextDirty(false);
-      didAutoSave = true;
-    }
-
-    if (didAutoSave && onContractUpdated) {
-      onContractUpdated();
+      commitFullTextSync(fullText, clauses, false);
     }
 
     onClose();
@@ -337,8 +405,7 @@ export const ContractEditorModal: React.FC<ContractEditorModalProps> = ({
   const insertVariableIntoFullText = (variableKey: string) => {
     const token = `{${variableKey}}`;
     if (!textareaRef.current) {
-      setFullText(prev => prev + ' ' + token);
-      setIsFullTextDirty(true);
+      handleFullTextChange(fullText + ' ' + token);
       showToast(`Inserido: ${token}`, 'info');
       return;
     }
@@ -349,8 +416,7 @@ export const ContractEditorModal: React.FC<ContractEditorModalProps> = ({
     const current = textarea.value;
 
     const updated = current.substring(0, start) + token + current.substring(end);
-    setFullText(updated);
-    setIsFullTextDirty(true);
+    handleFullTextChange(updated);
 
     setTimeout(() => {
       textarea.focus();
@@ -474,7 +540,7 @@ export const ContractEditorModal: React.FC<ContractEditorModalProps> = ({
           <div className="flex items-center gap-2 py-2">
             <button
               type="button"
-              onClick={() => setActiveTab('clauses')}
+              onClick={() => handleSwitchTab('clauses')}
               className={`px-3.5 py-2 rounded-xl text-xs font-bold flex items-center gap-2 transition-all cursor-pointer ${
                 activeTab === 'clauses'
                   ? 'bg-blue-600 text-white shadow-md shadow-blue-500/20'
@@ -487,7 +553,7 @@ export const ContractEditorModal: React.FC<ContractEditorModalProps> = ({
 
             <button
               type="button"
-              onClick={() => setActiveTab('fullText')}
+              onClick={() => handleSwitchTab('fullText')}
               className={`px-3.5 py-2 rounded-xl text-xs font-bold flex items-center gap-2 transition-all cursor-pointer ${
                 activeTab === 'fullText'
                   ? 'bg-blue-600 text-white shadow-md shadow-blue-500/20'
@@ -500,7 +566,7 @@ export const ContractEditorModal: React.FC<ContractEditorModalProps> = ({
 
             <button
               type="button"
-              onClick={() => setActiveTab('preview')}
+              onClick={() => handleSwitchTab('preview')}
               className={`px-3.5 py-2 rounded-xl text-xs font-bold flex items-center gap-2 transition-all cursor-pointer ${
                 activeTab === 'preview'
                   ? 'bg-blue-600 text-white shadow-md shadow-blue-500/20'
@@ -780,7 +846,11 @@ export const ContractEditorModal: React.FC<ContractEditorModalProps> = ({
                                         <input
                                           type="text"
                                           value={editingSection}
-                                          onChange={(e) => setEditingSection(e.target.value)}
+                                          onChange={(e) => {
+                                            const val = e.target.value;
+                                            setEditingSection(val);
+                                            scheduleLiveClauseSync(val, editingLabel, editingTitle, editingText);
+                                          }}
                                           className="w-full bg-black/60 border border-white/20 rounded-lg px-2.5 py-1 text-xs text-white"
                                         />
                                       </div>
@@ -789,7 +859,11 @@ export const ContractEditorModal: React.FC<ContractEditorModalProps> = ({
                                         <input
                                           type="text"
                                           value={editingLabel}
-                                          onChange={(e) => setEditingLabel(e.target.value)}
+                                          onChange={(e) => {
+                                            const val = e.target.value;
+                                            setEditingLabel(val);
+                                            scheduleLiveClauseSync(editingSection, val, editingTitle, editingText);
+                                          }}
                                           className="w-full bg-black/60 border border-white/20 rounded-lg px-2.5 py-1 text-xs text-white"
                                         />
                                       </div>
@@ -798,7 +872,11 @@ export const ContractEditorModal: React.FC<ContractEditorModalProps> = ({
                                         <input
                                           type="text"
                                           value={editingTitle}
-                                          onChange={(e) => setEditingTitle(e.target.value)}
+                                          onChange={(e) => {
+                                            const val = e.target.value;
+                                            setEditingTitle(val);
+                                            scheduleLiveClauseSync(editingSection, editingLabel, val, editingText);
+                                          }}
                                           className="w-full bg-black/60 border border-white/20 rounded-lg px-2.5 py-1 text-xs text-white"
                                         />
                                       </div>
@@ -808,7 +886,11 @@ export const ContractEditorModal: React.FC<ContractEditorModalProps> = ({
                                       <label className="text-[10px] text-gray-400 block mb-0.5">Texto Jurídico da Cláusula</label>
                                       <textarea
                                         value={editingText}
-                                        onChange={(e) => setEditingText(e.target.value)}
+                                        onChange={(e) => {
+                                          const val = e.target.value;
+                                          setEditingText(val);
+                                          scheduleLiveClauseSync(editingSection, editingLabel, editingTitle, val);
+                                        }}
                                         rows={4}
                                         className="w-full bg-black/60 border border-white/20 rounded-xl p-3 text-xs text-white focus:outline-hidden focus:border-blue-500 leading-relaxed font-sans resize-y"
                                         placeholder="Digite o texto da cláusula..."
@@ -852,12 +934,14 @@ export const ContractEditorModal: React.FC<ContractEditorModalProps> = ({
                 <button
                   type="button"
                   onClick={() => {
+                    if (fullTextSyncTimerRef.current) clearTimeout(fullTextSyncTimerRef.current);
                     const generated = buildDefaultFullContractText(clauses);
                     setFullText(generated);
-                    if (isFullTextCustom) {
-                      setIsFullTextDirty(true);
-                    }
-                    showToast('Texto recarregado a partir das cláusulas individuais!', 'info');
+                    resetFullContractTextTemplate();
+                    setIsFullTextCustom(false);
+                    setIsFullTextDirty(false);
+                    if (onContractUpdated) onContractUpdated();
+                    showToast('Texto recarregado e sincronizado a partir das cláusulas individuais!', 'info');
                   }}
                   className="px-3 py-1.5 bg-white/5 hover:bg-white/10 text-gray-300 rounded-xl text-xs font-semibold flex items-center gap-1.5 transition-all cursor-pointer"
                   title="Atualizar texto completo usando as cláusulas configuradas na aba ao lado"
@@ -903,9 +987,12 @@ export const ContractEditorModal: React.FC<ContractEditorModalProps> = ({
               <textarea
                 ref={textareaRef}
                 value={fullText}
-                onChange={(e) => {
-                  setFullText(e.target.value);
-                  setIsFullTextDirty(true);
+                onChange={(e) => handleFullTextChange(e.target.value)}
+                onBlur={() => {
+                  if (isFullTextDirty && fullText.trim().length > 0) {
+                    if (fullTextSyncTimerRef.current) clearTimeout(fullTextSyncTimerRef.current);
+                    commitFullTextSync(fullText, clauses, false);
+                  }
                 }}
                 className="w-full h-[550px] sm:h-[650px] bg-black/70 border border-white/15 rounded-2xl p-4 sm:p-6 text-xs sm:text-sm text-gray-200 leading-relaxed font-mono focus:outline-hidden focus:border-blue-500 resize-y shadow-inner"
                 placeholder="Cole ou digite o texto completo do contrato..."
