@@ -758,7 +758,7 @@ export async function generateRentalContractPDF(
     );
     addClause(
       '• LOCATÁRIO',
-      `${contract.tenantName || '[Nome Completo]'}, portador(a) da CNH nº ${contract.tenantCnh || '[Número da CNH]'} com EAR (atividade remunerada), CPF nº ${contract.tenantCpfCnpj || '[Número do CPF]'}, RG nº ${contract.tenantRg || '[Número do RG]'}, residente e domiciliado(a) à ${contract.tenantAddress || '[Endereço Completo]'}. Telefone: ${contract.tenantPhone || '[Número de Telefone]'}.`
+      `${contract.tenantName || '[Nome Completo]'}, portador(a) da CNH nº ${contract.tenantCnh || '[Número da CNH]'} com EAR (atividade remunerada), CPF nº ${contract.tenantCpfCnpj || '[Número do CPF]'}, RG nº ${contract.tenantRg || '[Número do RG]'}, residente e domiciliado(a) à ${contract.tenantAddress || '[Endereço Completo]'}. Telefone: ${contract.tenantPhone || '[Número de Telefone]'}${contract.tenantEmail ? `, E-mail: ${contract.tenantEmail}` : ''}.`
     );
   }
 

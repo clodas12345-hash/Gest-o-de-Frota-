@@ -13,6 +13,7 @@ import {
   FileText, 
   User, 
   Phone, 
+  Mail,
   Calendar, 
   DollarSign, 
   MapPin, 
@@ -1479,6 +1480,22 @@ O contrato oficial em PDF já foi gerado e está arquivado nos documentos do ve�
                         onChange={(e) => setTenantPhone(e.target.value)}
                         placeholder="Ex: (11) 98765-4321"
                         className="w-full bg-[#111111] border border-white/10 rounded-xl pl-9 pr-3 py-2 text-white font-mono focus:outline-hidden focus:border-emerald-500/50"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="space-y-1 sm:col-span-2">
+                    <label className="text-[10px] text-gray-400 font-semibold uppercase tracking-wider block">
+                      E-mail
+                    </label>
+                    <div className="relative">
+                      <Mail className="w-4 h-4 text-gray-500 absolute left-3 top-2.5" />
+                      <input
+                        type="email"
+                        value={tenantEmail}
+                        onChange={(e) => setTenantEmail(e.target.value)}
+                        placeholder="Ex: motorista@email.com"
+                        className="w-full bg-[#111111] border border-white/10 rounded-xl pl-9 pr-3 py-2 text-white focus:outline-hidden focus:border-emerald-500/50"
                       />
                     </div>
                   </div>

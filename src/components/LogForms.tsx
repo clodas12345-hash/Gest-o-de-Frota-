@@ -4,7 +4,14 @@ import { X, Save, AlertCircle, Users, BookOpen, Sparkles, Mic, MicOff, Calculato
 import { Contacts } from '@capacitor-community/contacts';
 import { Capacitor } from '@capacitor/core';
 import { generateNextContractNumber } from '../utils/contractHelper';
-import { fetchFipeByCode, fetchFipeByDetails, parseFipeValueStr } from '../utils/fipeService';
+import {
+  fetchFipeByCode,
+  fetchFipeByDetails,
+  fetchFipeBrands,
+  fetchFipeModels,
+  fetchFipeYears,
+  fetchFipeDetailBySelection,
+} from '../utils/fipeService';
 import CurrencyInput from './CurrencyInput';
 
 const getTodayStr = (): string => {
@@ -273,6 +280,7 @@ export function LogForms({
   const [extraExpenses, setExtraExpenses] = useState<{ id: string; label: string; value: number; parcelasPagas?: number; parcelasTotais?: number; startDate?: string; }[]>([]);
   const [fipeCode, setFipeCode] = useState('');
   const [fipeValue, setFipeValue] = useState<number | undefined>(undefined);
+  const [fipeDebtValue, setFipeDebtValue] = useState<number | undefined>(undefined);
   const [fipeRefMonth, setFipeRefMonth] = useState('');
   const [isFipeLoading, setIsFipeLoading] = useState(false);
   const [fipeError, setFipeError] = useState('');
@@ -789,6 +797,7 @@ export function LogForms({
         setExtraExpenses(vehicleToEdit.extraExpenses || (vehicleToEdit.custoExtra ? [{ id: 'default', label: vehicleToEdit.custoExtraLabel || 'Outras Despesas', value: vehicleToEdit.custoExtra, parcelasPagas: vehicleToEdit.custoExtraParcelasPagas, parcelasTotais: vehicleToEdit.custoExtraParcelasTotais }] : []));
         setFipeCode(vehicleToEdit.fipeCode || '');
         setFipeValue(vehicleToEdit.fipeValue);
+        setFipeDebtValue(vehicleToEdit.fipeDebtValue);
         setFipeRefMonth(vehicleToEdit.fipeRefMonth || '');
         if (vehicleToEdit.custoExtra && vehicleToEdit.custoExtra > 0) {
           setShowAddExpense(true);
@@ -873,6 +882,10 @@ export function LogForms({
           setDriverCnhFileName('');
           setDriverAddressProofUrl('');
           setDriverAddressFileName('');
+          setFipeCode('');
+          setFipeValue(undefined);
+          setFipeDebtValue(undefined);
+          setFipeRefMonth('');
         }
       }
     } else if (formType === 'fuel') {
@@ -1017,10 +1030,11 @@ export function LogForms({
   };
 
 
-  // Fetch FIPE brands list based on vehicle type
+  // Fetch FIPE brands list based on vehicle type (with multi-API fallback)
   useEffect(() => {
     if (!isOpen || formType !== 'vehicle') return;
-    
+    let active = true;
+
     const loadBrands = async () => {
       setFipeBrands([]);
       setFipeModels([]);
@@ -1028,107 +1042,111 @@ export function LogForms({
       setSelectedFipeBrandId('');
       setSelectedFipeModelId('');
       setSelectedFipeYearId('');
-      
+
       setIsFipeBrandsLoading(true);
       try {
-        const res = await fetch(`https://parallelum.com.br/fipe/api/v1/${fipeVehicleType}/marcas`);
-        if (res.ok) {
-          const data = await res.json();
-          setFipeBrands(data || []);
-        }
+        const data = await fetchFipeBrands(fipeVehicleType);
+        if (active) setFipeBrands(data || []);
       } catch (err) {
         console.error('Error loading FIPE brands:', err);
+        if (active) {
+          setFipeError('Não foi possível carregar as marcas da FIPE automaticamente. Você pode digitar o Código FIPE ou inserir o Valor de Mercado FIPE manualmente abaixo.');
+        }
       } finally {
-        setIsFipeBrandsLoading(false);
+        if (active) setIsFipeBrandsLoading(false);
       }
     };
-    
+
     loadBrands();
+    return () => { active = false; };
   }, [isOpen, fipeVehicleType, formType]);
 
-  // Fetch FIPE models list when brand changes
+  // Fetch FIPE models list when brand changes (with multi-API fallback)
   useEffect(() => {
     if (!selectedFipeBrandId || !isOpen || formType !== 'vehicle') return;
-    
+    let active = true;
+
     const loadModels = async () => {
       setFipeModels([]);
       setFipeYears([]);
       setSelectedFipeModelId('');
       setSelectedFipeYearId('');
-      
+
       setIsFipeModelsLoading(true);
       try {
-        const res = await fetch(`https://parallelum.com.br/fipe/api/v1/${fipeVehicleType}/marcas/${selectedFipeBrandId}/modelos`);
-        if (res.ok) {
-          const data = await res.json();
-          setFipeModels(data.modelos || []);
-        }
+        const data = await fetchFipeModels(fipeVehicleType, selectedFipeBrandId);
+        if (active) setFipeModels(data || []);
       } catch (err) {
         console.error('Error loading FIPE models:', err);
+        if (active) {
+          setFipeError('Falha ao carregar modelos na Tabela FIPE. Tente buscar pelo Código FIPE ou digite o valor manualmente abaixo.');
+        }
       } finally {
-        setIsFipeModelsLoading(false);
+        if (active) setIsFipeModelsLoading(false);
       }
     };
-    
+
     loadModels();
+    return () => { active = false; };
   }, [selectedFipeBrandId, fipeVehicleType, isOpen, formType]);
 
-  // Fetch FIPE years list when model changes
+  // Fetch FIPE years list when model changes (with multi-API fallback)
   useEffect(() => {
     if (!selectedFipeModelId || !selectedFipeBrandId || !isOpen || formType !== 'vehicle') return;
-    
+    let active = true;
+
     const loadYears = async () => {
       setFipeYears([]);
       setSelectedFipeYearId('');
-      
+
       setIsFipeYearsLoading(true);
       try {
-        const res = await fetch(`https://parallelum.com.br/fipe/api/v1/${fipeVehicleType}/marcas/${selectedFipeBrandId}/modelos/${selectedFipeModelId}/anos`);
-        if (res.ok) {
-          const data = await res.json();
-          setFipeYears(data || []);
-        }
+        const data = await fetchFipeYears(fipeVehicleType, selectedFipeBrandId, selectedFipeModelId);
+        if (active) setFipeYears(data || []);
       } catch (err) {
         console.error('Error loading FIPE years:', err);
+        if (active) {
+          setFipeError('Falha ao carregar os anos na Tabela FIPE. Você pode digitar o valor manualmente abaixo.');
+        }
       } finally {
-        setIsFipeYearsLoading(false);
+        if (active) setIsFipeYearsLoading(false);
       }
     };
-    
+
     loadYears();
+    return () => { active = false; };
   }, [selectedFipeModelId, selectedFipeBrandId, fipeVehicleType, isOpen, formType]);
 
-  // Fetch final FIPE details when year is selected
+  // Fetch final FIPE details when year is selected (with multi-API fallback)
   const handleFipeYearSelect = async (yearId: string) => {
     setSelectedFipeYearId(yearId);
     if (!yearId || !selectedFipeBrandId || !selectedFipeModelId) return;
-    
+
     setIsFipeLoading(true);
     setFipeError('');
     try {
-      const res = await fetch(`https://parallelum.com.br/fipe/api/v1/${fipeVehicleType}/marcas/${selectedFipeBrandId}/modelos/${selectedFipeModelId}/anos/${yearId}`);
-      if (res.ok) {
-        const detail = await res.json();
-        const valueNum = parseFipeValueStr(detail.Valor);
-        
-        setFipeValue(valueNum);
-        setFipeCode(detail.CodigoFipe || '');
-        setFipeRefMonth(detail.MesReferencia || '');
-        
-        // Auto-fill form fields!
-        if (detail.Marca) setBrand(detail.Marca);
-        if (detail.Modelo) setModel(detail.Modelo);
-        if (detail.AnoModelo) {
-          const yearNum = Number(detail.AnoModelo);
-          setYearModel(isNaN(yearNum) ? "" : yearNum);
-          setYearFab(isNaN(yearNum) ? "" : yearNum - 1);
-        }
-      } else {
-        setFipeError('Erro ao consultar os detalhes finais do preço FIPE.');
+      const detail = await fetchFipeDetailBySelection(
+        fipeVehicleType,
+        selectedFipeBrandId,
+        selectedFipeModelId,
+        yearId
+      );
+
+      setFipeValue(detail.fipeValue);
+      setFipeCode(detail.fipeCode || '');
+      setFipeRefMonth(detail.refMonth || '');
+
+      // Auto-fill form fields!
+      if (detail.brand) setBrand(detail.brand);
+      if (detail.vehicleName) setModel(detail.vehicleName);
+      if (detail.modelYear) {
+        const yearNum = Number(detail.modelYear);
+        setYearModel(isNaN(yearNum) ? "" : yearNum);
+        setYearFab(isNaN(yearNum) ? "" : yearNum - 1);
       }
     } catch (err) {
       console.error('Error fetching FIPE final price:', err);
-      setFipeError('Erro de conexão ao buscar preço final FIPE.');
+      setFipeError('O servidor da Tabela FIPE está temporariamente instável. Digite o Valor de Mercado FIPE manualmente no campo abaixo.');
     } finally {
       setIsFipeLoading(false);
     }
@@ -1244,6 +1262,7 @@ export function LogForms({
         })(),
         fipeCode: fipeCode.trim() || undefined,
         fipeValue: fipeValue ? Number(fipeValue) : undefined,
+        fipeDebtValue: fipeDebtValue ? Number(fipeDebtValue) : undefined,
         fipeRefMonth: fipeRefMonth || undefined,
         fipeLastUpdate: fipeValue ? `${new Date().getFullYear()}-${String(new Date().getMonth() + 1).padStart(2, '0')}` : vehicleToEdit?.fipeLastUpdate,
         fipeHistory: fipeValue ? (
@@ -1765,8 +1784,8 @@ export function LogForms({
                       <button
                         type="button"
                         onClick={async () => {
-                          if (!brand || !model) {
-                            setFipeError('Informe ao menos a Marca e o Modelo para consultar a FIPE.');
+                          if (!fipeCode?.trim() && (!brand || !model)) {
+                            setFipeError('Informe o Código FIPE ou ao menos a Marca e o Modelo para consultar.');
                             return;
                           }
                           setIsFipeLoading(true);
@@ -1787,6 +1806,8 @@ export function LogForms({
                               setFipeValue(res.fipeValue);
                               setFipeCode(res.fipeCode);
                               setFipeRefMonth(res.refMonth);
+                              if (!brand && res.brand) setBrand(res.brand);
+                              if (!model && res.vehicleName) setModel(res.vehicleName);
                             } else {
                               setFipeError('Não foi possível localizar o modelo na Tabela FIPE. Verifique Marca/Modelo ou digite o Código FIPE.');
                             }
@@ -1850,6 +1871,17 @@ export function LogForms({
                       }}
                       placeholder="0,00"
                       className="w-full text-xs bg-black/40 border border-white/10 rounded-lg px-2.5 py-1.5 text-emerald-400 font-mono font-bold focus:outline-hidden"
+                    />
+                  </div>
+
+                  {/* Debt value still owed on the vehicle */}
+                  <div className="space-y-1 sm:col-span-2">
+                    <label className="text-[10px] font-bold text-gray-400 uppercase">Valor do Carro que Devo Ainda (R$)</label>
+                    <CurrencyInput
+                      value={fipeDebtValue || 0}
+                      onChange={(val) => setFipeDebtValue(val)}
+                      placeholder="0,00"
+                      className="w-full text-xs bg-black/40 border border-amber-500/20 rounded-lg px-2.5 py-1.5 text-amber-300 font-mono font-bold focus:outline-hidden"
                     />
                   </div>
                 </div>

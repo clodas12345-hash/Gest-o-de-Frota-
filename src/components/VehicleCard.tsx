@@ -6,7 +6,7 @@ const Directory = { Cache: 'CACHE', Documents: 'DOCUMENTS', Data: 'DATA' };
 import { Vehicle, ExpenseLog, WeeklyPayment, Vistoria, VehicleDocument, MaintenanceLog, FuelLog, SinistroLog, PromisePayment, TireState } from '../types';
 import { generateVistoriaPDF, generatePaymentReceiptPDF } from '../utils/pdfGenerator';
 import { sendAppNotification, requestNotificationPermission } from '../utils/notifications';
-import { syncVehicleFipe } from '../utils/fipeService';
+import { syncVehicleFipe, applyManualFipeOverride } from '../utils/fipeService';
 import { PdfViewer } from './PdfViewer';
 import { encodeVistoriaParams } from '../utils/vistoriaUrl';
 import { db } from '../firebase';
@@ -562,6 +562,9 @@ export const VehicleCard: React.FC<VehicleCardProps> = ({
   const [isTiresModalOpen, setIsTiresModalOpen] = useState(false);
   const [isFinesModalOpen, setIsFinesModalOpen] = useState(false);
   const [isLoadingFipe, setIsLoadingFipe] = useState(false);
+  const [isEditingFipeManual, setIsEditingFipeManual] = useState(false);
+  const [manualFipeValue, setManualFipeValue] = useState<number>(vehicle.fipeValue || 0);
+  const [fipeErrorMsg, setFipeErrorMsg] = useState<string>('');
   const [copiedPortalLink, setCopiedPortalLink] = useState(false);
   const historyRef = useRef<HTMLDivElement>(null);
 
@@ -6411,7 +6414,7 @@ _Enviado via sistema de gestão de frota._`;
 
                       {/* Tabela FIPE Card */}
                       <div className="bg-gradient-to-r from-blue-950/40 via-indigo-950/40 to-blue-900/40 border border-blue-500/30 p-3 rounded-xl space-y-2 col-span-1 sm:col-span-2">
-                        <div className="flex items-center justify-between">
+                        <div className="flex items-center justify-between gap-2 flex-wrap">
                           <div className="flex items-center gap-1.5">
                             <span className="p-1 bg-blue-500/20 text-blue-300 rounded-lg border border-blue-500/30">
                               <Building2 className="w-3.5 h-3.5" />
@@ -6432,50 +6435,134 @@ _Enviado via sistema de gestão de frota._`;
                               <p className="text-[10px] text-gray-400">Ref: {vehicle.fipeRefMonth || 'Busca Mensal'}</p>
                             </div>
                           </div>
-                          <button
-                            type="button"
-                            onClick={async () => {
-                              setIsLoadingFipe(true);
-                              try {
-                                const { updatedVehicle, updated } = await syncVehicleFipe(vehicle);
-                                if (updated || updatedVehicle.fipeValue) {
-                                  onUpdateVehicle?.(updatedVehicle);
-                                  sendAppNotification(`🚘 FIPE Atualizada: ${vehicle.brand} ${vehicle.model}`, {
-                                    body: `Valor de mercado FIPE: R$ ${(updatedVehicle.fipeValue || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })} (${updatedVehicle.fipeRefMonth || ''})`,
-                                    eventKey: 'fipe_updated'
-                                  });
+                          <div className="flex items-center gap-1.5">
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setManualFipeValue(vehicle.fipeValue || 0);
+                                setFipeErrorMsg('');
+                                setIsEditingFipeManual((prev) => !prev);
+                              }}
+                              className="px-2 py-1 bg-white/5 hover:bg-white/10 text-gray-300 hover:text-white border border-white/10 rounded-lg text-[10px] font-bold flex items-center gap-1 transition-all cursor-pointer"
+                              title="Digitar valor FIPE manualmente"
+                            >
+                              <Edit3 className="w-3 h-3" />
+                              <span>Manual</span>
+                            </button>
+                            <button
+                              type="button"
+                              onClick={async () => {
+                                setIsLoadingFipe(true);
+                                setFipeErrorMsg('');
+                                try {
+                                  const { updatedVehicle, updated } = await syncVehicleFipe(vehicle, true);
+                                  if (updated) {
+                                    setIsEditingFipeManual(false);
+                                    onUpdateVehicle?.(updatedVehicle);
+                                    sendAppNotification(`🚘 FIPE Atualizada: ${vehicle.brand} ${vehicle.model}`, {
+                                      body: `Valor de mercado FIPE: R$ ${(updatedVehicle.fipeValue || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })} (${updatedVehicle.fipeRefMonth || ''})`,
+                                      eventKey: 'fipe_updated'
+                                    });
+                                  } else {
+                                    setManualFipeValue(vehicle.fipeValue || 0);
+                                    setIsEditingFipeManual(true);
+                                    setFipeErrorMsg('Não foi possível consultar automaticamente. Digite o valor FIPE manualmente abaixo.');
+                                  }
+                                } catch (e) {
+                                  console.error('Erro ao atualizar FIPE:', e);
+                                  setManualFipeValue(vehicle.fipeValue || 0);
+                                  setIsEditingFipeManual(true);
+                                  setFipeErrorMsg('Servidor FIPE indisponível no momento. Digite o valor manualmente abaixo.');
+                                } finally {
+                                  setIsLoadingFipe(false);
                                 }
-                              } catch (e) {
-                                console.error('Erro ao atualizar FIPE:', e);
-                              } finally {
-                                setIsLoadingFipe(false);
-                              }
-                            }}
-                            disabled={isLoadingFipe}
-                            className="px-2.5 py-1 bg-blue-600/30 hover:bg-blue-600/50 text-blue-200 border border-blue-500/30 rounded-lg text-[10px] font-bold flex items-center gap-1 transition-all cursor-pointer disabled:opacity-50"
-                            title="Consultar Tabela FIPE oficial do Governo agora"
-                          >
-                            <Sparkles className={`w-3 h-3 ${isLoadingFipe ? 'animate-spin' : ''}`} />
-                            <span>{isLoadingFipe ? 'Consultando...' : '🔄 Atualizar FIPE'}</span>
-                          </button>
+                              }}
+                              disabled={isLoadingFipe}
+                              className="px-2.5 py-1 bg-blue-600/30 hover:bg-blue-600/50 text-blue-200 border border-blue-500/30 rounded-lg text-[10px] font-bold flex items-center gap-1 transition-all cursor-pointer disabled:opacity-50"
+                              title="Consultar Tabela FIPE oficial do Governo agora"
+                            >
+                              <Sparkles className={`w-3 h-3 ${isLoadingFipe ? 'animate-spin' : ''}`} />
+                              <span>{isLoadingFipe ? 'Consultando...' : '🔄 Atualizar FIPE'}</span>
+                            </button>
+                          </div>
                         </div>
 
-                        <div className="flex items-baseline justify-between pt-1 border-t border-white/10">
-                          <div>
-                            <span className="text-base sm:text-lg font-bold font-mono text-emerald-400">
-                              {vehicle.fipeValue ? `R$ ${vehicle.fipeValue.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}` : 'Não Consultado (Clique para atualizar)'}
-                            </span>
-                            {vehicle.fipeCode && (
-                              <span className="ml-2 text-[10px] font-mono text-gray-400 bg-black/40 px-1.5 py-0.5 rounded border border-white/10">
-                                Cód: {vehicle.fipeCode}
+                        {fipeErrorMsg && (
+                          <div className="p-2 bg-amber-500/10 border border-amber-500/30 rounded-lg text-[10px] text-amber-300 flex items-center justify-between gap-2">
+                            <span>{fipeErrorMsg}</span>
+                            <button
+                              type="button"
+                              onClick={() => setFipeErrorMsg('')}
+                              className="text-amber-300/70 hover:text-amber-200 shrink-0 cursor-pointer"
+                            >
+                              <X className="w-3 h-3" />
+                            </button>
+                          </div>
+                        )}
+
+                        {isEditingFipeManual ? (
+                          <div className="pt-2 border-t border-white/10 flex flex-wrap items-center gap-2">
+                            <div className="flex-1 min-w-[140px]">
+                              <CurrencyInput
+                                value={manualFipeValue}
+                                onChange={setManualFipeValue}
+                                placeholder="0,00"
+                                className="w-full text-xs bg-black/50 border border-blue-500/40 rounded-lg px-2.5 py-1.5 text-emerald-400 font-mono font-bold focus:outline-hidden"
+                              />
+                            </div>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                const updated = applyManualFipeOverride(vehicle, manualFipeValue);
+                                onUpdateVehicle?.(updated);
+                                setIsEditingFipeManual(false);
+                                setFipeErrorMsg('');
+                              }}
+                              className="px-2.5 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg text-[10px] font-bold flex items-center gap-1 cursor-pointer"
+                            >
+                              <Check className="w-3 h-3" />
+                              <span>Salvar</span>
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setIsEditingFipeManual(false);
+                                setFipeErrorMsg('');
+                              }}
+                              className="px-2 py-1.5 bg-white/5 hover:bg-white/10 text-gray-300 rounded-lg text-[10px] font-bold cursor-pointer"
+                            >
+                              Cancelar
+                            </button>
+                          </div>
+                        ) : (
+                          <div className="flex items-baseline justify-between pt-1 border-t border-white/10">
+                            <div>
+                              <span className="text-base sm:text-lg font-bold font-mono text-emerald-400">
+                                {vehicle.fipeValue ? `R$ ${vehicle.fipeValue.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}` : 'Não Consultado (Clique para atualizar ou Manual)'}
                               </span>
+                              {vehicle.fipeCode && (
+                                <span className="ml-2 text-[10px] font-mono text-gray-400 bg-black/40 px-1.5 py-0.5 rounded border border-white/10">
+                                  Cód: {vehicle.fipeCode}
+                                </span>
+                              )}
+                            </div>
+                            {vehicle.fipeHistory && vehicle.fipeHistory.length > 0 && (
+                              <div className="text-[10px] text-blue-300 font-mono flex items-center gap-1">
+                                <span>Histórico: {vehicle.fipeHistory.length} mês(es)</span>
+                              </div>
                             )}
                           </div>
-                          {vehicle.fipeHistory && vehicle.fipeHistory.length > 0 && (
-                            <div className="text-[10px] text-blue-300 font-mono flex items-center gap-1">
-                              <span>Histórico: {vehicle.fipeHistory.length} mês(es)</span>
-                            </div>
-                          )}
+                        )}
+
+                        <div className="flex items-center justify-between pt-1.5 border-t border-white/10 text-[11px]">
+                          <span className="text-gray-300 font-semibold">Valor do carro que devo ainda:</span>
+                          <span className="text-amber-300">
+                            <InlineEdit
+                              value={vehicle.fipeDebtValue || 0}
+                              label="Clique para informar o valor do carro que ainda deve"
+                              onSave={(val) => handleUpdateField('fipeDebtValue', val)}
+                            />
+                          </span>
                         </div>
                       </div>
                     </div>

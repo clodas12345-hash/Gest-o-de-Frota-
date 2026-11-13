@@ -47,7 +47,7 @@ import { InterestCalculatorModal } from './components/InterestCalculatorModal';
 import { RegisterDriverModal } from './components/RegisterDriverModal';
 import { ContractEditorModal } from './components/ContractEditorModal';
 import { generateVehiclePDF, generateVistoriaPDF, generateExecutiveMonthlyPDF } from './utils/pdfGenerator';
-import { sendAppNotification, requestNotificationPermission, scheduleVistoriaReminders, VISTORIA_REMINDER_SLOTS, isNotificationEventEnabled } from './utils/notifications';
+import { sendAppNotification, requestNotificationPermission, scheduleVistoriaReminders, cancelVistoriaReminders, VISTORIA_REMINDER_SLOTS, isNotificationEventEnabled } from './utils/notifications';
 import logoImg from './assets/logo.png';
 
 // Icons
@@ -409,13 +409,21 @@ export default function App() {
     requestNotificationPermission().then((granted) => {
       if (!granted) return;
 
-      const todayDateStr = new Date().toISOString().split('T')[0];
-
       // 1. Check & Schedule Vistoria Reminders exclusively on:
       // Quarta (10h e 16h), Quinta (11h e 20h) e Sexta (10h, 13h e 17h)
-      if (!disableFridayReminder) {
+      if (disableFridayReminder) {
+        cancelVistoriaReminders();
+      } else {
         scheduleVistoriaReminders();
       }
+    });
+  }, [disableFridayReminder]);
+
+  React.useEffect(() => {
+    requestNotificationPermission().then((granted) => {
+      if (!granted) return;
+
+      const todayDateStr = new Date().toISOString().split('T')[0];
 
       // 2. Check Daily Scheduled & Alert Conditions on Startup
       const lastMaintCheck = localStorage.getItem('fleet_last_maint_check');
@@ -539,7 +547,7 @@ export default function App() {
         });
       }
     });
-  }, [vehicles.length, disableFridayReminder]);
+  }, [vehicles.length]);
 
   // 3. Background Monthly Automatic FIPE Sync
   useEffect(() => {
@@ -3763,6 +3771,13 @@ export default function App() {
       <NotificationCenterModal
         isOpen={isNotificationCenterOpen}
         onClose={() => setIsNotificationCenterOpen(false)}
+        onPreferencesChange={() => {
+          if (disableFridayReminder) {
+            cancelVistoriaReminders();
+          } else {
+            scheduleVistoriaReminders();
+          }
+        }}
       />
 
       <ChecklistConfigModal

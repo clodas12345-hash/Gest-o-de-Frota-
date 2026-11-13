@@ -76,6 +76,7 @@ export interface Vehicle {
   // Official FIPE fields
   fipeCode?: string;
   fipeValue?: number;
+  fipeDebtValue?: number;
   fipeRefMonth?: string;
   fipeLastUpdate?: string; // Format: YYYY-MM
   fipeHistory?: { month: string; value: number }[];

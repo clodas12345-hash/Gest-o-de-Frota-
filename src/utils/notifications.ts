@@ -1,5 +1,5 @@
 import { Capacitor, registerPlugin } from '@capacitor/core';
-const LocalNotifications = registerPlugin<any>('LocalNotifications');
+import { LocalNotifications, Weekday, Schedule } from '@capacitor/local-notifications';
 
 const CHANNEL_ID = 'fleet_notifications';
 const PREFS_STORAGE_KEY = 'fleet_notification_preferences';
@@ -398,6 +398,12 @@ export async function scheduleAppNotification(
     id?: number;
     at?: Date;
     every?: 'week' | 'day';
+    on?: {
+      weekday?: Weekday;
+      hour?: number;
+      minute?: number;
+      second?: number;
+    };
     extra?: Record<string, any>;
     eventKey?: NotificationEventKey;
     force?: boolean;
@@ -414,29 +420,40 @@ export async function scheduleAppNotification(
     try {
       await setupNotificationChannel();
 
-      const notificationItem: any = {
-        title,
-        body: options?.body || '',
-        id: notificationId,
-        smallIcon: 'ic_stat_icon',
-        iconColor: '#34d399',
-        sound: 'default',
-        channelId: CHANNEL_ID,
-        extra: options?.extra,
-        schedule: {
-          at: targetDate,
-          every: options?.every,
+      let schedule: Schedule;
+      if (options?.on) {
+        schedule = {
+          on: options.on,
           allowWhileIdle: true
-        },
-        trigger: {
-          at: targetDate,
-          every: options?.every,
+        };
+      } else if (options?.every && !options?.at) {
+        schedule = {
+          every: options.every,
           allowWhileIdle: true
-        }
-      };
+        };
+      } else {
+        schedule = {
+          at: targetDate,
+          allowWhileIdle: true
+        };
+      }
 
       await LocalNotifications.schedule({
-        notifications: [notificationItem]
+        notifications: [
+          {
+            title,
+            body: options?.body || '',
+            id: notificationId,
+            smallIcon: 'ic_stat_icon',
+            iconColor: '#34d399',
+            sound: 'default',
+            channelId: CHANNEL_ID,
+            extra: options?.extra,
+            foreground: true,
+            isExactNotification: true,
+            schedule
+          }
+        ]
       });
       return notificationId;
     } catch (capErr) {
@@ -450,7 +467,7 @@ export async function scheduleAppNotification(
           body: options?.body,
           icon: '/logo.png'
         });
-      } else {
+      } else if (delay <= 2147483647) {
         setTimeout(() => {
           new Notification(title, {
             body: options?.body,
@@ -533,15 +550,6 @@ export const VISTORIA_REMINDER_SLOTS: VistoriaScheduleSlot[] = [
   },
   // Sexta-feira às 10h, 13h e 17h
   {
-    id: 888000,
-    day: 5,
-    dayName: 'Sexta-feira',
-    hour: 0,
-    minute: 30, // Just after midnight as a generic 'today is friday'
-    title: '📋 Lembrete de Vistoria Semanal',
-    body: 'Sexta-feira é dia de vistoria! Lembre-se de enviar os links de vistoria para os motoristas da frota.'
-  },
-  {
     id: 888005,
     day: 5,
     dayName: 'Sexta-feira',
@@ -601,34 +609,120 @@ export function getNextFriday9AM(): Date {
   return getNextSlotDate({ day: 5, hour: 10, minute: 0 });
 }
 
-export async function scheduleVistoriaReminders() {
-  if (Capacitor.isNativePlatform()) {
-    try {
-      await LocalNotifications.cancel({
-        notifications: VISTORIA_REMINDER_SLOTS.map((s) => ({ id: s.id }))
-      });
-    } catch (e) {
-      console.warn('Erro ao cancelar notificações de vistoria antigas:', e);
+let vistoriaScheduleQueue: Promise<void> = Promise.resolve();
+let activeWebVistoriaTimers: number[] = [];
+
+function clearWebVistoriaTimers() {
+  if (typeof window !== 'undefined') {
+    for (const timerId of activeWebVistoriaTimers) {
+      window.clearTimeout(timerId);
     }
   }
+  activeWebVistoriaTimers = [];
+}
 
-  if (!isNotificationEventEnabled('vistoria_friday')) return;
+async function clearPendingVistoriaNotificationsNative() {
+  const idsToCancel = new Set<number>([888000, ...VISTORIA_REMINDER_SLOTS.map((s) => s.id)]);
 
-  for (const slot of VISTORIA_REMINDER_SLOTS) {
-    const nextDate = getNextSlotDate(slot);
-    await scheduleAppNotification(slot.title, {
-      id: slot.id,
-      body: slot.body,
-      at: nextDate,
-      every: 'week',
-      eventKey: 'vistoria_friday',
-      extra: {
-        slotId: slot.id,
-        repeats: true,
-        every: 'week'
+  try {
+    const pending = await LocalNotifications.getPending();
+    for (const item of pending?.notifications || []) {
+      const title = typeof item.title === 'string' ? item.title : '';
+      const extra = item.extra as Record<string, any> | undefined;
+      if (
+        title.includes('Lembrete de Vistoria') ||
+        extra?.slotId !== undefined ||
+        extra?.every === 'week'
+      ) {
+        idsToCancel.add(item.id);
       }
-    });
+    }
+  } catch (e) {
+    console.warn('Erro ao listar notificações pendentes de vistoria:', e);
   }
+
+  if (idsToCancel.size > 0) {
+    try {
+      await LocalNotifications.cancel({
+        notifications: Array.from(idsToCancel).map((id) => ({ id }))
+      });
+    } catch (e) {
+      console.warn('Erro ao cancelar notificações antigas de vistoria:', e);
+    }
+  }
+}
+
+export function cancelVistoriaReminders(): Promise<void> {
+  vistoriaScheduleQueue = vistoriaScheduleQueue.then(async () => {
+    clearWebVistoriaTimers();
+    if (Capacitor.isNativePlatform()) {
+      await clearPendingVistoriaNotificationsNative();
+    }
+  });
+  return vistoriaScheduleQueue;
+}
+
+export function scheduleVistoriaReminders(): Promise<void> {
+  vistoriaScheduleQueue = vistoriaScheduleQueue.then(async () => {
+    clearWebVistoriaTimers();
+
+    if (Capacitor.isNativePlatform()) {
+      await clearPendingVistoriaNotificationsNative();
+    }
+
+    if (!isNotificationEventEnabled('vistoria_friday')) return;
+
+    if (Capacitor.isNativePlatform()) {
+      try {
+        await setupNotificationChannel();
+        await LocalNotifications.schedule({
+          notifications: VISTORIA_REMINDER_SLOTS.map((slot) => ({
+            id: slot.id,
+            title: slot.title,
+            body: slot.body,
+            smallIcon: 'ic_stat_icon',
+            iconColor: '#34d399',
+            sound: 'default',
+            channelId: CHANNEL_ID,
+            foreground: true,
+            isExactNotification: true,
+            extra: {
+              slotId: slot.id
+            },
+            schedule: {
+              on: {
+                weekday: (slot.day + 1) as Weekday,
+                hour: slot.hour,
+                minute: slot.minute,
+                second: 0
+              },
+              allowWhileIdle: true
+            }
+          }))
+        });
+      } catch (err) {
+        console.warn('Erro ao agendar lembretes de vistoria:', err);
+      }
+    } else if (typeof window !== 'undefined' && 'Notification' in window && Notification.permission === 'granted') {
+      for (const slot of VISTORIA_REMINDER_SLOTS) {
+        const nextDate = getNextSlotDate(slot);
+        const delay = Math.max(0, nextDate.getTime() - Date.now());
+        if (delay > 1000 && delay <= 2147483647) {
+          const timerId = window.setTimeout(() => {
+            try {
+              new Notification(slot.title, {
+                body: slot.body,
+                icon: '/logo.png'
+              });
+            } catch {}
+          }, delay);
+          activeWebVistoriaTimers.push(timerId);
+        }
+      }
+    }
+  });
+
+  return vistoriaScheduleQueue;
 }
 
 export async function scheduleFridayInspectionNotification() {
