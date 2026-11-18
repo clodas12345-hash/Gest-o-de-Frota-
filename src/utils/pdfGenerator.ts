@@ -659,7 +659,9 @@ export async function generateRentalContractPDF(
 
   const now = new Date();
   const dateFormatted = now.toLocaleDateString('pt-BR');
-  const cleanPlate = vehicle.plate ? vehicle.plate.replace(/[^a-zA-Z0-9]/g, '') : 'VEICULO';
+  const cleanPlate = contract.hideLandlordPersonalData
+    ? 'EM_BRANCO'
+    : (vehicle.plate ? vehicle.plate.replace(/[^a-zA-Z0-9]/g, '') : 'VEICULO');
   const fileName = `Contrato_Locacao_${cleanPlate}_${now.toISOString().split('T')[0]}.pdf`;
 
   const primaryColor = [15, 23, 42]; // Slate-900
@@ -806,7 +808,7 @@ export async function generateRentalContractPDF(
   const variables: Record<string, string> = {
     MARCA_MODELO: `${vehicle.brand} ${vehicle.model}`,
     ANO_MODELO: yearDisplay,
-    PLACA: vehicle.plate || 'BRANCO',
+    PLACA: contract.hideLandlordPersonalData ? '*****' : (vehicle.plate || 'BRANCO'),
     COR: vehicle.color || 'Branco',
     KM_INICIAL: kmDisplay,
     DATA_INICIO: startFormatted,
@@ -1016,8 +1018,11 @@ export async function generateRentalContractPDF(
     doc.setFont('helvetica', 'normal');
     doc.setFontSize(7.5);
     doc.setTextColor(148, 163, 184); // slate-400
+    const footerVehicleInfo = contract.hideLandlordPersonalData
+      ? `${vehicle.brand} ${vehicle.model}`
+      : `${vehicle.brand} ${vehicle.model} (${vehicle.plate})`;
     doc.text(
-      `Contrato de Locação - Veículo ${vehicle.brand} ${vehicle.model} (${vehicle.plate}) | Página ${i} de ${pageCount}`,
+      `Contrato de Locação - Veículo ${footerVehicleInfo} | Página ${i} de ${pageCount}`,
       105,
       290,
       { align: 'center' }

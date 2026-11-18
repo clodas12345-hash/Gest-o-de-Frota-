@@ -869,13 +869,13 @@ Isso é fundamental para a vinculação correta do veículo. Qualquer dúvida es
       };
 
       const result = await generateRentalContractPDF(vehicleToUse, blankData);
-      const downloadName = `Contrato_Modelo_Branco_${vehicleToUse.plate ? vehicleToUse.plate.replace(/[^a-zA-Z0-9]/g, '') : 'Padrao'}.pdf`;
+      const downloadName = 'Contrato_Modelo_Branco.pdf';
 
       // Save document to vehicle if currentVeh exists
       if (currentVeh) {
         const newDoc: VehicleDocument = {
           id: `doc-contract-blank-${Date.now()}`,
-          name: `Modelo de Contrato em Branco (${vehicleToUse.plate}).pdf`,
+          name: 'Modelo de Contrato em Branco.pdf',
           category: 'Contrato',
           uploadDate: new Date().toISOString().split('T')[0],
           fileSize: 'PDF Oficial em Branco',
@@ -923,7 +923,7 @@ Isso é fundamental para a vinculação correta do veículo. Qualquer dúvida es
 
     const text = isBlank
       ? `📋 *MINUTA DE CONTRATO DE LOCAÇÃO EM BRANCO*
-🚗 *Veículo:* ${currentVehicle.brand} ${currentVehicle.model} (${currentVehicle.plate})
+🚗 *Veículo:* ${currentVehicle.brand} ${currentVehicle.model}
 📄 Segue o modelo de contrato de locação em branco para leitura prévia e conferência dos termos antes da assinatura definitiva.`
       : `📋 *CONTRATO DE LOCAÇÃO GERADO*
 🚗 *Veículo:* ${currentVehicle.brand} ${currentVehicle.model} (${currentVehicle.plate})
@@ -1037,7 +1037,7 @@ O contrato oficial em PDF já foi gerado e está arquivado nos documentos do ve�
                       O contrato em branco para leitura prévia do futuro locatário foi gerado com sucesso{currentVehicle ? <> e anexado automaticamente na aba de <strong>Documentos do Veículo</strong> ({currentVehicle.brand} {currentVehicle.model} - {currentVehicle.plate})</> : ''}.
                       <span className="block mt-2 text-emerald-300 font-semibold flex items-center justify-center gap-1.5 bg-emerald-500/10 border border-emerald-500/20 rounded-lg py-1.5 px-3">
                         <ShieldCheck className="w-4 h-4 text-emerald-400 shrink-0" />
-                        <span>Seus dados pessoais (CPF, RG, endereço e chave PIX) foram devidamente ocultados nesta minuta prévia.</span>
+                        <span>Seus dados pessoais (CPF, RG, endereço e chave PIX) e a placa do veículo foram devidamente ocultados nesta minuta prévia.</span>
                       </span>
                     </>
                   ) : (
