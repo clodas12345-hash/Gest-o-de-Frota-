@@ -84,6 +84,7 @@ export interface Vehicle {
   dailyInterestRate?: number;
   dueDay?: string;
   promisePayments?: PromisePayment[];
+  tireSize?: string;
 }
 
 export interface TireState {
@@ -275,6 +276,7 @@ export interface MaintenanceLog {
   // Uploaded invoice / receipt
   receiptUrl?: string;
   invoiceFileName?: string;
+  tireSize?: string;
 }
 
 export interface ExpenseLog {

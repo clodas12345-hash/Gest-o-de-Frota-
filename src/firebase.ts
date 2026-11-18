@@ -2,7 +2,7 @@ import { initializeApp, FirebaseApp } from 'firebase/app';
 import { getFirestore, Firestore } from 'firebase/firestore';
 import config from '../firebase-applet-config.json';
 
-const isPreview = window.location.hostname.includes('ais-pre');
+export const isPreview = typeof window !== 'undefined' && window.location.hostname.includes('ais-pre');
 
 export const app: FirebaseApp = isPreview ? ({} as FirebaseApp) : initializeApp({
   apiKey: config.apiKey,

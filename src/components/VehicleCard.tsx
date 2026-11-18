@@ -9,7 +9,7 @@ import { sendAppNotification, requestNotificationPermission } from '../utils/not
 import { syncVehicleFipe, applyManualFipeOverride } from '../utils/fipeService';
 import { PdfViewer } from './PdfViewer';
 import { encodeVistoriaParams } from '../utils/vistoriaUrl';
-import { db } from '../firebase';
+import { db, isPreview } from '../firebase';
 import { doc, setDoc } from 'firebase/firestore';
 import { formatWhatsAppPhone, openWhatsAppUrl } from '../utils/whatsapp';
 import { 
@@ -402,7 +402,8 @@ const DEFAULT_PAYMENT_TEMPLATES = {
   lembrete: `Olá, *{driver}*! Tudo bem? 😊\n\nPassando para lembrar do pagamento semanal referente ao veículo *{brand} {model}* ({plate}).\n\n💵 *Valor:* R$ {valor}\n📅 *Vencimento:* {data_vencimento}\n\n(👉 *Caso a mensagem esteja cortada, clique em "LER MAIS" para que o link esteja todo disponível*)\nEnvie o comprovante de pagamento pelo link:\n🔗 {link_comprovante}\n\nAbraços!`,
   hoje: `Olá, *{driver}*! Tudo bem?\n\nLembrete: *Hoje* é o dia do pagamento semanal referente ao veículo *{brand} {model}* ({plate}).\n\n💵 *Valor:* R$ {valor}\n🗓️ *Vencimento:* Hoje ({data_vencimento})\n\n(👉 *Caso a mensagem esteja cortada, clique em "LER MAIS" para que o link esteja todo disponível*)\nEnvie o comprovante pelo link:\n🔗 {link_comprovante}\n\nAgradeço a parceria! 👍`,
   atrasado: `Olá, *{driver}*.\n\nIdentificamos que o pagamento semanal referente ao veículo *{brand} {model}* ({plate}) com vencimento em *{data_vencimento}* consta em **atraso**.\n\n⚠️ *Valor em aberto:* R$ {valor}\n\n(👉 *Caso a mensagem esteja cortada, clique em "LER MAIS" para que o link esteja todo disponível*)\nRegularize e envie o comprovante pelo link:\n🔗 {link_comprovante}\n\nFicamos no aguardo. Obrigado!`,
-  atrasado_com_juros: `Olá, *{driver}*.\n\nIdentificamos que o pagamento semanal do veículo *{brand} {model}* ({plate}) está em **atraso**.\n\n⚠️ *Valor original:* R$ {valor}\n➕ *Juros/Multa:* R$ {juros}\n💰 *Total com Juros:* R$ {total_com_juros}\n\n(👉 *Caso a mensagem esteja cortada, clique em "LER MAIS" para que o link esteja todo disponível*)\nRegularize e envie o comprovante pelo link:\n🔗 {link_comprovante}\n\nFicamos no aguardo. Obrigado!`
+  atrasado_com_juros: `Olá, *{driver}*.\n\nIdentificamos que o pagamento semanal do veículo *{brand} {model}* ({plate}) está em **atraso**.\n\n⚠️ *Valor original:* R$ {valor}\n➕ *Juros/Multa:* R$ {juros}\n💰 *Total com Juros:* R$ {total_com_juros}\n\n(👉 *Caso a mensagem esteja cortada, clique em "LER MAIS" para que o link esteja todo disponível*)\nRegularize e envie o comprovante pelo link:\n🔗 {link_comprovante}\n\nFicamos no aguardo. Obrigado!`,
+  bloqueado: `🚨 *AVISO DE BLOQUEIO DO VEÍCULO* 🚨\n\nOlá, *{driver}*!\n\nInformamos que devido à inadimplência e falta de pagamento do aluguel semanal referente ao veículo *{brand} {model}* ({plate}), o sistema realizou o **bloqueio remoto** do veículo por falta de pagamento.\n\n⚠️ *Valor em aberto:* R$ {valor}\n🗓️ *Vencimento original:* {data_vencimento}\n\n(👉 *Caso a mensagem esteja cortada, clique em "LER MAIS" para que o link esteja todo disponível*)\nPara efetuar a regularização e solicitar o desbloqueio, envie o comprovante de pagamento pelo link:\n🔗 {link_comprovante}\n\nAssim que o pagamento for confirmado, o acesso será liberado. Evite medidas contratuais adicionais.`
 };
 
 const PUBLIC_WEB_ORIGIN = 'https://ais-dev-nxg4lixniko7ymx3t5cstw-473118395752.us-west2.run.app';
@@ -619,10 +620,15 @@ export const VehicleCard: React.FC<VehicleCardProps> = ({
 
   // Payment WhatsApp Reminder State
   const [showPaymentWhatsApp, setShowPaymentWhatsApp] = useState(false);
-  const [paymentWhatsAppType, setPaymentWhatsAppType] = useState<'lembrete' | 'hoje' | 'atrasado' | 'atrasado_com_juros'>('lembrete');
+  const [paymentWhatsAppType, setPaymentWhatsAppType] = useState<'lembrete' | 'hoje' | 'atrasado' | 'atrasado_com_juros' | 'bloqueado'>('lembrete');
   const [paymentWhatsAppPhone, setPaymentWhatsAppPhone] = useState(() => vehicle.driverPhone || '');
   const [paymentWhatsAppAmount, setPaymentWhatsAppAmount] = useState<number>(() => vehicle.valorSemanal || vehicle.valorRecebido || 0);
   const [paymentWhatsAppDueDate, setPaymentWhatsAppDueDate] = useState<string>(() => {
+    const payments = vehicle.weeklyPayments || [];
+    if (payments.length > 0) {
+      const sorted = [...payments].sort((a, b) => b.date.localeCompare(a.date));
+      return getNextWeekDate(sorted[0].date);
+    }
     return vehicle.startDate ? getNextWeekDate(vehicle.startDate) : new Date().toISOString().split('T')[0];
   });
   const [jurosMoraPercentage, setJurosMoraPercentage] = useState<number>(10);
@@ -806,7 +812,13 @@ export const VehicleCard: React.FC<VehicleCardProps> = ({
     } else if (vehicle.valorRecebido) {
       setPaymentWhatsAppAmount(vehicle.valorRecebido);
     }
-    if (vehicle.startDate) {
+    const payments = vehicle.weeklyPayments || [];
+    if (payments.length > 0) {
+      const sorted = [...payments].sort((a, b) => b.date.localeCompare(a.date));
+      const nextDue = getNextWeekDate(sorted[0].date);
+      setPaymentWhatsAppDueDate(nextDue);
+      setNewPaymentDate(nextDue);
+    } else if (vehicle.startDate) {
       const nextDue = getNextWeekDate(vehicle.startDate);
       setPaymentWhatsAppDueDate(nextDue);
       setNewPaymentDate(nextDue);
@@ -1238,6 +1250,12 @@ export const VehicleCard: React.FC<VehicleCardProps> = ({
     .filter((e) => isCurrentMonth(e.date))
     .reduce((sum, e) => sum + e.cost, 0);
 
+  const vehicleMaintenancesInCurrentMonth = maintenanceLogs
+    .filter((log) => log.vehicleId === vehicle.id && isCurrentMonth(log.date));
+
+  const totalMaintenanceInCurrentMonth = vehicleMaintenancesInCurrentMonth
+    .reduce((sum, log) => sum + (log.cost || 0), 0);
+
   // Revision countdown logic (when 3 days or less remaining)
   const getRevisionCountdown = () => {
     if (!vehicle.preventiveMaintDate) return null;
@@ -1299,8 +1317,8 @@ export const VehicleCard: React.FC<VehicleCardProps> = ({
     .filter((wp) => isCurrentMonth(wp.date))
     .reduce((sum, wp) => sum + wp.amount, 0);
 
-  // Total despesas (Fixas + Custo Extra + Eventuais)
-  const totalDespesas = totalDespesasFixas + custoExtra + totalDespesasEventuais;
+  // Total despesas (Fixas + Custo Extra + Eventuais + Manutenções do Mês)
+  const totalDespesas = totalDespesasFixas + custoExtra + totalDespesasEventuais + totalMaintenanceInCurrentMonth;
 
   // Calculation of surplus:
   // "depois abate o valor recebido pra saber quanto sobra"
@@ -1724,8 +1742,12 @@ export const VehicleCard: React.FC<VehicleCardProps> = ({
       createdAt: new Date().toISOString()
     }));
     
-    if (!isQuotaExhausted) {
+    if (!isPreview && !isQuotaExhausted) {
+      try {
         setDoc(doc(db, 'vistoriaRequests', vistoriaRequestToken), pendingRequest).catch(() => {});
+      } catch (err) {
+        console.warn('Skipping vistoriaRequest cloud save:', err);
+      }
     }
     
     // Use the complete long URL with all vehicle details and checklist items
@@ -3175,6 +3197,42 @@ _Enviado via sistema de gestão de frota._`;
                   )}
                 </div>
 
+                {/* Manutenções do Mês */}
+                {vehicleMaintenancesInCurrentMonth.length > 0 && (
+                  <div className="pt-2 border-t border-white/5 space-y-1.5">
+                    <div className="flex justify-between items-center text-[10px] font-bold text-blue-400 uppercase tracking-wider">
+                      <span>Manutenções do Mês ({vehicleMaintenancesInCurrentMonth.length})</span>
+                    </div>
+                    <div className="space-y-1 pr-0.5">
+                      {vehicleMaintenancesInCurrentMonth.map((maint) => {
+                        const inst = parseInstallmentInfo(maint.description);
+                        return (
+                          <div key={maint.id} className="flex justify-between items-center text-xs bg-blue-500/5 p-1.5 px-2 rounded-md group hover:bg-blue-500/10 border border-blue-500/10">
+                            <div className="flex flex-col min-w-0 pr-2">
+                              <div className="flex items-center gap-1.5 flex-wrap">
+                                <span className="text-blue-300 font-medium truncate" title={maint.description}>
+                                  🛠️ [{maint.type}] {maint.description}
+                                </span>
+                                {inst && (
+                                  <span className="text-[10px] font-mono bg-blue-500/10 text-blue-300 border border-blue-500/20 px-1.5 py-0.5 rounded font-bold shrink-0">
+                                    Pagas: {inst.pagas} | Faltam: {inst.faltam}
+                                  </span>
+                                )}
+                              </div>
+                              <span className="text-[9px] text-gray-400 font-mono">
+                                {new Date(maint.date + 'T12:00:00').toLocaleDateString('pt-BR')} {maint.shopName ? `• ${maint.shopName}` : ''}
+                              </span>
+                            </div>
+                            <div className="flex items-center gap-2 shrink-0 font-mono">
+                              <span className="text-rose-400 font-semibold text-xs">-{formatBRL(maint.cost)}</span>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
+
                 {/* Despesas Eventuais do Veículo */}
                 <div className="pt-2 border-t border-white/5 space-y-1.5">
                   <div className="flex justify-between items-center text-[10px] font-bold text-gray-400 uppercase tracking-wider">
@@ -4264,7 +4322,7 @@ _Enviado via sistema de gestão de frota._`;
                     <label className="text-[10px] text-emerald-300 block mb-1 font-bold uppercase tracking-wider">
                       Selecione o Tipo de Mensagem *
                     </label>
-                    <div className="grid grid-cols-4 gap-1.5">
+                    <div className="grid grid-cols-5 gap-1">
                       <button
                         type="button"
                         onClick={() => {
@@ -4374,14 +4432,42 @@ _Enviado via sistema de gestão de frota._`;
                           );
                           setCustomPaymentMsgText(text);
                         }}
-                        className={`py-1.5 px-2 rounded-lg border text-[10px] font-bold transition-all flex flex-col items-center justify-center gap-0.5 cursor-pointer ${
+                        className={`py-1.5 px-1.5 rounded-lg border text-[10px] font-bold transition-all flex flex-col items-center justify-center gap-0.5 cursor-pointer ${
                           paymentWhatsAppType === 'atrasado_com_juros'
                             ? 'bg-rose-700/20 text-rose-200 border-rose-700/40 shadow-xs'
                             : 'bg-black/40 text-gray-400 border-white/10 hover:border-white/20 hover:text-white'
                         }`}
                       >
                         <span>📈 Atraso</span>
-                        <span className="text-[8px] opacity-70 font-normal">C/ Juros</span>
+                        <span className="text-[7.5px] opacity-70 font-normal">C/ Juros</span>
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setPaymentWhatsAppType('bloqueado');
+                          const rawTpl = localStorage.getItem('fleet_payment_msg_bloqueado') || DEFAULT_PAYMENT_TEMPLATES.bloqueado;
+                          const text = formatPaymentTemplateText(
+                            rawTpl,
+                            vehicle.driver || '',
+                            vehicle.brand || '',
+                            vehicle.model || '',
+                            vehicle.plate || '',
+                            paymentWhatsAppAmount || vehicle.valorRecebido || 0,
+                            paymentWhatsAppDueDate,
+                            undefined,
+                            vehicle.id
+                          );
+                          setCustomPaymentMsgText(text);
+                        }}
+                        className={`py-1.5 px-1.5 rounded-lg border text-[10px] font-bold transition-all flex flex-col items-center justify-center gap-0.5 cursor-pointer ${
+                          paymentWhatsAppType === 'bloqueado'
+                            ? 'bg-rose-900/30 text-rose-300 border-rose-600 shadow-xs'
+                            : 'bg-black/40 text-gray-400 border-white/10 hover:border-white/20 hover:text-white'
+                        }`}
+                      >
+                        <span>🔒 Bloqueio</span>
+                        <span className="text-[7.5px] opacity-70 font-normal">Falta Pagamento</span>
                       </button>
                     </div>
                   </div>

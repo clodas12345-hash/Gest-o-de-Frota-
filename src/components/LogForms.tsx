@@ -210,6 +210,7 @@ export function LogForms({
   const [driver, setDriver] = useState('');
   const [driverPhone, setDriverPhone] = useState('');
   const [tenantEmail, setTenantEmail] = useState('');
+  const [tireSize, setTireSize] = useState('');
   const [driverCnhExpiration, setDriverCnhExpiration] = useState('');
   const [driverCnhPhotoUrl, setDriverCnhPhotoUrl] = useState('');
   const [driverCnhFileName, setDriverCnhFileName] = useState('');
@@ -329,6 +330,7 @@ export function LogForms({
   const [maintParcelasTotais, setMaintParcelasTotais] = useState<number | undefined>(undefined);
   const [maintReceiptUrl, setMaintReceiptUrl] = useState('');
   const [maintInvoiceFileName, setMaintInvoiceFileName] = useState('');
+  const [maintTireSize, setMaintTireSize] = useState('');
   const maintInvoiceInputRef = useRef<HTMLInputElement>(null);
   const fipeTimeoutRef = useRef<any>(null);
   
@@ -596,6 +598,12 @@ export function LogForms({
     setDriver('');
     setDriverPhone('');
     setTenantEmail('');
+    setTireSize('');
+    setFipeCode('');
+    setFipeValue(undefined);
+    setFipeDebtValue(undefined);
+    setFipeRefMonth('');
+    setFipeError('');
     setAttachedDocs([]);
     setCaucaoValor(1500);
     setCaucaoData(new Date().toISOString().split('T')[0]);
@@ -779,6 +787,7 @@ export function LogForms({
         setDriver(vehicleToEdit.driver);
         setDriverPhone(vehicleToEdit.driverPhone || '');
         setTenantEmail(vehicleToEdit.tenantEmail || '');
+        setTireSize(vehicleToEdit.tireSize || '');
         setCaucaoValor(vehicleToEdit.caucaoValor || 0);
         setCaucaoData(vehicleToEdit.caucaoData || '2026-08-01');
         setCaucaoObservacoes(vehicleToEdit.caucaoObservacoes || '');
@@ -831,6 +840,11 @@ export function LogForms({
             setDriver(draft.driver ?? '');
             setDriverPhone(draft.driverPhone ?? '');
             setTenantEmail(draft.tenantEmail ?? '');
+            setTireSize(draft.tireSize ?? '');
+            setFipeCode(draft.fipeCode ?? '');
+            setFipeValue(draft.fipeValue);
+            setFipeDebtValue(draft.fipeDebtValue);
+            setFipeRefMonth(draft.fipeRefMonth ?? '');
             setDriverCnhExpiration(draft.driverCnhExpiration ?? '');
             setDriverCnhPhotoUrl(draft.driverCnhPhotoUrl ?? '');
             setDriverCnhFileName(draft.driverCnhPhotoUrl ? 'CNH Anexada' : '');
@@ -871,6 +885,7 @@ export function LogForms({
           setDriver('');
           setDriverPhone('');
           setTenantEmail('');
+          setTireSize('');
           setCaucaoValor(0);
           setCaucaoData(new Date().toISOString().split('T')[0]);
           setCaucaoObservacoes('');
@@ -917,6 +932,7 @@ export function LogForms({
         setMaintParcelasTotais(undefined);
         setMaintReceiptUrl('');
         setMaintInvoiceFileName('');
+        setMaintTireSize(currentSelectedCar?.tireSize || '');
         setAiPrompt('');
       }
     } else if (formType === 'expense') {
@@ -968,6 +984,11 @@ export function LogForms({
         driver,
         driverPhone,
         tenantEmail,
+        tireSize,
+        fipeCode,
+        fipeValue,
+        fipeDebtValue,
+        fipeRefMonth,
         caucaoValor,
         caucaoData,
         caucaoObservacoes,
@@ -982,7 +1003,8 @@ export function LogForms({
     isOpen, formType, vehicleToEdit, brand, model, plate, color, yearFab, yearModel, rentalCompany,
     startDate, endDate, initialKm, contractNumber, valorRecebido, valorSemanal,
     financiamento, seguro, ipva, manutencaoPreventiva, currentKm, preventiveMaintNextKm, fuelLevel,
-    driver, driverPhone, tenantEmail, caucaoValor, caucaoData, caucaoObservacoes, nextVistoriaDate, insuranceExpirationDate, extraExpenses
+    driver, driverPhone, tenantEmail, tireSize, fipeCode, fipeValue, fipeDebtValue, fipeRefMonth,
+    caucaoValor, caucaoData, caucaoObservacoes, nextVistoriaDate, insuranceExpirationDate, extraExpenses
   ]);
 
   // Handle FIPE Code change with debounce auto-fetching
@@ -1161,7 +1183,10 @@ export function LogForms({
       if (formType === 'fuel') {
         setFuelKm(selectedCar.currentKm);
       } else if (formType === 'maintenance') {
-        setMaintNextKm(selectedCar.currentKm + 10000);
+        const km = selectedCar.currentKm || selectedCar.preventiveMaintCurrentKm || 0;
+        setMaintCurrentKm(km);
+        setMaintNextKm(km + 10000);
+        setMaintTireSize(selectedCar.tireSize || '');
       }
     }
   };
@@ -1214,6 +1239,7 @@ export function LogForms({
         driver: driver || '',
         driverPhone: driverPhone || '',
         tenantEmail: tenantEmail || '',
+        tireSize: tireSize.trim() || undefined,
         caucaoValor: Number(caucaoValor) || 0,
         caucaoData: caucaoData || getTodayStr(),
         caucaoObservacoes: caucaoObservacoes || '',
@@ -1351,7 +1377,8 @@ export function LogForms({
         parcelasPagas: maintParcelasPagas,
         parcelasTotais: maintParcelasTotais,
         receiptUrl: maintReceiptUrl || undefined,
-        invoiceFileName: maintInvoiceFileName || undefined
+        invoiceFileName: maintInvoiceFileName || undefined,
+        tireSize: maintTireSize.trim() || undefined
       });
       onClose();
     }
@@ -1400,7 +1427,7 @@ export function LogForms({
     <div id="modal-container" className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/85 backdrop-blur-sm touch-none overscroll-contain">
       <div 
         id="modal-content"
-        className="bg-[#111111] border border-white/10 rounded-2xl shadow-2xl w-full max-w-lg overflow-hidden flex flex-col max-h-[90vh] overscroll-contain animate-in fade-in zoom-in-95 duration-150"
+        className="bg-[#111111] border border-white/10 rounded-2xl shadow-2xl w-full max-w-3xl overflow-hidden flex flex-col max-h-[90vh] overscroll-contain animate-in fade-in zoom-in-95 duration-150"
       >
         {/* Header */}
         <div className="px-6 py-4 border-b border-white/5 flex justify-between items-center bg-[#161616]">
@@ -1919,6 +1946,18 @@ export function LogForms({
                   />
                   <span className="text-[9px] text-gray-500 block">KM alvo para o próximo alerta de revisão.</span>
                 </div>
+              </div>
+
+              <div className="space-y-1 pt-1">
+                <label className="font-semibold text-gray-300">Dimensões dos Pneus (Opcional)</label>
+                <input 
+                  type="text" 
+                  value={tireSize} 
+                  onChange={e => setTireSize(e.target.value)}
+                  placeholder="Ex: 185/65 R15"
+                  className="w-full h-10 text-xs bg-white/[0.03] border border-white/10 rounded-xl px-3 py-2 text-white placeholder-gray-500 focus:outline-hidden focus:border-blue-500/50"
+                />
+                <span className="text-[9px] text-gray-500 block">Medida oficial dos pneus do veículo.</span>
               </div>
 
               {/* Dados do Contrato */}
@@ -3329,6 +3368,19 @@ export function LogForms({
                     className="w-full h-10 text-xs bg-white/[0.03] border border-white/10 rounded-xl px-3 py-2 text-white placeholder-gray-500 focus:outline-hidden focus:border-blue-500/50 focus:bg-[#1a1a1a]"
                   />
                 </div>
+              </div>
+
+              <div className="space-y-1">
+                <div className="flex items-center min-h-[22px]">
+                  <label className="font-semibold text-gray-300">Dimensão do Pneu (Opcional - Manutenção de Pneus)</label>
+                </div>
+                <input 
+                  type="text" 
+                  value={maintTireSize} 
+                  onChange={e => setMaintTireSize(e.target.value)}
+                  placeholder="Ex: 185/65 R15 (medida dos pneus instalados ou calibrados)"
+                  className="w-full h-10 text-xs bg-white/[0.03] border border-white/10 rounded-xl px-3 py-2 text-white placeholder-gray-500 focus:outline-hidden focus:border-blue-500/50 focus:bg-[#1a1a1a]"
+                />
               </div>
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">

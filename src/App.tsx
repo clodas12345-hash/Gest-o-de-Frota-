@@ -8,7 +8,7 @@ import {
   INITIAL_EXPENSE_LOGS,
   INITIAL_VISTORIAS
 } from './mockData';
-import { db } from './firebase';
+import { db, isPreview } from './firebase';
 import { doc, getDoc, setDoc, deleteDoc, onSnapshot, collection } from 'firebase/firestore';
 import { Capacitor, registerPlugin } from '@capacitor/core';
 import { App as CapApp } from '@capacitor/app';
@@ -764,7 +764,7 @@ export default function App() {
   const deletedVistoriaIdsRef = useRef<Set<string>>(new Set());
 
   const saveToCloud = (field: string, data: any) => {
-    if (!isCloudLoadedRef.current || isQuotaExhausted) return;
+    if (isPreview || !isCloudLoadedRef.current || isQuotaExhausted) return;
     
     try {
       // Clean data if field is vehicles or vistorias to prevent Firestore 1MB document limit rejection
@@ -810,10 +810,9 @@ export default function App() {
 
   const syncContractTemplatesToCloud = () => {
     lastUpdateTimestampRef.current['contractTemplates'] = Date.now();
-    if (typeof window !== 'undefined' && window.location.hostname.includes('ais-pre')) {
+    if (isPreview || isQuotaExhausted) {
       return;
     }
-    if (isQuotaExhausted) return;
     try {
       const clauses = getSavedContractClauses();
       const fullText = getFullContractTextTemplate();
@@ -840,6 +839,10 @@ export default function App() {
 
   // Load initial data from Firestore and setup real-time listener
   useEffect(() => {
+    if (isPreview) {
+      isCloudLoadedRef.current = true;
+      return;
+    }
     let unsubscribe: () => void = () => {};
     try {
       const docRef = doc(db, 'fleetData', 'main');
@@ -957,8 +960,8 @@ export default function App() {
                   }
                 });
               });
-              lastSyncedJsonRef.current['vehicles'] = JSON.stringify(cleanVehiclesForCloud(incomingVehicles));
-              setVehicles(incomingVehicles);
+              lastSyncedJsonRef.current['vehicles'] = JSON.stringify(cleanVehiclesForCloud(filteredIncoming));
+              setVehicles(filteredIncoming);
             }
           }
 
@@ -1389,6 +1392,7 @@ export default function App() {
 
   // Actions: Save / Edit Vehicle
   const handleSaveVehicle = (vehicle: Vehicle) => {
+    lastUpdateTimestampRef.current[vehicle.id] = Date.now();
     setVehicles((prev) => {
       const exists = prev.some((v) => v.id === vehicle.id);
       let nextVehicles;
@@ -1537,17 +1541,18 @@ export default function App() {
     setMaintenanceLogs((prev) => [newLog, ...prev]);
     if (log.date) autoSwitchMonthToDate(log.date);
 
-    if (log.currentKm && log.currentKm > 0) {
+    if ((log.currentKm && log.currentKm > 0) || log.tireSize) {
       setVehicles((prev) =>
         prev.map((v) => {
           if (v.id === log.vehicleId) {
-            const newKm = Math.max(v.currentKm || 0, log.currentKm || 0);
+            const newKm = log.currentKm && log.currentKm > 0 ? Math.max(v.currentKm || 0, log.currentKm || 0) : v.currentKm;
             const interval = v.preventiveMaintIntervalKm || 10000;
             return {
               ...v,
               currentKm: newKm,
               preventiveMaintCurrentKm: newKm,
-              preventiveMaintNextKm: log.nextKm ? log.nextKm : (newKm + interval),
+              preventiveMaintNextKm: log.currentKm && log.currentKm > 0 ? (log.nextKm ? log.nextKm : (newKm + interval)) : v.preventiveMaintNextKm,
+              ...(log.tireSize ? { tireSize: log.tireSize } : {})
             };
           }
           return v;
@@ -2361,13 +2366,19 @@ export default function App() {
     // Update in vistorias state
     setVistorias(prev => {
       const nextVistorias = prev.map(v => v.id === vistoria.id ? approvedVistoria : v);
-      setDoc(doc(db, 'fleetData', 'main'), sanitizeForCloud({
-        vistorias: cleanVistoriasForCloud(nextVistorias),
-        updatedAt: new Date().toISOString()
-      }), { merge: true }).catch((err: any) => {
-        if (err?.message?.includes('quota') || err?.code === 'resource-exhausted') return;
-        console.warn('Direct approved vistoria cloud sync error:', err);
-      });
+      if (!isPreview && !isQuotaExhausted) {
+        try {
+          setDoc(doc(db, 'fleetData', 'main'), sanitizeForCloud({
+            vistorias: cleanVistoriasForCloud(nextVistorias),
+            updatedAt: new Date().toISOString()
+          }), { merge: true }).catch((err: any) => {
+            if (err?.message?.includes('quota') || err?.code === 'resource-exhausted') return;
+            console.warn('Direct approved vistoria cloud sync error:', err);
+          });
+        } catch (err) {
+          console.warn('Direct approved vistoria cloud sync skipped:', err);
+        }
+      }
       return nextVistorias;
     });
 
@@ -2394,13 +2405,19 @@ export default function App() {
           return v;
         });
 
-        setDoc(doc(db, 'fleetData', 'main'), sanitizeForCloud({
-          vehicles: cleanVehiclesForCloud(nextVehicles),
-          updatedAt: new Date().toISOString()
-        }), { merge: true }).catch((err: any) => {
-          if (err?.message?.includes('quota') || err?.code === 'resource-exhausted') return;
-          console.warn('Direct vehicle vistoria approval cloud sync error:', err);
-        });
+        if (!isPreview && !isQuotaExhausted) {
+          try {
+            setDoc(doc(db, 'fleetData', 'main'), sanitizeForCloud({
+              vehicles: cleanVehiclesForCloud(nextVehicles),
+              updatedAt: new Date().toISOString()
+            }), { merge: true }).catch((err: any) => {
+              if (err?.message?.includes('quota') || err?.code === 'resource-exhausted') return;
+              console.warn('Direct vehicle vistoria approval cloud sync error:', err);
+            });
+          } catch (err) {
+            console.warn('Direct vehicle vistoria approval cloud sync skipped:', err);
+          }
+        }
 
         return nextVehicles;
       });
@@ -2445,7 +2462,8 @@ export default function App() {
     setTimeout(() => setDeleteToastMsg(null), 3000);
 
     // 2. Delete from Firestore collections in background (parallel)
-    if (!isQuotaExhausted) {
+    if (!isPreview && !isQuotaExhausted) {
+      try {
         Promise.allSettled([
           deleteDoc(doc(db, 'completedVistorias', id)),
           reqToken ? deleteDoc(doc(db, 'completedVistorias', reqToken)) : Promise.resolve(),
@@ -2458,6 +2476,9 @@ export default function App() {
             console.warn('Quota exhausted, further writes disabled.');
           }
         });
+      } catch (err) {
+        console.warn('Skipping vistoria delete in cloud:', err);
+      }
     }
   };
 
@@ -2511,7 +2532,8 @@ export default function App() {
     setTimeout(() => setDeleteToastMsg(null), 3000);
 
     // 2. Delete all matching docs from Firestore in background IN PARALLEL
-    if (!isQuotaExhausted) {
+    if (!isPreview && !isQuotaExhausted) {
+      try {
         const deletePromises: Promise<any>[] = [];
         targetVistorias.forEach((v) => {
           const docKey = v.id;
@@ -2531,6 +2553,9 @@ export default function App() {
             console.warn('Quota exhausted, further writes disabled.');
           }
         });
+      } catch (err) {
+        console.warn('Skipping bulk vistoria delete in cloud:', err);
+      }
     }
   };
 
@@ -2568,7 +2593,8 @@ export default function App() {
     setTimeout(() => setDeleteToastMsg(null), 3000);
 
     // 2. Delete all matching docs from Firestore in background IN PARALLEL
-    if (!isQuotaExhausted) {
+    if (!isPreview && !isQuotaExhausted) {
+      try {
         const deletePromises: Promise<any>[] = [];
         listToDelete.forEach((v) => {
           const docKey = v.id;
@@ -2588,6 +2614,9 @@ export default function App() {
             console.warn('Quota exhausted, further writes disabled.');
           }
         });
+      } catch (err) {
+        console.warn('Skipping clear all vistorias in cloud:', err);
+      }
     }
   };
 
@@ -2727,17 +2756,23 @@ export default function App() {
     setFinalizedContracts([]);
     setContacts([]);
     
-      const docRef = doc(db, 'fleetData', 'main');
-      setDoc(docRef, {
-        vehicles: [],
-        contacts: [],
-        fuelLogs: [],
-        maintenanceLogs: [],
-        expenseLogs: [],
-        vistorias: [],
-        finalizedContracts: [],
-        updatedAt: new Date().toISOString()
-      }).catch(err => console.warn('Error resetting cloud data:', err));
+    if (!isPreview) {
+      try {
+        const docRef = doc(db, 'fleetData', 'main');
+        setDoc(docRef, {
+          vehicles: [],
+          contacts: [],
+          fuelLogs: [],
+          maintenanceLogs: [],
+          expenseLogs: [],
+          vistorias: [],
+          finalizedContracts: [],
+          updatedAt: new Date().toISOString()
+        }).catch(err => console.warn('Error resetting cloud data:', err));
+      } catch (err) {
+        console.warn('Skipping cloud data reset:', err);
+      }
+    }
 
     setIsResetConfirmOpen(false);
 
@@ -2939,17 +2974,23 @@ export default function App() {
           }
 
           // 5. Sincronização imediata com Firestore Cloud
-          const docRef = doc(db, 'fleetData', 'main');
-          setDoc(docRef, {
-            vehicles: restoredVehicles,
-            contacts: restoredContacts,
-            fuelLogs: restoredFuelLogs,
-            maintenanceLogs: restoredMaintLogs,
-            expenseLogs: restoredExpenseLogs,
-            vistorias: restoredVistorias,
-            finalizedContracts: restoredFinalizedContracts,
-            updatedAt: new Date().toISOString()
-          }, { merge: true }).catch(err => console.warn('Error syncing restored backup to cloud:', err));
+          if (!isPreview) {
+            try {
+              const docRef = doc(db, 'fleetData', 'main');
+              setDoc(docRef, {
+                vehicles: restoredVehicles,
+                contacts: restoredContacts,
+                fuelLogs: restoredFuelLogs,
+                maintenanceLogs: restoredMaintLogs,
+                expenseLogs: restoredExpenseLogs,
+                vistorias: restoredVistorias,
+                finalizedContracts: restoredFinalizedContracts,
+                updatedAt: new Date().toISOString()
+              }, { merge: true }).catch(err => console.warn('Error syncing restored backup to cloud:', err));
+            } catch (cloudErr) {
+              console.warn('Skipping backup cloud sync in preview/offline mode:', cloudErr);
+            }
+          }
 
           const totalDocs = restoredVehicles.reduce((acc: number, v: any) => acc + (v.documents?.length || 0), 0);
           setDeleteToastMsg(`Backup COMPLETO restaurado com sucesso! ${restoredVehicles.length} veículos, ${totalDocs} documentos anexados, ${restoredVistorias.length} vistorias, ${restoredMaintLogs.length} manutenções, agenda e configurações recuperadas.`);
@@ -2979,20 +3020,29 @@ export default function App() {
   useEffect(() => {
     const reqId = activeParams.get('reqId');
     if (reqId && isVistoriaMode) {
+      if (isPreview) {
+        setLoadingVistoriaRequest(false);
+        return;
+      }
       if (!activeParams.get('placa') && !activeParams.get('vehicleId')) {
         setLoadingVistoriaRequest(true);
       }
-      getDoc(doc(db, 'vistoriaRequests', reqId))
-        .then(snap => {
-          if (snap.exists()) {
-            setVistoriaRequest(snap.data());
-          }
-          setLoadingVistoriaRequest(false);
-        })
-        .catch(err => {
-          console.error('Error fetching vistoria request:', err);
-          setLoadingVistoriaRequest(false);
-        });
+      try {
+        getDoc(doc(db, 'vistoriaRequests', reqId))
+          .then(snap => {
+            if (snap.exists()) {
+              setVistoriaRequest(snap.data());
+            }
+            setLoadingVistoriaRequest(false);
+          })
+          .catch(err => {
+            console.error('Error fetching vistoria request:', err);
+            setLoadingVistoriaRequest(false);
+          });
+      } catch (err) {
+        console.warn('Skipping vistoria request fetch:', err);
+        setLoadingVistoriaRequest(false);
+      }
     }
   }, [isVistoriaMode, activeParams]);
 
@@ -3097,13 +3147,19 @@ export default function App() {
                 });
 
             // Immediately push receipt to Firestore so the manager app receives it right away
-            setDoc(doc(db, 'fleetData', 'main'), sanitizeForCloud({
-              vehicles: cleanVehiclesForCloud(nextVehicles),
-              updatedAt: new Date().toISOString()
-            }), { merge: true }).catch((err: any) => {
-              if (err?.message?.includes('quota') || err?.code === 'resource-exhausted') return;
-              console.warn('Direct receipt cloud sync error:', err);
-            });
+            if (!isPreview && !isQuotaExhausted) {
+              try {
+                setDoc(doc(db, 'fleetData', 'main'), sanitizeForCloud({
+                  vehicles: cleanVehiclesForCloud(nextVehicles),
+                  updatedAt: new Date().toISOString()
+                }), { merge: true }).catch((err: any) => {
+                  if (err?.message?.includes('quota') || err?.code === 'resource-exhausted') return;
+                  console.warn('Direct receipt cloud sync error:', err);
+                });
+              } catch (err) {
+                console.warn('Skipping receipt cloud sync:', err);
+              }
+            }
 
             return nextVehicles;
           });
@@ -3128,11 +3184,13 @@ export default function App() {
           });
 
           // 1. Salvar vistoria imediatamente no Firestore em documento individual (sem limite de 1MB)
-          try {
-            await setDoc(doc(db, 'completedVistorias', finalVistoria.id), sanitizeForCloud(finalVistoria));
-          } catch (cErr: any) {
-            if (!cErr?.message?.includes('quota') && cErr?.code !== 'resource-exhausted') {
-              console.warn('Erro ao salvar em completedVistorias:', cErr);
+          if (!isPreview && !isQuotaExhausted) {
+            try {
+              await setDoc(doc(db, 'completedVistorias', finalVistoria.id), sanitizeForCloud(finalVistoria));
+            } catch (cErr: any) {
+              if (!cErr?.message?.includes('quota') && cErr?.code !== 'resource-exhausted') {
+                console.warn('Erro ao salvar em completedVistorias:', cErr);
+              }
             }
           }
 
@@ -3161,7 +3219,7 @@ export default function App() {
           };
 
           // 3. Salvar documento em vehicleDocuments no Firestore (para acesso permanente com fotos)
-          if (pdfDataUrl) {
+          if (pdfDataUrl && !isPreview && !isQuotaExhausted) {
             try {
               await setDoc(doc(db, 'vehicleDocuments', vistoriaDoc.id), sanitizeForCloud({
                 ...vistoriaDoc,
@@ -3196,54 +3254,56 @@ export default function App() {
           });
 
           // 5. Sincronizar com o documento central fleetData/main no Firestore buscando a frota real do gestor
-          try {
-            const mainDocRef = doc(db, 'fleetData', 'main');
-            const mainSnap = await getDoc(mainDocRef);
-            let cloudVehicles: Vehicle[] = [];
-            let cloudVistorias: Vistoria[] = [];
+          if (!isPreview && !isQuotaExhausted) {
+            try {
+              const mainDocRef = doc(db, 'fleetData', 'main');
+              const mainSnap = await getDoc(mainDocRef);
+              let cloudVehicles: Vehicle[] = [];
+              let cloudVistorias: Vistoria[] = [];
 
-            if (mainSnap.exists()) {
-              const d = mainSnap.data();
-              if (Array.isArray(d.vehicles)) cloudVehicles = d.vehicles;
-              if (Array.isArray(d.vistorias)) cloudVistorias = d.vistorias;
-            }
+              if (mainSnap.exists()) {
+                const d = mainSnap.data();
+                if (Array.isArray(d.vehicles)) cloudVehicles = d.vehicles;
+                if (Array.isArray(d.vistorias)) cloudVistorias = d.vistorias;
+              }
 
-            const targetPlateSanitized = activeVehicle.plate.replace(/[^A-Z0-9]/gi, '').toUpperCase();
-            const vehicleIdx = cloudVehicles.findIndex(
-              v => v.id === activeVehicle.id || (v.plate && v.plate.replace(/[^A-Z0-9]/gi, '').toUpperCase() === targetPlateSanitized)
-            );
+              const targetPlateSanitized = activeVehicle.plate.replace(/[^A-Z0-9]/gi, '').toUpperCase();
+              const vehicleIdx = cloudVehicles.findIndex(
+                v => v.id === activeVehicle.id || (v.plate && v.plate.replace(/[^A-Z0-9]/gi, '').toUpperCase() === targetPlateSanitized)
+              );
 
-            if (vehicleIdx >= 0) {
-              const currentV = cloudVehicles[vehicleIdx];
-              cloudVehicles[vehicleIdx] = {
-                ...currentV,
-                ...kmUpdate,
-                nextVistoriaDate: undefined,
-                documents: [vistoriaDoc, ...(currentV.documents || []).filter(d => d.name !== vistoriaDoc.name)]
-              };
-            } else {
-              cloudVehicles.unshift({
-                ...activeVehicle,
-                ...kmUpdate,
-                nextVistoriaDate: undefined,
-                documents: [vistoriaDoc, ...(activeVehicle.documents || [])]
-              });
-            }
+              if (vehicleIdx >= 0) {
+                const currentV = cloudVehicles[vehicleIdx];
+                cloudVehicles[vehicleIdx] = {
+                  ...currentV,
+                  ...kmUpdate,
+                  nextVistoriaDate: undefined,
+                  documents: [vistoriaDoc, ...(currentV.documents || []).filter(d => d.name !== vistoriaDoc.name)]
+                };
+              } else {
+                cloudVehicles.unshift({
+                  ...activeVehicle,
+                  ...kmUpdate,
+                  nextVistoriaDate: undefined,
+                  documents: [vistoriaDoc, ...(activeVehicle.documents || [])]
+                });
+              }
 
-            cloudVistorias = [finalVistoria, ...cloudVistorias.filter(v => 
-              v.id !== finalVistoria.id && 
-              (!finalVistoria.reqId || v.reqId !== finalVistoria.reqId) &&
-              !v.id.startsWith('requested-')
-            )];
+              cloudVistorias = [finalVistoria, ...cloudVistorias.filter(v => 
+                v.id !== finalVistoria.id && 
+                (!finalVistoria.reqId || v.reqId !== finalVistoria.reqId) &&
+                !v.id.startsWith('requested-')
+              )];
 
-            await setDoc(mainDocRef, sanitizeForCloud({
-              vehicles: cleanVehiclesForCloud(cloudVehicles),
-              vistorias: cleanVistoriasForCloud(cloudVistorias.slice(0, 40)),
-              updatedAt: new Date().toISOString()
-            }), { merge: true });
-          } catch (syncErr: any) {
-            if (!syncErr?.message?.includes('quota') && syncErr?.code !== 'resource-exhausted') {
-              console.error('Erro na sincronização da vistoria com fleetData:', syncErr);
+              await setDoc(mainDocRef, sanitizeForCloud({
+                vehicles: cleanVehiclesForCloud(cloudVehicles),
+                vistorias: cleanVistoriasForCloud(cloudVistorias.slice(0, 40)),
+                updatedAt: new Date().toISOString()
+              }), { merge: true });
+            } catch (syncErr: any) {
+              if (!syncErr?.message?.includes('quota') && syncErr?.code !== 'resource-exhausted') {
+                console.error('Erro na sincronização da vistoria com fleetData:', syncErr);
+              }
             }
           }
         }}
