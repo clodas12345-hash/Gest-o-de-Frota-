@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
-import { Vehicle, FuelLog, MaintenanceLog, ExpenseLog, AgendaContact, Vistoria, VehicleDocument, FinalizedContract, SinistroLog } from './types';
+import { Vehicle, FuelLog, MaintenanceLog, ExpenseLog, AgendaContact, Vistoria, VehicleDocument, FinalizedContract, SinistroLog, getFineTotal, isWeeklyPaymentPaid } from './types';
 import { decodeVistoriaParams } from './utils/vistoriaUrl';
 import { 
   INITIAL_VEHICLES, 
@@ -38,7 +38,7 @@ import { NotificationCenterModal } from './components/NotificationCenterModal';
 import { ChecklistConfigModal } from './components/ChecklistConfigModal';
 import { RentalContractModal } from './components/RentalContractModal';
 import { ConfirmDeleteModal } from './components/ConfirmDeleteModal';
-import { ConfirmFinalizeContractModal } from './components/ConfirmFinalizeContractModal';
+import { ConfirmFinalizeContractModal, CaucaoSettlementData } from './components/ConfirmFinalizeContractModal';
 import { AboutAppModal } from './components/AboutAppModal';
 import { LogoViewerModal } from './components/LogoViewerModal';
 import { GlobalVoiceAssistant } from './components/GlobalVoiceAssistant';
@@ -542,11 +542,12 @@ export default function App() {
           tomorrowDate.setDate(tomorrowDate.getDate() + 1);
           const tomorrowDateStr = tomorrowDate.toISOString().split('T')[0];
 
-          // Verifica se há pagamento agendado para amanhã (1 dia antes)
+          // Verifica se há pagamento agendado para amanhã (1 dia antes) e ainda não foi pago
           const paymentTomorrow = (v.weeklyPayments || []).find((p) => p.date === tomorrowDateStr);
+          const isTomorrowAlreadyPaid = paymentTomorrow ? isWeeklyPaymentPaid(paymentTomorrow) : false;
           const isRented = Boolean(v.driver && v.driver.trim() && v.driver.toLowerCase() !== 'não informado' && v.driver.toLowerCase() !== 'não definido');
 
-          if (paymentTomorrow || (isRented && v.startDate && (() => {
+          if ((paymentTomorrow && !isTomorrowAlreadyPaid) || (!isTomorrowAlreadyPaid && isRented && v.startDate && (() => {
             const startMs = new Date(v.startDate + 'T12:00:00').getTime();
             const tomorrowMs = new Date(tomorrowDateStr + 'T12:00:00').getTime();
             if (tomorrowMs < startMs) return false;
@@ -2132,7 +2133,7 @@ export default function App() {
       }
 
       // 3. Save to Contratos Finalizados folder
-      const payments = vehicleToDelete.weeklyPayments || [];
+      const payments = (vehicleToDelete.weeklyPayments || []).filter(isWeeklyPaymentPaid);
       const totalPaid = payments.reduce((acc, p) => acc + (p.amount || 0), 0);
 
       const newContract: FinalizedContract = {
@@ -2173,7 +2174,7 @@ export default function App() {
     }
   };
 
-  const handleConfirmFinalizeContract = async () => {
+  const handleConfirmFinalizeContract = async (settlement?: CaucaoSettlementData) => {
     if (!vehiclePendingFinalize) return;
     const targetVehicle = vehiclePendingFinalize;
     const id = targetVehicle.id;
@@ -2196,7 +2197,7 @@ export default function App() {
       }
 
       // 2. Save to Contratos Finalizados folder
-      const payments = targetVehicle.weeklyPayments || [];
+      const payments = (targetVehicle.weeklyPayments || []).filter(isWeeklyPaymentPaid);
       const totalPaid = payments.reduce((acc, p) => acc + (p.amount || 0), 0);
       const todayIso = getTodayIsoLocal();
 
@@ -2252,6 +2253,18 @@ export default function App() {
       }
 
       // 3b. Preserve driver rental snapshot in vehicle.driverHistory so previous months keep all driver data
+      const settlementNote = settlement
+        ? [
+            settlement.observacoesAcerto?.trim(),
+            `Acerto Caução: Depósito R$ ${settlement.caucaoOriginal.toFixed(2)} | Aluguel pendente R$ ${settlement.descontoAluguelPendente.toFixed(2)} | Avarias R$ ${settlement.descontoAvarias.toFixed(2)} | Lavagem R$ ${(settlement.descontoLavagem || 0).toFixed(2)} | Combustível R$ ${settlement.descontoCombustivel.toFixed(2)} | Multas R$ ${settlement.descontoMultas.toFixed(2)} | Pedágios R$ ${(settlement.descontoPedagios || 0).toFixed(2)} | Saldo Final R$ ${settlement.saldoFinal.toFixed(2)}`
+          ].filter(Boolean).join(' • ')
+        : targetVehicle.caucaoObservacoes;
+
+      const targetForSnapshot: Vehicle = {
+        ...targetVehicle,
+        caucaoObservacoes: settlementNote || targetVehicle.caucaoObservacoes,
+      };
+
       const shouldArchiveHistory = Boolean(
         (targetVehicle.driver && targetVehicle.driver.trim()) ||
         (targetVehicle.weeklyPayments && targetVehicle.weeklyPayments.length > 0) ||
@@ -2259,15 +2272,31 @@ export default function App() {
         (targetVehicle.caucaoValor && targetVehicle.caucaoValor > 0)
       );
       const historySnapshot = shouldArchiveHistory
-        ? createDriverHistorySnapshot(targetVehicle, 'finalized', todayIso)
+        ? createDriverHistorySnapshot(targetForSnapshot, 'finalized', todayIso)
         : null;
       const updatedDriverHistory = historySnapshot
         ? [historySnapshot, ...(targetVehicle.driverHistory || [])]
         : targetVehicle.driverHistory;
 
+      // Mark open fines settled during contract finalization as paid by tenant so they don't carry over to next driver
+      const pendingFinesSum = (targetVehicle.fines || [])
+        .filter((f) => f.status !== 'Paga pelo Locatário' && f.status !== 'Paga pela Locadora')
+        .reduce((sum, f) => sum + getFineTotal(f), 0);
+      const shouldMarkFinesPaid = Boolean(
+        settlement && settlement.descontoMultas > 0 && pendingFinesSum > 0 && settlement.descontoMultas >= pendingFinesSum - 0.01
+      );
+      const updatedFines = shouldMarkFinesPaid
+        ? (targetVehicle.fines || []).map((f) =>
+            f.status !== 'Paga pelo Locatário' && f.status !== 'Paga pela Locadora'
+              ? { ...f, status: 'Paga pelo Locatário' as const }
+              : f
+          )
+        : targetVehicle.fines;
+
       // 4. Update vehicle: PRESERVE vehicle, maintenance & driverHistory info, RESET active driver/contract info and remove old contracts from vehicle
       const updatedVehicle: Vehicle = {
         ...targetVehicle,
+        fines: updatedFines,
         driver: '',
         driverPhone: '',
         contractNumber: '',
@@ -4046,6 +4075,9 @@ export default function App() {
       <ConfirmFinalizeContractModal
         isOpen={!!vehiclePendingFinalize}
         vehicle={vehiclePendingFinalize}
+        sinistroLogs={vehiclePendingFinalize ? sinistroLogs.filter((s) => s.vehicleId === vehiclePendingFinalize.id) : []}
+        expenseLogs={vehiclePendingFinalize ? expenseLogs.filter((e) => e.vehicleId === vehiclePendingFinalize.id) : []}
+        maintenanceLogs={vehiclePendingFinalize ? maintenanceLogs.filter((m) => m.vehicleId === vehiclePendingFinalize.id) : []}
         onConfirm={handleConfirmFinalizeContract}
         onCancel={() => setVehiclePendingFinalize(null)}
       />

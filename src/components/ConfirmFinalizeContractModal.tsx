@@ -1,14 +1,16 @@
-import React, { useState, useEffect } from 'react';
-import { Archive, CheckCircle2, X, ShieldCheck, Calculator, MessageCircle, FileText } from 'lucide-react';
-import { Vehicle } from '../types';
+import React, { useState, useEffect, useMemo } from 'react';
+import { Archive, CheckCircle2, X, ShieldCheck, Calculator, MessageCircle, FileText, AlertOctagon } from 'lucide-react';
+import { Vehicle, SinistroLog, ExpenseLog, MaintenanceLog, getFineTotal, isWeeklyPaymentPaid } from '../types';
 import CurrencyInput from './CurrencyInput';
 
 export interface CaucaoSettlementData {
   caucaoOriginal: number;
   descontoAluguelPendente: number;
   descontoAvarias: number;
+  descontoLavagem: number;
   descontoCombustivel: number;
   descontoMultas: number;
+  descontoPedagios: number;
   observacoesAcerto: string;
   saldoFinal: number;
 }
@@ -16,6 +18,9 @@ export interface CaucaoSettlementData {
 interface ConfirmFinalizeContractModalProps {
   isOpen: boolean;
   vehicle: Vehicle | null;
+  sinistroLogs?: SinistroLog[];
+  expenseLogs?: ExpenseLog[];
+  maintenanceLogs?: MaintenanceLog[];
   isLoading?: boolean;
   onConfirm: (settlement?: CaucaoSettlementData) => void;
   onCancel: () => void;
@@ -24,6 +29,9 @@ interface ConfirmFinalizeContractModalProps {
 export function ConfirmFinalizeContractModal({
   isOpen,
   vehicle,
+  sinistroLogs = [],
+  expenseLogs = [],
+  maintenanceLogs = [],
   isLoading = false,
   onConfirm,
   onCancel
@@ -31,8 +39,10 @@ export function ConfirmFinalizeContractModal({
   const [caucaoOriginal, setCaucaoOriginal] = useState<number>(0);
   const [descontoAluguelPendente, setDescontoAluguelPendente] = useState<number>(0);
   const [descontoAvarias, setDescontoAvarias] = useState<number>(0);
+  const [descontoLavagem, setDescontoLavagem] = useState<number>(0);
   const [descontoCombustivel, setDescontoCombustivel] = useState<number>(0);
   const [descontoMultas, setDescontoMultas] = useState<number>(0);
+  const [descontoPedagios, setDescontoPedagios] = useState<number>(0);
   const [observacoesAcerto, setObservacoesAcerto] = useState<string>('');
   const [earlyFineRatePct, setEarlyFineRatePct] = useState<number>(20);
   const [daysUsed, setDaysUsed] = useState<number>(0);
@@ -43,16 +53,97 @@ export function ConfirmFinalizeContractModal({
   const [fuelPrice, setFuelPrice] = useState<number>(7.00);
   const [returnDate, setReturnDate] = useState<string>(() => new Date().toISOString().split('T')[0]);
 
-  // Reset fields when opening modal for a vehicle
+  const detectedDebits = useMemo(() => {
+    if (!vehicle) {
+      return {
+        pendingFines: [],
+        fineExpenses: [],
+        tollExpenses: [],
+        periodSinistros: [],
+        periodCrashMaint: [],
+        finesTotal: 0,
+        tollsTotal: 0,
+        damagesTotal: 0,
+      };
+    }
+
+    const contractStart = vehicle.startDate || '';
+    const todayIso = new Date().toISOString().split('T')[0];
+    const effectiveEnd = returnDate || todayIso;
+
+    const pendingFines = (vehicle.fines || []).filter(
+      (f) => f.status !== 'Paga pelo Locatário' && f.status !== 'Paga pela Locadora'
+    );
+    const pendingFinesTotal = pendingFines.reduce((sum, f) => sum + getFineTotal(f), 0);
+
+    const fineExpenses = expenseLogs.filter((exp) => {
+      if (exp.vehicleId !== vehicle.id || (exp.cost || 0) <= 0) return false;
+      if (contractStart && exp.date < contractStart) return false;
+      if (effectiveEnd && exp.date > effectiveEnd) return false;
+      const isFineExpense =
+        exp.category === 'Multa' || /\bmulta\b/i.test(exp.description || '');
+      if (!isFineExpense) return false;
+      // Avoid double counting if already registered with same date and value in vehicle.fines
+      const duplicatesVehicleFine = pendingFines.some(
+        (f) => f.dataHora === exp.date && Math.abs((f.valor || 0) - (exp.cost || 0)) < 0.01
+      );
+      return !duplicatesVehicleFine;
+    });
+    const fineExpensesTotal = fineExpenses.reduce((sum, e) => sum + (e.cost || 0), 0);
+
+    const tollExpenses = expenseLogs.filter((exp) => {
+      if (exp.vehicleId !== vehicle.id || (exp.cost || 0) <= 0) return false;
+      if (contractStart && exp.date < contractStart) return false;
+      if (effectiveEnd && exp.date > effectiveEnd) return false;
+      return (
+        exp.category === 'Pedágio' ||
+        exp.category === 'Estacionamento' ||
+        /ped[aá]gio|sem\s*parar|veloe|conectcar|\btag\b/i.test(exp.description || '')
+      );
+    });
+    const tollsTotal = tollExpenses.reduce((sum, e) => sum + (e.cost || 0), 0);
+
+    const periodSinistros = sinistroLogs.filter((s) => {
+      if (s.vehicleId !== vehicle.id || (s.repairCost || 0) <= 0) return false;
+      if (contractStart && s.date < contractStart) return false;
+      if (effectiveEnd && s.date > effectiveEnd) return false;
+      return true;
+    });
+    const periodSinistrosTotal = periodSinistros.reduce((sum, s) => sum + (s.repairCost || 0), 0);
+
+    const periodCrashMaint = maintenanceLogs.filter((m) => {
+      if (m.vehicleId !== vehicle.id || (m.cost || 0) <= 0) return false;
+      if (m.type !== 'Batida/Acidente' && !m.category?.includes('Batida')) return false;
+      if (contractStart && m.date < contractStart) return false;
+      if (effectiveEnd && m.date > effectiveEnd) return false;
+      return true;
+    });
+    const periodCrashMaintTotal = periodCrashMaint.reduce((sum, m) => sum + (m.cost || 0), 0);
+
+    return {
+      pendingFines,
+      fineExpenses,
+      tollExpenses,
+      periodSinistros,
+      periodCrashMaint,
+      finesTotal: Number((pendingFinesTotal + fineExpensesTotal).toFixed(2)),
+      tollsTotal: Number(tollsTotal.toFixed(2)),
+      damagesTotal: Number((periodSinistrosTotal + periodCrashMaintTotal).toFixed(2)),
+    };
+  }, [vehicle, sinistroLogs, expenseLogs, maintenanceLogs, returnDate]);
+
+  // Reset fields when opening modal for a vehicle, pulling all open debits automatically
   useEffect(() => {
     if (isOpen && vehicle) {
       const paidPromises = (vehicle.promisePayments || [])
         .filter(p => p.isPaid)
         .reduce((sum, p) => sum + (p.amount || 0), 0);
       setCaucaoOriginal((vehicle.caucaoValor || 0) + paidPromises);
-      setDescontoAvarias(0);
+      setDescontoAvarias(detectedDebits.damagesTotal);
+      setDescontoLavagem(0);
       setDescontoCombustivel(0);
-      setDescontoMultas(0);
+      setDescontoMultas(detectedDebits.finesTotal);
+      setDescontoPedagios(detectedDebits.tollsTotal);
       setObservacoesAcerto('');
       setTankCapacity(0);
       setReturnFuelLevel(8);
@@ -84,13 +175,13 @@ export function ConfirmFinalizeContractModal({
           fineAmt = valorDiasFaltantes * (earlyFineRatePct / 100);
           const valor30Dias = 30 * dailyRate;
           const expectedTotal = valor30Dias + fineAmt;
-          const totalPaid = (vehicle.weeklyPayments || []).reduce((sum, p) => sum + (p.amount || 0), 0);
+          const totalPaid = (vehicle.weeklyPayments || []).filter(isWeeklyPaymentPaid).reduce((sum, p) => sum + (p.amount || 0), 0);
           calculatedPending = Math.max(0, expectedTotal - totalPaid);
         } else {
           faltantes = 0;
           fineAmt = 0;
           const expectedTotal = used * dailyRate;
-          const totalPaid = (vehicle.weeklyPayments || []).reduce((sum, p) => sum + (p.amount || 0), 0);
+          const totalPaid = (vehicle.weeklyPayments || []).filter(isWeeklyPaymentPaid).reduce((sum, p) => sum + (p.amount || 0), 0);
           calculatedPending = Math.max(0, expectedTotal - totalPaid);
         }
       }
@@ -106,16 +197,19 @@ export function ConfirmFinalizeContractModal({
 
   const weeklyRate = vehicle ? (vehicle.valorSemanal || vehicle.valorRecebido || 0) : 0;
   const dailyRate = weeklyRate > 0 ? weeklyRate / 7 : 0;
-  const totalPaid = vehicle ? (vehicle.weeklyPayments || []).reduce((sum, p) => sum + (p.amount || 0), 0) : 0;
-  const paidWeeksCount = vehicle ? (vehicle.weeklyPayments || []).filter(p => (p.amount || 0) > 0).length : 0;
+  const paidWeeklyList = vehicle ? (vehicle.weeklyPayments || []).filter(isWeeklyPaymentPaid) : [];
+  const totalPaid = paidWeeklyList.reduce((sum, p) => sum + (p.amount || 0), 0);
+  const paidWeeksCount = paidWeeklyList.filter(p => (p.amount || 0) > 0).length;
   const expectedTotal = missingDays > 0 ? (30 * dailyRate + earlyFineAmount) : (daysUsed * dailyRate);
   const calculatedPendingRent = Math.max(0, expectedTotal - totalPaid);
 
   const totalDescontos =
     (descontoAluguelPendente || 0) +
     (descontoAvarias || 0) +
+    (descontoLavagem || 0) +
     (descontoCombustivel || 0) +
-    (descontoMultas || 0);
+    (descontoMultas || 0) +
+    (descontoPedagios || 0);
 
   const saldoFinal = (caucaoOriginal || 0) - totalDescontos;
 
@@ -133,7 +227,11 @@ export function ConfirmFinalizeContractModal({
         ? `✅ *SALDO A DEVOLVER AO LOCATÁRIO:* ${formatBRL(saldoFinal)}`
         : `⚠️ *SALDO DEVEDOR A PAGAR PELO LOCATÁRIO:* ${formatBRL(saldoFinal)}`;
 
-    const text = `📋 *DEMONSTRATIVO DE FECHAMENTO E ACERTO DE CAUÇÃO*\n\n🚗 *Veículo:* ${vehicle.brand} ${vehicle.model} (${vehicle.plate})\n👤 *Locatário:* ${vehicle.driver || 'Não informado'}\n📅 *Período:* ${vehicle.startDate ? new Date(vehicle.startDate + 'T12:00:00').toLocaleDateString('pt-BR') : ''} até ${new Date(returnDate + 'T12:00:00').toLocaleDateString('pt-BR')} (${daysUsed} dias rodados)\n📊 *Diária Proporcional:* ${formatBRL(dailyRate)}/dia (Semanal ${formatBRL(weeklyRate)})\n\n💵 *Total Devido do Período:* ${formatBRL(expectedTotal)}\n➖ *Total Já Pago:* ${formatBRL(totalPaid)} (${paidWeeksCount} semanais pagas)\n🟰 *Aluguéis em Aberto:* ${formatBRL(descontoAluguelPendente)}\n\n--- *ACERTO DA CAUÇÃO* ---\n💰 *Caução Depositada:* +${formatBRL(caucaoOriginal)}\n➖ *Aluguéis em Aberto:* -${formatBRL(descontoAluguelPendente)}\n➖ *Avarias / Oficina:* -${formatBRL(descontoAvarias)}\n➖ *Diferença Combustível:* -${formatBRL(descontoCombustivel)}\n➖ *Multas / Pedágios:* -${formatBRL(descontoMultas)}\n${observacoesAcerto ? `📝 *Obs:* ${observacoesAcerto}\n` : ''}\n${statusLine}`;
+    const finesSummary = detectedDebits.pendingFines.length > 0
+      ? ` (${detectedDebits.pendingFines.length} multa(s): ${detectedDebits.pendingFines.map(f => `${f.descricao} ${formatBRL(getFineTotal(f))}`).join(', ')})`
+      : '';
+
+    const text = `📋 *DEMONSTRATIVO DE FECHAMENTO E ACERTO DE CAUÇÃO*\n\n🚗 *Veículo:* ${vehicle.brand} ${vehicle.model} (${vehicle.plate})\n👤 *Locatário:* ${vehicle.driver || 'Não informado'}\n📅 *Período:* ${vehicle.startDate ? new Date(vehicle.startDate + 'T12:00:00').toLocaleDateString('pt-BR') : ''} até ${new Date(returnDate + 'T12:00:00').toLocaleDateString('pt-BR')} (${daysUsed} dias rodados)\n📊 *Diária Proporcional:* ${formatBRL(dailyRate)}/dia (Semanal ${formatBRL(weeklyRate)})\n\n💵 *Total Devido do Período:* ${formatBRL(expectedTotal)}\n➖ *Total Já Pago:* ${formatBRL(totalPaid)} (${paidWeeksCount} semanais pagas)\n🟰 *Aluguéis em Aberto:* ${formatBRL(descontoAluguelPendente)}\n\n--- *ACERTO DA CAUÇÃO* ---\n💰 *Caução Depositada:* +${formatBRL(caucaoOriginal)}\n➖ *Aluguéis em Aberto:* -${formatBRL(descontoAluguelPendente)}\n➖ *Avarias / Oficina:* -${formatBRL(descontoAvarias)}\n➖ *Lavagem / Higienização:* -${formatBRL(descontoLavagem)}\n➖ *Diferença Combustível:* -${formatBRL(descontoCombustivel)}\n➖ *Multas (Trânsito/Adm):* -${formatBRL(descontoMultas)}${finesSummary}\n➖ *Pedágios / Tag:* -${formatBRL(descontoPedagios)}\n${observacoesAcerto ? `📝 *Obs:* ${observacoesAcerto}\n` : ''}\n${statusLine}`;
 
     const url = cleanPhone
       ? `https://wa.me/${cleanPhone}?text=${encodeURIComponent(text)}`
@@ -344,7 +442,7 @@ export function ConfirmFinalizeContractModal({
                 </div>
               )}
 
-              <div>
+              <div className="col-span-2 sm:col-span-1">
                 <label className="text-[10px] text-gray-400 block mb-1 font-semibold">
                   (-) Avarias / Reparos Vistoria
                 </label>
@@ -354,6 +452,36 @@ export function ConfirmFinalizeContractModal({
                   placeholder="0,00"
                   className="w-full text-xs bg-[#141414] border border-white/15 rounded-lg px-2.5 py-1.5 text-white font-mono"
                 />
+                {(detectedDebits.periodSinistros.length > 0 || detectedDebits.periodCrashMaint.length > 0) && (
+                  <p className="text-[9px] text-amber-300 mt-1 leading-tight">
+                    Puxado: {detectedDebits.periodSinistros.length + detectedDebits.periodCrashMaint.length} ocorrência(s) no contrato ({formatBRL(detectedDebits.damagesTotal)})
+                  </p>
+                )}
+              </div>
+
+              <div className="col-span-2 sm:col-span-1">
+                <label className="text-[10px] text-gray-400 block mb-1 font-semibold flex items-center justify-between gap-1">
+                  <span>(-) Lavagem / Higienização (se necessário)</span>
+                </label>
+                <CurrencyInput
+                  value={descontoLavagem}
+                  onChange={setDescontoLavagem}
+                  placeholder="0,00"
+                  className="w-full text-xs bg-[#141414] border border-white/15 rounded-lg px-2.5 py-1.5 text-white font-mono"
+                />
+                <div className="flex items-center justify-between gap-1 mt-1">
+                  <button
+                    type="button"
+                    onClick={() => setDescontoLavagem(descontoLavagem === 150 ? 0 : 150)}
+                    className={`text-[9px] font-bold px-2 py-0.5 rounded border transition-colors cursor-pointer ${
+                      descontoLavagem === 150
+                        ? 'bg-amber-500/20 text-amber-300 border-amber-500/40'
+                        : 'bg-white/5 text-gray-300 border-white/10 hover:border-amber-500/30 hover:text-amber-300'
+                    }`}
+                  >
+                    {descontoLavagem === 150 ? '✓ R$ 150,00 (Cláusula 16ª)' : 'Aplicar R$ 150,00 (Cláusula 16ª)'}
+                  </button>
+                </div>
               </div>
 
               <div className="col-span-2 space-y-2 p-3 bg-black/40 border border-white/10 rounded-xl">
@@ -453,18 +581,72 @@ export function ConfirmFinalizeContractModal({
               </div>
 
               <div className="col-span-2 sm:col-span-1">
-                <label className="text-[10px] text-gray-400 block mb-1 font-semibold">
-                  (-) Multas / Pedágios
+                <label className="text-[10px] text-gray-400 block mb-1 font-semibold flex items-center justify-between">
+                  <span>(-) Multas (Trânsito + Adm.)</span>
+                  {detectedDebits.finesTotal > 0 && (
+                    <span className="text-[9px] text-rose-300 font-bold flex items-center gap-0.5">
+                      <AlertOctagon className="w-2.5 h-2.5" />
+                      {detectedDebits.pendingFines.length + detectedDebits.fineExpenses.length} em aberto
+                    </span>
+                  )}
                 </label>
                 <CurrencyInput
                   value={descontoMultas}
                   onChange={setDescontoMultas}
                   placeholder="0,00"
-                  className="w-full text-xs bg-[#141414] border border-white/15 rounded-lg px-2.5 py-1.5 text-white font-mono"
+                  className={`w-full text-xs bg-[#141414] rounded-lg px-2.5 py-1.5 font-mono ${
+                    detectedDebits.finesTotal > 0
+                      ? 'border border-rose-500/40 text-rose-300 font-bold'
+                      : 'border border-white/15 text-white'
+                  }`}
                 />
+                {(detectedDebits.pendingFines.length > 0 || detectedDebits.fineExpenses.length > 0) && (
+                  <div className="mt-1 space-y-0.5 text-[9px] text-rose-300/90 leading-tight">
+                    {detectedDebits.pendingFines.map((f) => (
+                      <p key={f.id} className="truncate">
+                        • {f.descricao} ({formatBRL(getFineTotal(f))}{f.applyAdminFee ? ` c/ Taxa ${f.adminFeePct ?? 20}%` : ''})
+                      </p>
+                    ))}
+                    {detectedDebits.fineExpenses.map((e) => (
+                      <p key={e.id} className="truncate">
+                        • {e.description || e.category} ({formatBRL(e.cost)})
+                      </p>
+                    ))}
+                  </div>
+                )}
               </div>
 
               <div className="col-span-2 sm:col-span-1">
+                <label className="text-[10px] text-gray-400 block mb-1 font-semibold flex items-center justify-between">
+                  <span>(-) Pedágios / Tag</span>
+                  {detectedDebits.tollsTotal > 0 && (
+                    <span className="text-[9px] text-amber-300 font-bold">
+                      {detectedDebits.tollExpenses.length} lançamento(s)
+                    </span>
+                  )}
+                </label>
+                <CurrencyInput
+                  value={descontoPedagios}
+                  onChange={setDescontoPedagios}
+                  placeholder="0,00"
+                  className={`w-full text-xs bg-[#141414] rounded-lg px-2.5 py-1.5 font-mono ${
+                    detectedDebits.tollsTotal > 0
+                      ? 'border border-amber-500/40 text-amber-300 font-bold'
+                      : 'border border-white/15 text-white'
+                  }`}
+                />
+                {detectedDebits.tollExpenses.length > 0 && (
+                  <div className="mt-1 space-y-0.5 text-[9px] text-amber-300/90 leading-tight">
+                    {detectedDebits.tollExpenses.map((e) => (
+                      <p key={e.id} className="truncate">
+                        • {e.description || e.category} ({formatBRL(e.cost)})
+                      </p>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              <div className="col-span-2">
                 <label className="text-[10px] text-gray-400 block mb-1 font-semibold">
                   Observação do Acerto
                 </label>
@@ -472,7 +654,7 @@ export function ConfirmFinalizeContractModal({
                   type="text"
                   value={observacoesAcerto}
                   onChange={(e) => setObservacoesAcerto(e.target.value)}
-                  placeholder="Ex: Desconto para-choque..."
+                  placeholder="Ex: Desconto para-choque, lavagem ou pedágios Sem Parar..."
                   className="w-full text-xs bg-[#141414] border border-white/15 rounded-lg px-2.5 py-1.5 text-white"
                 />
               </div>
@@ -539,8 +721,10 @@ export function ConfirmFinalizeContractModal({
                 caucaoOriginal,
                 descontoAluguelPendente,
                 descontoAvarias,
+                descontoLavagem,
                 descontoCombustivel,
                 descontoMultas,
+                descontoPedagios,
                 observacoesAcerto,
                 saldoFinal
               })

@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { X, Calculator, Percent, Calendar, DollarSign, Send, MessageCircle, Save, Check, RefreshCw, FileText } from 'lucide-react';
-import { Vehicle } from '../types';
+import { Vehicle, isWeeklyPaymentPaid } from '../types';
 import CurrencyInput from './CurrencyInput';
 import { getPublicWebBaseUrl } from './VehicleCard';
 
@@ -65,7 +65,7 @@ export const InterestCalculatorModal: React.FC<InterestCalculatorModalProps> = (
         setEarlyStartDate(activeVeh.startDate || new Date().toISOString().split('T')[0]);
         setEarlyReturnDate(new Date().toISOString().split('T')[0]);
         setEarlyWeeklyRate(activeVeh.valorSemanal || activeVeh.valorRecebido || 700);
-        const totalPaid = (activeVeh.weeklyPayments || []).reduce((sum, p) => sum + (p.amount || 0), 0);
+        const totalPaid = (activeVeh.weeklyPayments || []).filter(isWeeklyPaymentPaid).reduce((sum, p) => sum + (p.amount || 0), 0);
         setEarlyTotalPaid(totalPaid);
 
         // Calculate default due date
@@ -104,7 +104,7 @@ export const InterestCalculatorModal: React.FC<InterestCalculatorModalProps> = (
       setOriginalAmount(v.valorSemanal || v.valorRecebido || 500);
       setEarlyStartDate(v.startDate || new Date().toISOString().split('T')[0]);
       setEarlyWeeklyRate(v.valorSemanal || v.valorRecebido || 700);
-      const totalPaid = (v.weeklyPayments || []).reduce((sum, p) => sum + (p.amount || 0), 0);
+      const totalPaid = (v.weeklyPayments || []).filter(isWeeklyPaymentPaid).reduce((sum, p) => sum + (p.amount || 0), 0);
       setEarlyTotalPaid(totalPaid);
     }
   };

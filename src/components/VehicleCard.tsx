@@ -3,7 +3,7 @@ import { Capacitor, registerPlugin } from '@capacitor/core';
 const Filesystem = registerPlugin<any>('Filesystem');
 const Share = registerPlugin<any>('Share');
 const Directory = { Cache: 'CACHE', Documents: 'DOCUMENTS', Data: 'DATA' };
-import { Vehicle, ExpenseLog, WeeklyPayment, Vistoria, VehicleDocument, MaintenanceLog, FuelLog, SinistroLog, PromisePayment, TireState, FinalizedContract } from '../types';
+import { Vehicle, ExpenseLog, WeeklyPayment, Vistoria, VehicleDocument, MaintenanceLog, FuelLog, SinistroLog, PromisePayment, TireState, FinalizedContract, getFineAdminFee, getFineTotal, isWeeklyPaymentPaid } from '../types';
 import { generateVistoriaPDF, generatePaymentReceiptPDF } from '../utils/pdfGenerator';
 import { sendAppNotification, requestNotificationPermission } from '../utils/notifications';
 import { syncVehicleFipe, applyManualFipeOverride } from '../utils/fipeService';
@@ -583,8 +583,9 @@ export const VehicleCard: React.FC<VehicleCardProps> = ({
   const currentWeek = getWeekNumber(today);
   const thisYear = today.getFullYear();
   const alreadyPaid = (vehicle.weeklyPayments || []).some(pay => {
+    if (!isWeeklyPaymentPaid(pay)) return false;
     // Force parsing as local date at midday to avoid UTC shifting to previous day
-    const d = new Date(pay.date + 'T12:00:00');
+    const d = new Date((pay.paidDate || pay.date) + 'T12:00:00');
     return d.getFullYear() === thisYear && getWeekNumber(d) === currentWeek;
   });
   const alreadyPaidPromiseThisWeek = (vehicle.promisePayments || []).some(p => {
@@ -670,13 +671,17 @@ export const VehicleCard: React.FC<VehicleCardProps> = ({
   const [paymentWhatsAppDueDate, setPaymentWhatsAppDueDate] = useState<string>(() => {
     const payments = vehicle.weeklyPayments || [];
     const todayIso = new Date().toISOString().split('T')[0];
-    const pastOrToday = payments.filter((p) => p.date <= todayIso).sort((a, b) => b.date.localeCompare(a.date));
-    if (pastOrToday.length > 0) {
-      return getNextWeekDate(pastOrToday[0].date);
+    const earliestPending = payments
+      .filter((p) => !isWeeklyPaymentPaid(p))
+      .sort((a, b) => a.date.localeCompare(b.date))[0];
+    if (earliestPending) {
+      return earliestPending.date;
     }
-    const upcoming = payments.filter((p) => p.date > todayIso).sort((a, b) => a.date.localeCompare(b.date));
-    if (upcoming.length > 0) {
-      return upcoming[0].date;
+    const pastOrTodayPaid = payments
+      .filter((p) => isWeeklyPaymentPaid(p) && p.date <= todayIso)
+      .sort((a, b) => b.date.localeCompare(a.date));
+    if (pastOrTodayPaid.length > 0) {
+      return getNextWeekDate(pastOrTodayPaid[0].date);
     }
     return vehicle.startDate ? getNextWeekDate(vehicle.startDate) : todayIso;
   });
@@ -706,6 +711,7 @@ export const VehicleCard: React.FC<VehicleCardProps> = ({
     title: string;
     amount: number;
     promiseId?: string;
+    paymentId?: string;
     initialDate?: string;
   } | null>(null);
 
@@ -717,17 +723,55 @@ export const VehicleCard: React.FC<VehicleCardProps> = ({
         setPaymentConfirmModal(null);
         return;
       }
-      const newPay = {
-        id: `wp-${Date.now()}-${Math.random().toString(36).substr(2, 5)}`,
-        date: selectedDate,
-        amount: quickAmt,
-      };
-      const updatedWeeklyPayments = [...(vehicle.weeklyPayments || []), newPay];
+      const parts = selectedDate.split('-');
+      const brDate = parts.length === 3 ? `${parts[2]}/${parts[1]}/${parts[0]}` : selectedDate;
+      const nowLocal = new Date();
+      const todayIsoLocal = `${nowLocal.getFullYear()}-${String(nowLocal.getMonth() + 1).padStart(2, '0')}-${String(nowLocal.getDate()).padStart(2, '0')}`;
+      const paidAtStr = selectedDate === todayIsoLocal
+        ? `${brDate} às ${nowLocal.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}`
+        : brDate;
+
+      const existingList = vehicle.weeklyPayments || [];
+      let targetPaymentId = paymentConfirmModal.paymentId;
+
+      if (!targetPaymentId) {
+        // When triggered from header quick button, match pending installment for that week or earliest pending up to selectedDate
+        const selDateObj = new Date(selectedDate + 'T12:00:00');
+        const selWeek = getWeekNumber(selDateObj);
+        const selYear = selDateObj.getFullYear();
+        const pendingSameWeek = existingList.find((p) => {
+          if (isWeeklyPaymentPaid(p)) return false;
+          const d = new Date(p.date + 'T12:00:00');
+          return d.getFullYear() === selYear && getWeekNumber(d) === selWeek;
+        });
+        const earliestPending = existingList
+          .filter((p) => !isWeeklyPaymentPaid(p) && p.date <= selectedDate)
+          .sort((a, b) => a.date.localeCompare(b.date))[0];
+        targetPaymentId = pendingSameWeek?.id || earliestPending?.id;
+      }
+
+      const updatedWeeklyPayments = targetPaymentId
+        ? existingList.map((p) =>
+            p.id === targetPaymentId
+              ? { ...p, isPaid: true, paidDate: selectedDate, paidAt: paidAtStr, amount: quickAmt || p.amount }
+              : p
+          )
+        : [
+            ...existingList,
+            {
+              id: `wp-${Date.now()}-${Math.random().toString(36).substr(2, 5)}`,
+              date: selectedDate,
+              amount: quickAmt,
+              isPaid: true,
+              paidDate: selectedDate,
+              paidAt: paidAtStr,
+            },
+          ];
+
       onUpdateVehicle({
         ...vehicle,
         weeklyPayments: updatedWeeklyPayments,
       });
-      const brDate = selectedDate.split('-').reverse().join('/');
       sendAppNotification(`💰 Pagamento Semanal Confirmado: ${vehicle.brand} (${vehicle.plate})`, {
         body: `Pagamento de R$ ${quickAmt.toLocaleString('pt-BR', { minimumFractionDigits: 2 })} confirmado para o dia ${brDate}!`,
         eventKey: 'payment_registered',
@@ -1352,15 +1396,16 @@ export const VehicleCard: React.FC<VehicleCardProps> = ({
     return false;
   };
 
-  // Sum up weekly payments for the current month
-  const totalWeeklyReceivedInCurrentMonth = (vehicle.weeklyPayments || [])
-    .filter((wp) => isCurrentMonth(wp.date))
+  // Sum up PAID weekly payments for the current month
+  const paidWeeklyPaymentsInCurrentMonth = (vehicle.weeklyPayments || [])
+    .filter((wp) => isCurrentMonth(wp.date) && isWeeklyPaymentPaid(wp));
+
+  const totalWeeklyReceivedInCurrentMonth = paidWeeklyPaymentsInCurrentMonth
     .reduce((sum, wp) => sum + wp.amount, 0);
 
   // Financial fields
   // In previous months (or when multiple drivers shared a month), sum revenue accurately across recorded periods for that month
-  const hasWeeklyPaymentsInCurrentMonth = (vehicle.weeklyPayments || [])
-    .some((wp) => isCurrentMonth(wp.date));
+  const hasWeeklyPaymentsInCurrentMonth = paidWeeklyPaymentsInCurrentMonth.length > 0;
 
   const valorRecebido = monthResolution.isPastMonth || monthResolution.periods.length > 1
     ? getVehicleRevenueForMonth(liveVehicle, currentMonth, currentYear, finalizedContracts)
@@ -1444,9 +1489,9 @@ export const VehicleCard: React.FC<VehicleCardProps> = ({
     return doc.category === docCategoryFilter;
   });
 
-  // Total received from weekly payments for the current month
+  // Total received from PAID weekly payments for the current month
   const totalWeeklyReceived = (vehicle.weeklyPayments || [])
-    .filter((wp) => isCurrentMonth(wp.date))
+    .filter((wp) => isCurrentMonth(wp.date) && isWeeklyPaymentPaid(wp))
     .reduce((sum, wp) => sum + wp.amount, 0);
 
   // Total despesas (Fixas + Custo Extra + Eventuais + Manutenções do Mês)
@@ -1489,6 +1534,8 @@ export const VehicleCard: React.FC<VehicleCardProps> = ({
       id: `wp-${Date.now()}-${Math.random().toString(36).substr(2, 5)}`,
       date: newPaymentDate,
       amount: newPaymentAmount,
+      isPaid: true,
+      paidDate: newPaymentDate,
     };
     const currentPayments = vehicle.weeklyPayments || [];
     onUpdateVehicle({
@@ -1511,10 +1558,13 @@ export const VehicleCard: React.FC<VehicleCardProps> = ({
 
   const handleApproveReceipt = (receipt: { id: string; date: string; amount?: number; photoUrl: string; notes?: string; driverName?: string }) => {
     const amountToUse = receipt.amount || vehicle.valorSemanal || 0;
-    const newPayment = {
+    const payDate = receipt.date || new Date().toISOString().split('T')[0];
+    const newPayment: WeeklyPayment = {
       id: `pay-${Date.now()}-${Math.random().toString(36).substr(2, 5)}`,
-      date: receipt.date || new Date().toISOString().split('T')[0],
-      amount: amountToUse
+      date: payDate,
+      amount: amountToUse,
+      isPaid: true,
+      paidDate: payDate,
     };
     const newDoc = {
       id: `doc-receipt-${Date.now()}`,
@@ -3732,7 +3782,9 @@ _Enviado via sistema de gestão de frota._`;
                       }
                     }
                   }
-                  const lifetimeRevenue = allRoiPayments.reduce((sum, p) => sum + (p.amount || 0), 0);
+                  const lifetimeRevenue = allRoiPayments
+                    .filter((p) => isWeeklyPaymentPaid(p))
+                    .reduce((sum, p) => sum + (p.amount || 0), 0);
                   const lifetimeMaint = maintenanceLogs.reduce((sum, log) => sum + (log.cost || 0), 0);
                   const lifetimeExp = vehicleExpenses.reduce((sum, exp) => sum + (exp.cost || 0), 0);
                   const lifetimeSinistro = sinistroLogs.reduce((sum, s) => sum + (s.repairCost || 0), 0);
@@ -5144,12 +5196,18 @@ _Enviado via sistema de gestão de frota._`;
 
               {/* Filtro: Mês Atual vs Histórico Completo / Retroativos */}
               {(() => {
+                const nowLocal = new Date();
+                const todayLocalIso = `${nowLocal.getFullYear()}-${String(nowLocal.getMonth() + 1).padStart(2, '0')}-${String(nowLocal.getDate()).padStart(2, '0')}`;
                 const allPayments = (vehicle.weeklyPayments || []).slice().sort((a, b) => b.date.localeCompare(a.date));
                 const currentMonthPayments = allPayments.filter((wp) => isCurrentMonth(wp.date));
                 const otherMonthPaymentsCount = allPayments.length - currentMonthPayments.length;
                 const displayedPayments = paymentViewFilter === 'all' ? allPayments : currentMonthPayments;
-                const totalDisplayed = displayedPayments.reduce((acc, p) => acc + (p.amount || 0), 0);
-                const totalAll = allPayments.reduce((acc, p) => acc + (p.amount || 0), 0);
+
+                const paidDisplayedPayments = displayedPayments.filter((p) => isWeeklyPaymentPaid(p));
+                const pendingDisplayedPayments = displayedPayments.filter((p) => !isWeeklyPaymentPaid(p));
+                const totalDisplayed = paidDisplayedPayments.reduce((acc, p) => acc + (p.amount || 0), 0);
+                const totalPendingDisplayed = pendingDisplayedPayments.reduce((acc, p) => acc + (p.amount || 0), 0);
+                const totalAll = allPayments.filter((p) => isWeeklyPaymentPaid(p)).reduce((acc, p) => acc + (p.amount || 0), 0);
 
                 return (
                   <>
@@ -5211,21 +5269,49 @@ _Enviado via sistema de gestão de frota._`;
                         </p>
                       ) : (
                         displayedPayments.map((p) => {
+                          const isPaid = isWeeklyPaymentPaid(p);
                           const isRetro = !isCurrentMonth(p.date);
                           const dateObj = new Date(p.date + 'T12:00:00');
                           const monthYearStr = dateObj.toLocaleDateString('pt-BR', { month: 'short', year: 'numeric' });
+                          const isOverdue = !isPaid && p.date < todayLocalIso;
+                          const isDueToday = !isPaid && p.date === todayLocalIso;
 
                           return (
                             <div
                               key={p.id}
-                              className={`flex justify-between items-center text-[11px] py-1.5 px-2 rounded-lg border-b border-white/[0.03] transition-colors ${
-                                isRetro ? 'bg-purple-950/15 hover:bg-purple-950/25 border-purple-500/10' : 'hover:bg-white/[0.02]'
+                              className={`flex justify-between items-center text-[11px] py-1.5 px-2 rounded-lg border transition-colors gap-2 ${
+                                !isPaid
+                                  ? isOverdue
+                                    ? 'bg-rose-950/20 border-rose-500/20 hover:bg-rose-950/30'
+                                    : isDueToday
+                                    ? 'bg-amber-950/20 border-amber-500/25 hover:bg-amber-950/30'
+                                    : 'bg-white/[0.02] border-white/10 hover:bg-white/[0.04]'
+                                  : isRetro
+                                  ? 'bg-purple-950/15 hover:bg-purple-950/25 border-purple-500/10'
+                                  : 'bg-emerald-950/10 border-emerald-500/10 hover:bg-emerald-950/20'
                               }`}
                             >
-                              <div className="flex items-center gap-2 flex-wrap">
+                              <div className="flex items-center gap-1.5 flex-wrap min-w-0">
                                 <span className="text-gray-300 font-mono font-medium">
                                   {dateObj.toLocaleDateString('pt-BR')}
                                 </span>
+                                {isPaid ? (
+                                  <span className="text-[9px] bg-emerald-500/15 text-emerald-300 border border-emerald-500/25 px-1.5 py-0.2 rounded font-bold">
+                                    ✓ Pago{p.paidDate && p.paidDate !== p.date ? ` em ${new Date(p.paidDate + 'T12:00:00').toLocaleDateString('pt-BR')}` : ''}
+                                  </span>
+                                ) : isOverdue ? (
+                                  <span className="text-[9px] bg-rose-500/20 text-rose-300 border border-rose-500/30 px-1.5 py-0.2 rounded font-bold">
+                                    Atrasado
+                                  </span>
+                                ) : isDueToday ? (
+                                  <span className="text-[9px] bg-amber-500/20 text-amber-300 border border-amber-500/30 px-1.5 py-0.2 rounded font-bold">
+                                    Vence Hoje
+                                  </span>
+                                ) : (
+                                  <span className="text-[9px] bg-sky-500/15 text-sky-300 border border-sky-500/25 px-1.5 py-0.2 rounded font-bold">
+                                    Previsto
+                                  </span>
+                                )}
                                 {isRetro && (
                                   <span className="text-[9px] bg-purple-500/20 text-purple-300 border border-purple-500/30 px-1.5 py-0.2 rounded font-mono font-bold flex items-center gap-1">
                                     <span>Retroativo ({monthYearStr})</span>
@@ -5233,36 +5319,56 @@ _Enviado via sistema de gestão de frota._`;
                                 )}
                               </div>
 
-                              <div className="flex items-center gap-1.5">
+                              <div className="flex items-center gap-1.5 shrink-0">
                                 <InlineEdit
                                   value={p.amount}
                                   label="Pagamento Semanal"
                                   onSave={(val) => handleEditPayment(p.id, val)}
                                 />
-                                <button
-                                  type="button"
-                                  onClick={async () => {
-                                    try {
-                                      const { doc, fileName, whatsappText } = await generatePaymentReceiptPDF(vehicle, p);
-                                      doc.save(fileName);
-                                      let cleanPhone = (vehicle.driverPhone || '').replace(/\D/g, '');
-                                      if (cleanPhone && !cleanPhone.startsWith('55')) {
-                                        cleanPhone = '55' + cleanPhone;
+                                {!isPaid ? (
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      setPaymentConfirmModal({
+                                        type: 'weekly',
+                                        title: 'Confirmar Pagamento Semanal',
+                                        amount: p.amount,
+                                        paymentId: p.id,
+                                        initialDate: todayLocalIso,
+                                      });
+                                    }}
+                                    className="px-2 py-0.5 bg-amber-500/20 hover:bg-amber-400 text-amber-300 hover:text-slate-950 border border-amber-500/40 rounded text-[9px] font-bold flex items-center gap-1 transition-all cursor-pointer"
+                                    title="Escolher o dia em que foi pago no calendário e confirmar recebimento"
+                                  >
+                                    <Check className="w-2.5 h-2.5" />
+                                    <span>Confirmar</span>
+                                  </button>
+                                ) : (
+                                  <button
+                                    type="button"
+                                    onClick={async () => {
+                                      try {
+                                        const { doc, fileName, whatsappText } = await generatePaymentReceiptPDF(vehicle, p);
+                                        doc.save(fileName);
+                                        let cleanPhone = (vehicle.driverPhone || '').replace(/\D/g, '');
+                                        if (cleanPhone && !cleanPhone.startsWith('55')) {
+                                          cleanPhone = '55' + cleanPhone;
+                                        }
+                                        const waUrl = cleanPhone
+                                          ? `https://wa.me/${cleanPhone}?text=${encodeURIComponent(whatsappText)}`
+                                          : `https://wa.me/?text=${encodeURIComponent(whatsappText)}`;
+                                        window.open(waUrl, '_blank');
+                                      } catch (err) {
+                                        console.error('Erro ao gerar recibo:', err);
                                       }
-                                      const waUrl = cleanPhone
-                                        ? `https://wa.me/${cleanPhone}?text=${encodeURIComponent(whatsappText)}`
-                                        : `https://wa.me/?text=${encodeURIComponent(whatsappText)}`;
-                                      window.open(waUrl, '_blank');
-                                    } catch (err) {
-                                      console.error('Erro ao gerar recibo:', err);
-                                    }
-                                  }}
-                                  className="px-1.5 py-0.5 bg-emerald-500/15 hover:bg-emerald-500/30 text-emerald-300 border border-emerald-500/25 rounded text-[9px] font-bold flex items-center gap-1 transition-colors cursor-pointer"
-                                  title="Baixar Recibo em PDF e enviar confirmação no WhatsApp do motorista"
-                                >
-                                  <FileText className="w-2.5 h-2.5" />
-                                  <span>Recibo</span>
-                                </button>
+                                    }}
+                                    className="px-1.5 py-0.5 bg-emerald-500/15 hover:bg-emerald-500/30 text-emerald-300 border border-emerald-500/25 rounded text-[9px] font-bold flex items-center gap-1 transition-colors cursor-pointer"
+                                    title="Baixar Recibo em PDF e enviar confirmação no WhatsApp do motorista"
+                                  >
+                                    <FileText className="w-2.5 h-2.5" />
+                                    <span>Recibo</span>
+                                  </button>
+                                )}
                                 <button
                                   onClick={() => {
                                     if (onShowDeleteConfirm) {
@@ -5284,22 +5390,30 @@ _Enviado via sistema de gestão de frota._`;
                     </div>
 
                     {allPayments.length > 0 && (
-                      <div className="flex flex-col sm:flex-row sm:items-center justify-between text-[10px] text-gray-400 pt-1.5 border-t border-white/5 gap-1">
-                        <span>
-                          {paymentViewFilter === 'all'
-                            ? `Total Histórico Acumulado (${allPayments.length} pagamentos):`
-                            : `Total Recebido no Mês Atual (${currentMonthPayments.length} pagamentos):`}
-                        </span>
-                        <div className="flex items-center gap-2">
-                          {paymentViewFilter === 'current' && otherMonthPaymentsCount > 0 && (
-                            <span className="text-[9px] text-gray-500 font-mono">
-                              (Total Geral: {formatBRL(totalAll)})
-                            </span>
-                          )}
-                          <span className="font-mono text-emerald-400 font-bold text-xs">
-                            {formatBRL(totalDisplayed)}
+                      <div className="flex flex-col gap-1 text-[10px] text-gray-400 pt-1.5 border-t border-white/5">
+                        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1">
+                          <span>
+                            {paymentViewFilter === 'all'
+                              ? `Total Pago no Histórico (${paidDisplayedPayments.length} pago(s)):`
+                              : `Total Recebido no Mês Atual (${paidDisplayedPayments.length} pago(s)):`}
                           </span>
+                          <div className="flex items-center gap-2">
+                            {paymentViewFilter === 'current' && otherMonthPaymentsCount > 0 && (
+                              <span className="text-[9px] text-gray-500 font-mono">
+                                (Total Geral Pago: {formatBRL(totalAll)})
+                              </span>
+                            )}
+                            <span className="font-mono text-emerald-400 font-bold text-xs">
+                              {formatBRL(totalDisplayed)}
+                            </span>
+                          </div>
                         </div>
+                        {pendingDisplayedPayments.length > 0 && (
+                          <div className="flex items-center justify-between text-[10px] text-amber-300/90">
+                            <span>Em aberto / Previsto ({pendingDisplayedPayments.length} parcela(s)):</span>
+                            <span className="font-mono font-bold">{formatBRL(totalPendingDisplayed)}</span>
+                          </div>
+                        )}
                       </div>
                     )}
                   </>
@@ -7764,21 +7878,42 @@ _Enviado via sistema de gestão de frota._`;
                       <p className="text-xs text-gray-500">Nenhuma multa registrada para este veículo.</p>
                     </div>
                   ) : (
-                    (vehicle.fines || []).map(fine => (
+                    (vehicle.fines || []).map(fine => {
+                      const adminFee = getFineAdminFee(fine);
+                      const extraAdmin = fine.extraAdminFineAmount || 0;
+                      const fineTotal = getFineTotal(fine);
+                      return (
                       <div key={fine.id} className="p-3 bg-black/40 border border-white/5 rounded-xl space-y-2 group relative">
-                        <div className="flex justify-between items-start">
+                        <div className="flex justify-between items-start gap-2">
                           <div>
-                            <div className="flex items-center gap-2">
+                            <div className="flex items-center gap-2 flex-wrap">
                               <span className="text-[10px] font-mono text-gray-400">{fine.dataHora}</span>
+                              {fine.applyAdminFee && (
+                                <span className="text-[9px] px-1.5 py-0.5 rounded bg-amber-500/15 text-amber-300 border border-amber-500/30 font-bold">
+                                  +Taxa Adm {fine.adminFeePct ?? 20}%
+                                </span>
+                              )}
+                              {extraAdmin > 0 && (
+                                <span className="text-[9px] px-1.5 py-0.5 rounded bg-rose-500/15 text-rose-300 border border-rose-500/30 font-bold">
+                                  +Multa Adm Contratual
+                                </span>
+                              )}
                             </div>
                             <h5 className="text-xs font-bold text-white mt-1">{fine.descricao}</h5>
                             <p className="text-[10px] text-gray-400">
                               Motorista: <strong>{fine.driverName || vehicle.driver || 'Não informado'}</strong> • Status: <span className="text-amber-400 font-bold">{fine.status}</span>
                             </p>
+                            {(adminFee > 0 || extraAdmin > 0) && (
+                              <p className="text-[9px] text-amber-300/90 mt-0.5 font-mono">
+                                Nominal R$ {(fine.valor || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                                {adminFee > 0 ? ` + Taxa Adm R$ ${adminFee.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}` : ''}
+                                {extraAdmin > 0 ? ` + Multa Adm R$ ${extraAdmin.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}${fine.extraAdminFineReason ? ` (${fine.extraAdminFineReason})` : ''}` : ''}
+                              </p>
+                            )}
                           </div>
-                          <div className="text-right">
+                          <div className="text-right shrink-0">
                             <span className="text-xs font-bold text-rose-400 font-mono">
-                              R$ {(fine.valor || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                              R$ {fineTotal.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
                             </span>
                             <span className="block text-[9px] text-amber-400 font-bold">
                               {fine.gravidade || 'Média'} ({fine.pontos || 4} pts)
@@ -7786,7 +7921,8 @@ _Enviado via sistema de gestão de frota._`;
                           </div>
                         </div>
                       </div>
-                    ))
+                      );
+                    })
                   )}
                 </div>
               </div>

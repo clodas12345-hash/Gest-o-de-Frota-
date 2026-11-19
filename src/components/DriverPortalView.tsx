@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Vehicle, Vistoria, WeeklyPayment } from '../types';
+import { Vehicle, Vistoria, WeeklyPayment, isWeeklyPaymentPaid } from '../types';
 import { 
   Car, 
   DollarSign, 
@@ -41,7 +41,7 @@ export const DriverPortalView: React.FC<DriverPortalViewProps> = ({
   );
 
   const weeklyPayments = vehicle.weeklyPayments || [];
-  const totalPaid = weeklyPayments.reduce((acc, p) => acc + (p.amount || 0), 0);
+  const totalPaid = weeklyPayments.filter(isWeeklyPaymentPaid).reduce((acc, p) => acc + (p.amount || 0), 0);
 
   // Default pix key or landlord info
   const defaultPixKey = vehicle.driverPhone || '473118395752';
@@ -220,36 +220,47 @@ export const DriverPortalView: React.FC<DriverPortalViewProps> = ({
             </div>
           ) : (
             <div className="space-y-2.5 max-h-72 overflow-y-auto pr-1 custom-scrollbar">
-              {weeklyPayments.map((p, idx) => (
+              {weeklyPayments.map((p, idx) => {
+                const paid = isWeeklyPaymentPaid(p);
+                return (
                 <div 
                   key={p.id || idx}
                   className="p-3 bg-black/40 border border-white/5 rounded-xl flex items-center justify-between hover:border-white/15 transition-all text-xs"
                 >
                   <div className="flex items-center gap-3">
-                    <div className="w-8 h-8 rounded-lg bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center text-emerald-400 shrink-0">
-                      <Check className="w-4 h-4" />
+                    <div className={`w-8 h-8 rounded-lg border flex items-center justify-center shrink-0 ${
+                      paid
+                        ? 'bg-emerald-500/10 border-emerald-500/20 text-emerald-400'
+                        : 'bg-amber-500/10 border-amber-500/20 text-amber-400'
+                    }`}>
+                      {paid ? <Check className="w-4 h-4" /> : <Clock className="w-4 h-4" />}
                     </div>
                     <div>
-                      <span className="font-bold text-white block">Parcela Semanal #{weeklyPayments.length - idx}</span>
+                      <span className="font-bold text-white block">
+                        Parcela Semanal #{weeklyPayments.length - idx} {!paid && <span className="text-[10px] text-amber-300 font-semibold">(Em aberto)</span>}
+                      </span>
                       <span className="text-[10px] text-gray-400">{p.date || 'Data não informada'}</span>
                     </div>
                   </div>
 
                   <div className="flex items-center gap-3">
-                    <span className="font-mono font-bold text-emerald-400">
+                    <span className={`font-mono font-bold ${paid ? 'text-emerald-400' : 'text-amber-300'}`}>
                       R$ {(p.amount || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
                     </span>
-                    <button
-                      onClick={() => handleDownloadReceipt(p)}
-                      disabled={downloadingReceiptId === p.id}
-                      className="p-1.5 bg-white/5 hover:bg-white/10 text-gray-300 hover:text-white rounded-lg border border-white/10 transition-colors cursor-pointer"
-                      title="Baixar Recibo em PDF"
-                    >
-                      <Download className="w-3.5 h-3.5" />
-                    </button>
+                    {paid && (
+                      <button
+                        onClick={() => handleDownloadReceipt(p)}
+                        disabled={downloadingReceiptId === p.id}
+                        className="p-1.5 bg-white/5 hover:bg-white/10 text-gray-300 hover:text-white rounded-lg border border-white/10 transition-colors cursor-pointer"
+                        title="Baixar Recibo em PDF"
+                      >
+                        <Download className="w-3.5 h-3.5" />
+                      </button>
+                    )}
                   </div>
                 </div>
-              ))}
+                );
+              })}
             </div>
           )}
         </div>

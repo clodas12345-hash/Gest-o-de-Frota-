@@ -1,5 +1,5 @@
 import { jsPDF } from 'jspdf';
-import { Vehicle, MaintenanceLog, ExpenseLog, Vistoria, FuelLog } from '../types';
+import { Vehicle, MaintenanceLog, ExpenseLog, Vistoria, FuelLog, isWeeklyPaymentPaid } from '../types';
 import { getSavedContractClauses, replaceClauseVariables, getFullContractTextTemplate, groupClausesByTopic } from './contractClauses';
 
 export async function urlToDataUrl(url: string): Promise<{ dataUrl: string; format: 'PNG' | 'JPEG' } | null> {
@@ -184,7 +184,7 @@ export async function generateVehiclePDF(
 
   y += 12;
 
-  const payments = vehicle.weeklyPayments || [];
+  const payments = (vehicle.weeklyPayments || []).filter(isWeeklyPaymentPaid);
   const totalPaid = payments.reduce((acc, p) => acc + p.amount, 0);
 
   doc.setFontSize(9);
@@ -1153,10 +1153,10 @@ export async function generateExecutiveMonthlyPDF(
 
   const rows = vehicles.map((v) => {
     const weeklyInMonth = (v.weeklyPayments || [])
-      .filter((wp) => isSelectedPeriod(wp.date))
+      .filter((wp) => isWeeklyPaymentPaid(wp) && isSelectedPeriod(wp.date))
       .reduce((acc, p) => acc + (p.amount || 0), 0);
 
-    const receita = weeklyInMonth > 0 ? weeklyInMonth : (v.valorRecebido || 0);
+    const receita = (v.weeklyPayments && v.weeklyPayments.length > 0) ? weeklyInMonth : (v.valorRecebido || 0);
     const fixas = (v.financiamento || 0) + (v.seguro || 0) + (v.ipva || 0) + (v.manutencaoPreventiva || 0) + (v.custoExtra || 0);
     const manutMes = maintenanceLogs
       .filter((m) => m.vehicleId === v.id && isSelectedPeriod(m.date))

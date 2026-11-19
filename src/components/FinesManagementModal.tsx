@@ -1,21 +1,20 @@
 import React, { useState } from 'react';
-import { Vehicle, Fine } from '../types';
+import { Vehicle, Fine, getFineAdminFee, getFineTotal } from '../types';
 import { CurrencyInput } from './CurrencyInput';
 import { 
   X, 
   AlertOctagon, 
   Plus, 
   Trash2, 
-  DollarSign, 
   Send, 
   FileText, 
   CheckCircle2, 
   Clock, 
   ShieldAlert, 
   Camera, 
-  ExternalLink,
   Calendar,
-  AlertTriangle
+  AlertTriangle,
+  Percent
 } from 'lucide-react';
 
 interface FinesManagementModalProps {
@@ -46,12 +45,24 @@ export const FinesManagementModal: React.FC<FinesManagementModalProps> = ({
   const [notificationDate, setNotificationDate] = useState(new Date().toISOString().split('T')[0]);
   const [reminderEnabled, setReminderEnabled] = useState(true);
 
+  // Contract administrative fines / fees (Cláusula 9ª § 3º & multas contratuais)
+  const [applyAdminFee, setApplyAdminFee] = useState(false);
+  const [adminFeePct, setAdminFeePct] = useState<number>(20);
+  const [extraAdminFineAmount, setExtraAdminFineAmount] = useState<number | ''>('');
+  const [extraAdminFineReason, setExtraAdminFineReason] = useState('');
+
   if (!isOpen) return null;
 
-  const totalFinesValue = fines.reduce((acc, f) => acc + (f.valor || 0), 0);
+  const nominalValor = Number(valor || 0);
+  const calculatedAdminFee = applyAdminFee
+    ? Number(((nominalValor * (adminFeePct || 0)) / 100).toFixed(2))
+    : 0;
+  const extraAdminNum = Number(extraAdminFineAmount || 0);
+  const formTotalFine = Number((nominalValor + calculatedAdminFee + extraAdminNum).toFixed(2));
+
   const pendingFinesValue = fines
     .filter(f => f.status === 'Pendente' || f.status === 'Repassada ao Motorista')
-    .reduce((acc, f) => acc + (f.valor || 0), 0);
+    .reduce((acc, f) => acc + getFineTotal(f), 0);
   const totalPoints = fines.reduce((acc, f) => acc + (f.pontos || 0), 0);
 
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -87,7 +98,12 @@ export const FinesManagementModal: React.FC<FinesManagementModalProps> = ({
       driverPhone: driverPhone.trim() || vehicle.driverPhone || '',
       notificationUrl: notificationUrl || undefined,
       notificationDate: notificationDate || undefined,
-      reminderEnabled: reminderEnabled
+      reminderEnabled,
+      applyAdminFee,
+      adminFeePct: applyAdminFee ? adminFeePct : 20,
+      adminFeeAmount: applyAdminFee ? calculatedAdminFee : 0,
+      extraAdminFineAmount: extraAdminNum > 0 ? extraAdminNum : undefined,
+      extraAdminFineReason: extraAdminFineReason.trim() || undefined,
     };
 
     const updated = [newFine, ...fines];
@@ -103,11 +119,35 @@ export const FinesManagementModal: React.FC<FinesManagementModalProps> = ({
     setNotificationUrl(null);
     setNotificationDate(new Date().toISOString().split('T')[0]);
     setReminderEnabled(true);
+    setApplyAdminFee(false);
+    setAdminFeePct(20);
+    setExtraAdminFineAmount('');
+    setExtraAdminFineReason('');
     setShowAddForm(false);
   };
 
   const handleUpdateFineStatus = (fineId: string, newStatus: Fine['status']) => {
     const updated = fines.map(f => f.id === fineId ? { ...f, status: newStatus } : f);
+    setFines(updated);
+    onUpdateVehicle({
+      ...vehicle,
+      fines: updated
+    });
+  };
+
+  const handleToggleAdminFee = (fineId: string) => {
+    const updated = fines.map((f) => {
+      if (f.id !== fineId) return f;
+      const nextApply = !f.applyAdminFee;
+      const pct = typeof f.adminFeePct === 'number' ? f.adminFeePct : 20;
+      const nextAmount = nextApply ? Number((((f.valor || 0) * pct) / 100).toFixed(2)) : 0;
+      return {
+        ...f,
+        applyAdminFee: nextApply,
+        adminFeePct: pct,
+        adminFeeAmount: nextAmount,
+      };
+    });
     setFines(updated);
     onUpdateVehicle({
       ...vehicle,
@@ -133,6 +173,27 @@ export const FinesManagementModal: React.FC<FinesManagementModalProps> = ({
       return;
     }
 
+    const adminFee = getFineAdminFee(fine);
+    const extraAdmin = fine.extraAdminFineAmount || 0;
+    const totalDue = getFineTotal(fine);
+
+    const breakdownLines = [
+      `💵 *Valor Nominal da Infração:* R$ ${(fine.valor || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`,
+    ];
+    if (adminFee > 0) {
+      breakdownLines.push(
+        `📑 *Taxa Adm. Contrato (${fine.adminFeePct ?? 20}% - Cláusula 9ª § 3º):* R$ ${adminFee.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`
+      );
+    }
+    if (extraAdmin > 0) {
+      breakdownLines.push(
+        `⚖️ *Multa Adm. Contratual${fine.extraAdminFineReason ? ` (${fine.extraAdminFineReason})` : ''}:* R$ ${extraAdmin.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`
+      );
+    }
+    breakdownLines.push(
+      `💰 *TOTAL A PAGAR:* R$ ${totalDue.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`
+    );
+
     const cleanPhone = phone.startsWith('55') ? phone : '55' + phone;
     const msg = `🚨 *NOTIFICAÇÃO DE INFRAÇÃO DE TRÂNSITO* 🚨
 
@@ -142,7 +203,11 @@ Identificamos o registro de uma infração de trânsito vinculada ao veículo *$
 
 📅 *Data:* ${fine.dataHora}
 ⚠️ *Infração:* ${fine.descricao} (${fine.gravidade || 'Média'} - ${fine.pontos || 4} pontos)
-💵 *Valor a Pagar:* R$ ${(fine.valor || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+${breakdownLines.join('\n')}
+
+📜 *Aviso Contratual (Cláusula 9ª):*
+• Prazo de pagamento de até *15 dias corridos* a contar da notificação (mesmo após devolução ou devolução da caução).
+• Caso o pagamento não seja efetuado no prazo e exija pagamento/gestão pela locadora, incide *Taxa Administrativa de 20%* sobre o valor da multa (Cláusula 9ª § 3º), além de cobrança na semanal com encargos e bloqueio previstos na Cláusula 6ª.
 
 Por favor, providencie o pagamento ou o envio do comprovante para regularização.
 Dúvidas, estamos à disposição! 👍`;
@@ -202,7 +267,7 @@ Dúvidas, estamos à disposição! 👍`;
                 </span>
               </h2>
               <p className="text-xs text-gray-400">
-                {vehicle.brand} {vehicle.model} • Gestão de notificações, repasse e cobrança automática
+                {vehicle.brand} {vehicle.model} • Gestão de notificações, taxas administrativas e cobrança
               </p>
             </div>
           </div>
@@ -231,7 +296,7 @@ Dúvidas, estamos à disposição! 👍`;
             <span className="text-lg font-mono font-bold text-white">{fines.length} infrações</span>
           </div>
           <div className="p-3 bg-[#16161a] rounded-xl border border-rose-500/20">
-            <span className="text-[10px] uppercase font-bold text-rose-400 block">Valor Pendente de Cobrança</span>
+            <span className="text-[10px] uppercase font-bold text-rose-400 block">Valor Pendente (c/ Taxas Adm.)</span>
             <span className="text-lg font-mono font-bold text-rose-400">
               R$ {pendingFinesValue.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
             </span>
@@ -244,6 +309,30 @@ Dúvidas, estamos à disposição! 👍`;
 
         {/* Modal Body */}
         <div className="p-4 sm:p-6 space-y-4">
+
+          {/* Avisos Gerais do Contrato (Cláusula 9ª & Multas Adm) */}
+          <div className="bg-amber-950/20 border border-amber-500/25 rounded-2xl p-3.5 text-[11px] text-gray-300 leading-relaxed space-y-2">
+            <div className="flex items-center justify-between gap-2 border-b border-amber-500/15 pb-1.5">
+              <span className="font-bold text-amber-300 uppercase tracking-wider text-[10px] flex items-center gap-1.5">
+                <ShieldAlert className="w-3.5 h-3.5 text-amber-400" />
+                Avisos & Regras de Multas Administrativas do Contrato (Cláusula 9ª)
+              </span>
+              <span className="text-[10px] font-mono font-bold text-rose-300 bg-rose-500/10 border border-rose-500/20 px-2 py-0.5 rounded-md">
+                Taxa Adm. 20% (§ 3º)
+              </span>
+            </div>
+            <ul className="space-y-1 text-[10px] sm:text-[11px] text-gray-300">
+              <li>
+                • <strong className="text-white">Responsabilidade & Pós-Devolução (Cláusula 9ª / § 2º):</strong> O locatário responde integralmente pelas infrações cometidas na vigência do contrato (prazo de <strong className="text-amber-300">15 dias corridos</strong> da notificação), mesmo notificadas após a devolução do carro ou da caução.
+              </li>
+              <li>
+                • <strong className="text-white">Cobrança Semanal & Bloqueio (Cláusula 9ª § 1º):</strong> Após 15 dias da notificação, a multa passa a compor o aluguel semanal com incidência de mora, multa e bloqueio remoto previstos na <strong className="text-white">Cláusula 6ª</strong>.
+              </li>
+              <li>
+                • <strong className="text-rose-300">Taxa Administrativa de Gestão (Cláusula 9ª § 3º):</strong> Se o locatário não quitar no prazo e a locadora pagar/gerir a multa diretamente, incide <strong className="text-rose-300">Taxa Administrativa de 20%</strong> sobre o valor nominal da infração, reembolsável na próxima semanal ou no acerto da caução.
+              </li>
+            </ul>
+          </div>
           
           {/* Add Fine Form */}
           {showAddForm && (
@@ -256,18 +345,10 @@ Dúvidas, estamos à disposição! 👍`;
                 <button
                   type="button"
                   onClick={() => setShowAddForm(false)}
-                  className="text-xs text-gray-400 hover:text-white"
+                  className="text-xs text-gray-400 hover:text-white cursor-pointer"
                 >
                   Cancelar
                 </button>
-              </div>
-
-              {/* Cláusula 10ª Legal Notice */}
-              <div className="bg-rose-950/20 border border-rose-500/20 rounded-xl p-3 text-[11px] text-gray-300 leading-relaxed space-y-1">
-                <span className="font-bold text-rose-400 block">📜 Cláusula 10ª do Contrato de Locação (Trânsito):</span>
-                <p>
-                  O locatário tem o prazo de até <strong>15 dias corridos</strong> a contar da notificação para efetuar o pagamento. A responsabilidade pelas infrações de trânsito continua sendo estritamente do locatário, mesmo após a devolução da caução.
-                </p>
               </div>
 
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
@@ -296,7 +377,7 @@ Dúvidas, estamos à disposição! 👍`;
 
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                 <div>
-                  <label className="text-[10px] font-bold text-gray-400 uppercase block mb-1">Valor da Multa (R$) *</label>
+                  <label className="text-[10px] font-bold text-gray-400 uppercase block mb-1">Valor Nominal da Multa (R$) *</label>
                   <CurrencyInput
                     value={valor === '' ? 0 : valor}
                     onChange={(num) => setValor(num > 0 ? num : '')}
@@ -336,7 +417,78 @@ Dúvidas, estamos à disposição! 👍`;
                 </div>
               </div>
 
-              {/* Cláusula 10ª & Lembrete Row */}
+              {/* Campos de Multa Administrativa do Contrato (Cláusula 9ª § 3º) */}
+              <div className="bg-amber-500/5 border border-amber-500/20 p-3.5 rounded-xl space-y-3">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <span className="text-[10px] font-bold text-amber-300 uppercase tracking-wider flex items-center gap-1.5">
+                    <Percent className="w-3.5 h-3.5 text-amber-400" />
+                    Multas & Taxas Administrativas do Contrato (Cláusula 9ª § 3º)
+                  </span>
+                  <span className="text-xs font-mono font-bold text-white bg-black/50 border border-white/10 px-2.5 py-1 rounded-lg">
+                    Total a Cobrar: <strong className="text-rose-400">R$ {formTotalFine.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</strong>
+                  </span>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-12 gap-3 items-end">
+                  <div className="sm:col-span-6">
+                    <label className="flex items-start gap-2.5 p-2.5 rounded-xl bg-black/50 border border-white/10 cursor-pointer hover:border-amber-500/40 transition-colors">
+                      <input
+                        type="checkbox"
+                        checked={applyAdminFee}
+                        onChange={(e) => setApplyAdminFee(e.target.checked)}
+                        className="mt-0.5 w-4 h-4 rounded border-gray-400 text-amber-500 bg-black cursor-pointer"
+                      />
+                      <div className="text-[11px] leading-tight">
+                        <span className="font-bold text-white block">
+                          Aplicar Taxa Administrativa ({adminFeePct}%)
+                        </span>
+                        <span className="text-[10px] text-gray-400">
+                          Cláusula 9ª § 3º — Pagamento direto / gestão pela locadora (+ R$ {calculatedAdminFee.toLocaleString('pt-BR', { minimumFractionDigits: 2 })})
+                        </span>
+                      </div>
+                    </label>
+                  </div>
+
+                  <div className="sm:col-span-2">
+                    <label className="text-[10px] font-bold text-amber-300 uppercase block mb-1">% Taxa Adm.</label>
+                    <input
+                      type="number"
+                      min="0"
+                      max="100"
+                      step="1"
+                      value={adminFeePct}
+                      onChange={(e) => setAdminFeePct(Math.max(0, Number(e.target.value)))}
+                      disabled={!applyAdminFee}
+                      className="w-full text-xs bg-black border border-white/10 rounded-xl p-2.5 text-amber-300 font-mono font-bold disabled:opacity-40"
+                    />
+                  </div>
+
+                  <div className="sm:col-span-4">
+                    <label className="text-[10px] font-bold text-amber-300 uppercase block mb-1">Multa Adm. Contratual (R$)</label>
+                    <CurrencyInput
+                      value={extraAdminFineAmount === '' ? 0 : extraAdminFineAmount}
+                      onChange={(num) => setExtraAdminFineAmount(num > 0 ? num : '')}
+                      placeholder="0,00"
+                      className="w-full text-xs bg-black border border-white/10 rounded-xl p-2.5 text-white font-mono font-bold focus:outline-hidden focus:border-amber-500"
+                    />
+                  </div>
+                </div>
+
+                <div>
+                  <label className="text-[10px] font-bold text-gray-400 uppercase block mb-1">
+                    Motivo / Cláusula da Multa Administrativa (opcional)
+                  </label>
+                  <input
+                    type="text"
+                    value={extraAdminFineReason}
+                    onChange={(e) => setExtraAdminFineReason(e.target.value)}
+                    placeholder="Ex: Não indicação de condutor infrator (NIC) / Atraso no pagamento Cláusula 9ª"
+                    className="w-full text-xs bg-black border border-white/10 rounded-xl p-2.5 text-white font-medium focus:outline-hidden focus:border-amber-500"
+                  />
+                </div>
+              </div>
+
+              {/* Cláusula 9ª & Lembrete Row */}
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 bg-rose-500/5 border border-rose-500/10 p-3 rounded-xl">
                 <div>
                   <label className="text-[10px] font-bold text-rose-300 uppercase block mb-1">
@@ -352,7 +504,7 @@ Dúvidas, estamos à disposição! 👍`;
                 </div>
                 <div>
                   <label className="text-[10px] font-bold text-rose-300 uppercase block mb-1">
-                    Prazo Cláusula 10ª (15 dias corridos)
+                    Prazo Cláusula 9ª (15 dias corridos)
                   </label>
                   <div className="w-full text-xs bg-black/40 border border-white/5 rounded-xl p-2.5 text-rose-300 font-mono font-bold flex items-center h-[38px]">
                     {(() => {
@@ -430,7 +582,12 @@ Dúvidas, estamos à disposição! 👍`;
             </div>
           ) : (
             <div className="space-y-3">
-              {fines.map((fine) => (
+              {fines.map((fine) => {
+                const adminFee = getFineAdminFee(fine);
+                const extraAdmin = fine.extraAdminFineAmount || 0;
+                const fineTotal = getFineTotal(fine);
+
+                return (
                 <div 
                   key={fine.id}
                   className="p-4 bg-[#16161a] border border-white/10 rounded-2xl space-y-3 hover:border-white/20 transition-all shadow-lg"
@@ -441,6 +598,16 @@ Dúvidas, estamos à disposição! 👍`;
                         <Calendar className="w-3.5 h-3.5 text-rose-400" />
                         <span>{fine.dataHora}</span>
                       </span>
+                      {fine.applyAdminFee && (
+                        <span className="px-2 py-0.5 rounded-md text-[10px] font-bold bg-amber-500/15 text-amber-300 border border-amber-500/30">
+                          Taxa Adm {fine.adminFeePct ?? 20}% (Cláusula 9ª § 3º)
+                        </span>
+                      )}
+                      {extraAdmin > 0 && (
+                        <span className="px-2 py-0.5 rounded-md text-[10px] font-bold bg-rose-500/15 text-rose-300 border border-rose-500/30">
+                          Multa Adm Contratual
+                        </span>
+                      )}
                     </div>
 
                     <div className="flex items-center gap-2">
@@ -477,11 +644,18 @@ Dúvidas, estamos à disposição! 👍`;
                       <p className="text-[10px] text-gray-400">
                         Motorista Responsável: <strong className="text-gray-200">{fine.driverName || vehicle.driver || 'Não informado'}</strong>
                       </p>
+                      {(adminFee > 0 || extraAdmin > 0) && (
+                        <p className="text-[10px] font-mono text-amber-300/90">
+                          Nominal: R$ {(fine.valor || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                          {adminFee > 0 ? ` + Taxa Adm (${fine.adminFeePct ?? 20}%): R$ ${adminFee.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}` : ''}
+                          {extraAdmin > 0 ? ` + Multa Adm: R$ ${extraAdmin.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}${fine.extraAdminFineReason ? ` (${fine.extraAdminFineReason})` : ''}` : ''}
+                        </p>
+                      )}
                     </div>
 
                     <div className="sm:col-span-4 flex flex-col sm:items-end justify-center space-y-1">
                       <span className="text-base font-mono font-bold text-rose-400">
-                        R$ {(fine.valor || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                        R$ {fineTotal.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
                       </span>
                       <span className="text-[10px] font-bold text-amber-400">
                         {fine.gravidade || 'Média'} ({fine.pontos || 4} pts na CNH)
@@ -489,7 +663,7 @@ Dúvidas, estamos à disposição! 👍`;
                     </div>
                   </div>
 
-                  {/* Cláusula 10ª Status / Lembrete */}
+                  {/* Cláusula 9ª Status / Lembrete */}
                   {(() => {
                     const status = getReminderStatus(fine);
                     if (!status) return null;
@@ -498,43 +672,65 @@ Dúvidas, estamos à disposição! 👍`;
                       return (
                         <div className="bg-emerald-500/10 border border-emerald-500/20 px-3 py-2 rounded-xl text-[10px] text-emerald-400 font-semibold flex items-center gap-1.5">
                           <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
-                          <span>Cláusula 10ª resolvida! Boleto quitado.</span>
+                          <span>Cláusula 9ª resolvida! Multa quitada.</span>
                         </div>
                       );
                     }
                     if (isOverdue) {
                       return (
-                        <div className="bg-rose-500/10 border border-rose-500/20 px-3 py-2 rounded-xl text-[10px] text-rose-400 font-bold flex items-center gap-1.5">
-                          <AlertTriangle className="w-3.5 h-3.5 text-rose-400 shrink-0 animate-bounce" />
-                          <span>🚨 Cláusula 10ª: Prazo de cobrança de 15 dias EXCEDIDO! (Venceu em: {deadlineStr})</span>
+                        <div className="bg-rose-500/10 border border-rose-500/20 px-3 py-2 rounded-xl text-[10px] text-rose-400 font-bold flex flex-wrap items-center justify-between gap-2">
+                          <div className="flex items-center gap-1.5">
+                            <AlertTriangle className="w-3.5 h-3.5 text-rose-400 shrink-0 animate-bounce" />
+                            <span>🚨 Cláusula 9ª: Prazo de 15 dias EXCEDIDO! (Venceu em: {deadlineStr}) — Sujeito à Taxa Adm. 20% (§ 3º) e bloqueio (Cláusula 6ª).</span>
+                          </div>
                         </div>
                       );
                     }
                     return (
                       <div className="bg-amber-500/10 border border-amber-500/20 px-3 py-2 rounded-xl text-[10px] text-amber-300 font-semibold flex items-center gap-1.5">
                         <Clock className="w-3.5 h-3.5 text-amber-400 shrink-0 animate-pulse" />
-                        <span>⏱️ Cláusula 10ª: Restam <strong className="text-amber-300 underline font-extrabold">{diffDays} dias</strong> para cobrar o locatário (Prazo Limite: {deadlineStr})</span>
+                        <span>⏱️ Cláusula 9ª: Restam <strong className="text-amber-300 underline font-extrabold">{diffDays} dias</strong> para o pagamento (Prazo Limite: {deadlineStr} • Após prazo incide Taxa Adm. 20%)</span>
                       </div>
                     );
                   })()}
 
                   {/* Actions & Attachment */}
                   <div className="flex flex-wrap items-center justify-between gap-2 pt-2 border-t border-white/5">
-                    {fine.notificationUrl ? (
-                      <button
-                        onClick={() => {
-                          const w = window.open();
-                          w?.document.write(`<img src="${fine.notificationUrl}" style="max-width:100%"/>`);
-                        }}
-                        className="text-[10px] font-bold text-blue-400 hover:text-blue-300 flex items-center gap-1 cursor-pointer"
-                      >
-                        <FileText className="w-3.5 h-3.5" /> Ver Notificação Anexada
-                      </button>
-                    ) : (
-                      <span className="text-[10px] text-gray-500 italic">Sem notificação anexada</span>
-                    )}
+                    <div className="flex flex-wrap items-center gap-2">
+                      {fine.notificationUrl ? (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const w = window.open();
+                            w?.document.write(`<img src="${fine.notificationUrl}" style="max-width:100%"/>`);
+                          }}
+                          className="text-[10px] font-bold text-blue-400 hover:text-blue-300 flex items-center gap-1 cursor-pointer"
+                        >
+                          <FileText className="w-3.5 h-3.5" /> Ver Notificação Anexada
+                        </button>
+                      ) : (
+                        <span className="text-[10px] text-gray-500 italic">Sem notificação anexada</span>
+                      )}
+
+                      {fine.status !== 'Paga pelo Locatário' && fine.status !== 'Paga pela Locadora' && (
+                        <button
+                          type="button"
+                          onClick={() => handleToggleAdminFee(fine.id)}
+                          className={`px-2.5 py-1 rounded-lg text-[10px] font-bold border transition-colors cursor-pointer ${
+                            fine.applyAdminFee
+                              ? 'bg-amber-500/20 border-amber-500/40 text-amber-300 hover:bg-amber-500/30'
+                              : 'bg-white/5 border-white/10 text-gray-300 hover:bg-amber-500/15 hover:border-amber-500/30 hover:text-amber-300'
+                          }`}
+                        >
+                          {fine.applyAdminFee
+                            ? `✓ Taxa Adm ${fine.adminFeePct ?? 20}% Aplicada`
+                            : '+ Aplicar Taxa Adm 20% (Cláusula 9ª § 3º)'}
+                        </button>
+                      )}
+                    </div>
 
                     <button
+                      type="button"
                       onClick={() => handleSendWhatsAppFineCharge(fine)}
                       className="px-3 py-1.5 bg-emerald-600/20 hover:bg-emerald-600/30 border border-emerald-500/30 text-emerald-300 text-[10px] font-bold rounded-xl flex items-center gap-1.5 transition-colors cursor-pointer"
                     >
@@ -543,7 +739,8 @@ Dúvidas, estamos à disposição! 👍`;
                     </button>
                   </div>
                 </div>
-              ))}
+                );
+              })}
             </div>
           )}
 
@@ -553,3 +750,4 @@ Dúvidas, estamos à disposição! 👍`;
     </div>
   );
 };
+

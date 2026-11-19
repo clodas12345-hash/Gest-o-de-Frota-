@@ -1,4 +1,4 @@
-import { DriverRentalPeriod, FinalizedContract, Vehicle, WeeklyPayment } from '../types';
+import { DriverRentalPeriod, FinalizedContract, Vehicle, WeeklyPayment, isWeeklyPaymentPaid } from '../types';
 
 export const DRIVER_SCOPED_FIELDS: ReadonlyArray<keyof Vehicle> = [
   'driver',
@@ -570,8 +570,9 @@ export function getVehicleRevenueForMonth(
   finalizedContracts: FinalizedContract[] = []
 ): number {
   const monthPayments = getVehicleMonthlyPaymentsAllDrivers(vehicle, month, year);
-  if (monthPayments.length > 0) {
-    return monthPayments.reduce((sum, wp) => sum + (wp.amount || 0), 0);
+  const paidMonthPayments = monthPayments.filter((wp) => isWeeklyPaymentPaid(wp));
+  if (paidMonthPayments.length > 0) {
+    return paidMonthPayments.reduce((sum, wp) => sum + (wp.amount || 0), 0);
   }
 
   const resolution = resolveVehiclePeriodsForMonth(vehicle, month, year, finalizedContracts);

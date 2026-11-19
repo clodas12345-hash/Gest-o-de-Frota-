@@ -106,6 +106,7 @@ export function generateMonthlyPaymentsForVehicle(
         id: `wp-auto-${monthKey}-${dateIso}-${Math.random().toString(36).slice(2, 6)}`,
         date: dateIso,
         amount,
+        isPaid: false,
       });
     }
   }

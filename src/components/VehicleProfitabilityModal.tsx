@@ -1,5 +1,5 @@
 import React, { useState, useMemo } from 'react';
-import { Vehicle, MaintenanceLog, ExpenseLog, FuelLog, Fine } from '../types';
+import { Vehicle, MaintenanceLog, ExpenseLog, FuelLog, Fine, isWeeklyPaymentPaid } from '../types';
 import { 
   X, 
   DollarSign, 
@@ -92,26 +92,30 @@ export const VehicleProfitabilityModal: React.FC<VehicleProfitabilityModalProps>
     });
   }, [expenseLogs, vehicle.id, viewMode, currentMonth, currentYear]);
 
-  // Revenues: Weekly payments or monthly rental
+  // Revenues: Paid weekly payments or monthly rental
   const revenueTotal = useMemo(() => {
     if (viewMode === 'month') {
-      // Filter weekly payments of this month
+      // Filter PAID weekly payments of this month
       if (vehicle.weeklyPayments && vehicle.weeklyPayments.length > 0) {
         const sum = vehicle.weeklyPayments.reduce((acc, p) => {
-          if (!p.date) return acc;
+          if (!p.date || !isWeeklyPaymentPaid(p)) return acc;
           const d = new Date(p.date + 'T00:00:00');
           if (d.getMonth() === currentMonth && d.getFullYear() === currentYear) {
             return acc + (p.amount || 0);
           }
           return acc;
         }, 0);
-        return sum > 0 ? sum : (vehicle.valorRecebido || 0);
+        return sum;
       }
       return vehicle.valorRecebido || 0;
     } else {
       // Historical Total
-      const paymentsSum = (vehicle.weeklyPayments || []).reduce((acc, p) => acc + (p.amount || 0), 0);
-      return paymentsSum > 0 ? paymentsSum : (vehicle.valorRecebido || 0);
+      const paymentsSum = (vehicle.weeklyPayments || [])
+        .filter(isWeeklyPaymentPaid)
+        .reduce((acc, p) => acc + (p.amount || 0), 0);
+      return (vehicle.weeklyPayments && vehicle.weeklyPayments.length > 0)
+        ? paymentsSum
+        : (vehicle.valorRecebido || 0);
     }
   }, [vehicle, viewMode, currentMonth, currentYear]);
 

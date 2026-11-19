@@ -3680,7 +3680,8 @@ export function LogForms({
                     <option value="" className="bg-[#111111] text-gray-500">Selecione uma categoria...</option>
                     <option value="Lavagem" className="bg-[#111111] text-white">Lavagem / Limpeza</option>
                     <option value="Multa" className="bg-[#111111] text-white">Multa de Trânsito</option>
-                    <option value="Estacionamento" className="bg-[#111111] text-white">Estacionamento / Pedágio</option>
+                    <option value="Pedágio" className="bg-[#111111] text-white">Pedágio / Tag (Sem Parar, Veloe)</option>
+                    <option value="Estacionamento" className="bg-[#111111] text-white">Estacionamento</option>
                     <option value="Seguro" className="bg-[#111111] text-white">Seguro Adicional / Franquia</option>
                     <option value="Outros" className="bg-[#111111] text-white">Outras Taxas</option>
                   </select>

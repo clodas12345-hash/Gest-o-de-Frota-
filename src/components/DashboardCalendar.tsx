@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Vehicle, MaintenanceLog, Vistoria } from '../types';
+import { Vehicle, MaintenanceLog, Vistoria, isWeeklyPaymentPaid } from '../types';
 import { 
   Calendar as CalendarIcon, 
   ChevronLeft, 
@@ -118,9 +118,10 @@ export function DashboardCalendar({
         if (seenCalPayIds.has(key)) return;
         seenCalPayIds.add(key);
         if (pay.date === dateStr) {
+          const paid = isWeeklyPaymentPaid(pay);
           events.push({
             type: 'payment',
-            title: `Pagamento (${new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(pay.amount)})${driverName ? ` - ${driverName}` : ''}`,
+            title: `${paid ? 'Pago' : 'Previsto'} (${new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(pay.amount)})${driverName ? ` - ${driverName}` : ''}`,
             vehiclePlate: vehicle.plate,
             vehicleModel: `${vehicle.brand} ${vehicle.model}`,
             id: pay.id
@@ -128,7 +129,7 @@ export function DashboardCalendar({
         }
       });
 
-      // Fines (Multas) - Cláusula 10ª Deadline (15 days after notificationDate)
+      // Fines (Multas) - Cláusula 9ª Deadline (15 days after notificationDate)
       (vehicle.fines || []).forEach((fine) => {
         if (fine.notificationDate && fine.status !== 'Paga pelo Locatário' && fine.status !== 'Paga pela Locadora') {
           try {
@@ -139,7 +140,7 @@ export function DashboardCalendar({
             if (limitDateStr === dateStr) {
               events.push({
                 type: 'vistoria_scheduled', // styled as red/rose alert
-                title: `🚨 Cobrar Multa (Cláusula 10ª - Limite)`,
+                title: `🚨 Cobrar Multa (Cláusula 9ª - Limite)`,
                 vehiclePlate: vehicle.plate,
                 vehicleModel: `${vehicle.brand} ${vehicle.model}: ${fine.descricao}`,
                 id: `fine-limit-${fine.id}`

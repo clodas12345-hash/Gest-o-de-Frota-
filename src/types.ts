@@ -2,6 +2,20 @@ export interface WeeklyPayment {
   id: string;
   date: string;
   amount: number;
+  isPaid?: boolean;
+  paidDate?: string;
+  paidAt?: string;
+}
+
+export function isWeeklyPaymentPaid(payment: Pick<WeeklyPayment, 'id' | 'isPaid'>): boolean {
+  if (typeof payment.isPaid === 'boolean') {
+    return payment.isPaid;
+  }
+  // Auto-generated monthly installments without explicit isPaid start pending until confirmed
+  if (payment.id?.startsWith('wp-auto-')) {
+    return false;
+  }
+  return true;
 }
 
 export interface Vehicle {
@@ -151,6 +165,28 @@ export interface Fine {
   notes?: string;
   notificationDate?: string; // Data de recebimento da notificação
   reminderEnabled?: boolean; // Lembrete ativo para cobrar multa
+  applyAdminFee?: boolean; // Taxa administrativa contratual (Cláusula 9ª § 3º)
+  adminFeePct?: number; // Percentual da taxa administrativa (padrão 20%)
+  adminFeeAmount?: number; // Valor da taxa administrativa em R$
+  extraAdminFineAmount?: number; // Multa administrativa contratual adicional em R$
+  extraAdminFineReason?: string; // Motivo / Cláusula da multa administrativa adicional
+}
+
+export function getFineAdminFee(fine: Pick<Fine, 'valor' | 'applyAdminFee' | 'adminFeePct' | 'adminFeeAmount'>): number {
+  if (!fine.applyAdminFee) return 0;
+  if (typeof fine.adminFeeAmount === 'number' && !isNaN(fine.adminFeeAmount)) {
+    return fine.adminFeeAmount;
+  }
+  const pct = typeof fine.adminFeePct === 'number' ? fine.adminFeePct : 20;
+  return Number((((fine.valor || 0) * pct) / 100).toFixed(2));
+}
+
+export function getFineTotal(
+  fine: Pick<Fine, 'valor' | 'applyAdminFee' | 'adminFeePct' | 'adminFeeAmount' | 'extraAdminFineAmount'>
+): number {
+  return Number(
+    ((fine.valor || 0) + getFineAdminFee(fine) + (fine.extraAdminFineAmount || 0)).toFixed(2)
+  );
 }
 
 export interface SinistroLog {
@@ -315,7 +351,7 @@ export interface ExpenseLog {
   vehicleId: string;
   date: string;
   type?: 'Preventiva' | 'Corretiva' | 'Revisão' | 'Pneus' | 'Batida/Acidente' | 'Palhetas' | 'Pastilhas' | 'Fixa' | 'Variável' | 'Outro';
-  category: 'IPVA' | 'Seguro' | 'Licenciamento' | 'Multa' | 'Lavagem' | 'Estacionamento' | 'Financiamento' | 'Rastreador' | 'Outros' | string;
+  category: 'IPVA' | 'Seguro' | 'Licenciamento' | 'Multa' | 'Pedágio' | 'Lavagem' | 'Estacionamento' | 'Financiamento' | 'Rastreador' | 'Outros' | string;
   scope?: string;
   description: string;
   cost: number;
