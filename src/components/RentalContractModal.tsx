@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Vehicle, VehicleDocument, Vistoria, AgendaContact } from '../types';
+import { Vehicle, VehicleDocument, Vistoria, AgendaContact, PromisePayment } from '../types';
 import { generateRentalContractPDF, RentalContractData } from '../utils/pdfGenerator';
 import { generateNextContractNumber } from '../utils/contractHelper';
 import { sendAppNotification } from '../utils/notifications';
@@ -252,19 +252,65 @@ export const RentalContractModal: React.FC<RentalContractModalProps> = ({
   const [landlordAddress, setLandlordAddress] = useState(() => localStorage.getItem('fleet_landlord_address') || 'Rua Manuel Leiroz, 230, apto 1306 - Cangaíba, São Paulo/SP, CEP: 03735-180');
   const [pixKey, setPixKey] = useState(() => localStorage.getItem('fleet_landlord_pix') || '11953292570');
 
-  // Contract Terms
+  // Contract Terms (sempre iniciam em branco ao abrir o modal)
   const [contractNumber, setContractNumber] = useState('');
   const [odometerKm, setOdometerKm] = useState<number>(0);
   const [startDate, setStartDate] = useState('');
   const [endDate, setEndDate] = useState('');
   const [rentalValue, setRentalValue] = useState<number>(0);
   const [paymentPeriod, setPaymentPeriod] = useState<string>('Semanal');
-  const [dueDay, setDueDay] = useState<string>('toda segunda-feira, com vencimento até às 23h59');
+  const [dueDay, setDueDay] = useState<string>('');
   const [caucaoValue, setCaucaoValue] = useState<number>(0);
-  const [kmLimit, setKmLimit] = useState<string>('5.000 km por mês');
-  const [workshopName, setWorkshopName] = useState('Pneus Andriatti (Penha, SP)');
-  const [insuranceCompany, setInsuranceCompany] = useState('LOOVI SEGUROS');
-  const [insurancePhones, setInsurancePhones] = useState('Assistência 24h: 0800 948 4888 | Furto/Roubo: 0800 607 2007 | Central: 4000 1762');
+
+  // Caução Promise Payments
+  const [promisePayments, setPromisePayments] = useState<PromisePayment[]>([]);
+  const [showAddCaucaoPromise, setShowAddCaucaoPromise] = useState(false);
+  const [newCaucaoPromiseDate, setNewCaucaoPromiseDate] = useState(() => new Date().toISOString().split('T')[0]);
+  const [newCaucaoPromiseAmount, setNewCaucaoPromiseAmount] = useState<number>(0);
+  const [showBatchCaucaoPromise, setShowBatchCaucaoPromise] = useState(false);
+  const [batchCaucaoCount, setBatchCaucaoCount] = useState<number | ''>(4);
+  const [batchCaucaoAmount, setBatchCaucaoAmount] = useState<number>(100);
+  const [batchCaucaoFrequency, setBatchCaucaoFrequency] = useState<'semanal' | 'quinzenal' | 'mensal'>('semanal');
+  const [batchCaucaoStartDate, setBatchCaucaoStartDate] = useState(() => new Date().toISOString().split('T')[0]);
+  const [batchCaucaoItems, setBatchCaucaoItems] = useState<Array<{ id: string; date: string; amount: number }>>([]);
+
+  const handleGenerateBatchCaucaoItems = () => {
+    const count = Math.max(1, Math.min(52, Number(batchCaucaoCount) || 1));
+    const amount = Number(batchCaucaoAmount) || 0;
+    const start = batchCaucaoStartDate ? new Date(batchCaucaoStartDate + 'T12:00:00') : new Date();
+    const intervalDays = batchCaucaoFrequency === 'quinzenal' ? 15 : batchCaucaoFrequency === 'mensal' ? 30 : 7;
+    
+    const items: Array<{ id: string; date: string; amount: number }> = [];
+    for (let i = 0; i < count; i++) {
+      const d = new Date(start.getTime() + i * intervalDays * 24 * 60 * 60 * 1000);
+      const dateStr = d.toISOString().split('T')[0];
+      items.push({
+        id: `batch-${Date.now()}-${i}-${Math.random().toString(36).substring(2, 6)}`,
+        date: dateStr,
+        amount: amount
+      });
+    }
+    setBatchCaucaoItems(items);
+  };
+
+  const handleSaveBatchCaucaoPromises = () => {
+    if (batchCaucaoItems.length === 0) return;
+    const newPromises: PromisePayment[] = batchCaucaoItems.map(item => ({
+      id: item.id || `prom-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
+      date: item.date || new Date().toISOString().split('T')[0],
+      amount: Number(item.amount) || 0,
+      isPaid: false
+    }));
+
+    setPromisePayments(prev => [...prev, ...newPromises]);
+    setBatchCaucaoItems([]);
+    setShowBatchCaucaoPromise(false);
+  };
+
+  const [kmLimit, setKmLimit] = useState<string>('');
+  const [workshopName] = useState('Pneus Andriatti (Penha, SP)');
+  const [insuranceCompany] = useState('LOOVI SEGUROS');
+  const [insurancePhones] = useState('Assistência 24h: 0800 948 4888 | Furto/Roubo: 0800 607 2007 | Central: 4000 1762');
   const [customClauses, setCustomClauses] = useState('');
   const [contractFineRate, setContractFineRate] = useState<number>(() => {
     const saved = localStorage.getItem('fleet_fine_rate_default');
@@ -306,21 +352,20 @@ export const RentalContractModal: React.FC<RentalContractModalProps> = ({
       ...currentVeh,
       initialKm: Number(odometerKm) > 0 ? Number(odometerKm) : currentVeh.initialKm,
       currentKm: Number(odometerKm) > 0 ? Number(odometerKm) : currentVeh.currentKm,
-      driver: tenantName.trim() !== '' ? tenantName.trim() : currentVeh.driver,
-      tenantCpfCnpj: tenantCpfCnpj.trim() !== '' ? tenantCpfCnpj.trim() : currentVeh.tenantCpfCnpj,
-      tenantRg: tenantRg.trim() !== '' ? tenantRg.trim() : currentVeh.tenantRg,
-      tenantCnh: tenantCnh.trim() !== '' ? tenantCnh.trim() : currentVeh.tenantCnh,
-      driverPhone: tenantPhone.trim() !== '' ? tenantPhone.trim() : currentVeh.driverPhone,
-      tenantEmail: tenantEmail.trim() !== '' ? tenantEmail.trim() : currentVeh.tenantEmail,
-      tenantAddress: tenantAddress.trim() !== '' ? tenantAddress.trim() : currentVeh.tenantAddress,
+      driver: tenantName.trim(),
+      tenantCpfCnpj: tenantCpfCnpj.trim(),
+      tenantRg: tenantRg.trim(),
+      tenantCnh: tenantCnh.trim(),
+      driverPhone: tenantPhone.trim(),
+      tenantEmail: tenantEmail.trim(),
+      tenantAddress: tenantAddress.trim(),
       startDate: startDate || currentVeh.startDate,
-      endDate: endDate !== undefined ? endDate : currentVeh.endDate,
+      endDate: endDate.trim(),
       valorSemanal: Number(rentalValue) > 0 ? Number(rentalValue) : currentVeh.valorSemanal,
-      caucaoValor: (() => {
-        const currentPaidPromises = (currentVeh.promisePayments || []).filter(p => p.isPaid).reduce((s, p) => s + (p.amount || 0), 0);
-        return Number(caucaoValue) > 0 ? Math.max(0, Number(caucaoValue) - currentPaidPromises) : currentVeh.caucaoValor;
-      })(),
+      caucaoValor: Number(caucaoValue) || 0,
+      promisePayments: promisePayments,
       contractNumber: contractNumber.trim() !== '' ? contractNumber.trim() : currentVeh.contractNumber,
+      dueDay: dueDay.trim(),
       rentalCompany: landlordName.trim() !== '' ? landlordName.trim() : currentVeh.rentalCompany,
       fineRate: Number(contractFineRate),
       dailyInterestRate: Number(contractInterestRate),
@@ -576,81 +621,70 @@ Isso é fundamental para a vinculação correta do veículo. Qualquer dúvida es
     </div>
   );
 
-  // Synchronize state when vehicle changes or modal opens
-  useEffect(() => {
-    if (isOpen) {
-      const activeVehicle = initialVehicle || (vehicles.length > 0 ? vehicles[0] : null);
-      if (activeVehicle) {
-        setSelectedVehicleId(activeVehicle.id);
-        populateFieldsFromVehicle(activeVehicle);
-      }
-      setIsSuccess(false);
-      setGeneratedPdfUrl(null);
-    }
-  }, [isOpen, initialVehicle]);
+  const resetContractFields = () => {
+    setTenantName('');
+    setTenantCpfCnpj('');
+    setTenantRg('');
+    setTenantCnh('');
+    setTenantPhone('');
+    setTenantEmail('');
+    setTenantAddress('');
 
-  const populateFieldsFromVehicle = (veh: Vehicle) => {
-    // If vehicle has no driver or is marked as 'Disponível', don't set as tenantName
-    const driverName = veh.driver && veh.driver !== 'Disponível' ? veh.driver : '';
-    setTenantName(driverName);
-    setTenantCpfCnpj(veh.tenantCpfCnpj || '');
-    setTenantRg(veh.tenantRg || '');
-    setTenantCnh(veh.tenantCnh || '');
-    setTenantPhone(veh.driverPhone || '');
-    setTenantEmail(veh.tenantEmail || '');
-    setTenantAddress(veh.tenantAddress || '');
+    setOdometerKm(0);
+    setRentalValue(0);
+    setCaucaoValue(0);
+    setPromisePayments([]);
+    setShowAddCaucaoPromise(false);
+    setShowBatchCaucaoPromise(false);
+    setBatchCaucaoItems([]);
+    setStartDate('');
+    setEndDate('');
+    setContractNumber('');
+    setPaymentPeriod('Semanal');
+    setDueDay('');
+    setKmLimit('');
+    setCustomClauses('');
 
-    // 1. Puxar Quilometragem atual do cadastro do carro
-    const registeredKm = veh.currentKm !== undefined && veh.currentKm !== null
-      ? veh.currentKm
-      : (veh.initialKm || 0);
-    setOdometerKm(registeredKm);
-
-    // 2. Puxar Valor Semanal do cadastro do carro
-    const registeredWeekly = veh.valorSemanal !== undefined && Number(veh.valorSemanal) > 0
-      ? Number(veh.valorSemanal)
-      : (Number(veh.valorRecebido) > 0 ? Number(veh.valorRecebido) : 960);
-    setRentalValue(registeredWeekly);
-
-    // 3. Puxar Valor de Caução do cadastro do carro (inicial + promessas pagas)
-    const paidPromises = (veh.promisePayments || [])
-      .filter(p => p.isPaid)
-      .reduce((sum, p) => sum + (p.amount || 0), 0);
-    const registeredCaucao = (veh.caucaoValor !== undefined && Number(veh.caucaoValor) > 0)
-      ? Number(veh.caucaoValor) + paidPromises
-      : (paidPromises > 0 ? paidPromises : 1920);
-    setCaucaoValue(registeredCaucao);
-
-    setStartDate(veh.startDate || new Date().toISOString().split('T')[0]);
-    setEndDate(veh.endDate || '');
-    setContractNumber(veh.contractNumber || generateNextContractNumber(veh.plate, vehicles, `${veh.brand} ${veh.model}`));
-    setDueDay(veh.dueDay || 'toda segunda-feira, com vencimento até às 23h59');
-    setLandlordName(veh.rentalCompany || localStorage.getItem('fleet_landlord_name') || 'Cláudio Oliveira da Silva');
+    setLandlordName(localStorage.getItem('fleet_landlord_name') || 'Cláudio Oliveira da Silva');
     setLandlordCpfCnpj(localStorage.getItem('fleet_landlord_cpf') || '065.426.576-30');
     setLandlordRg(localStorage.getItem('fleet_landlord_rg') || '39.508.321-7');
     setLandlordPhone(localStorage.getItem('fleet_landlord_phone') || '(11) 95329-2570');
     setLandlordAddress(localStorage.getItem('fleet_landlord_address') || 'Rua Manuel Leiroz, 230, apto 1306 - Cangaíba, São Paulo/SP, CEP: 03735-180');
     setPixKey(localStorage.getItem('fleet_landlord_pix') || '11953292570');
-    if (veh.fineRate !== undefined) {
-      setContractFineRate(veh.fineRate);
-    } else {
-      const saved = localStorage.getItem('fleet_fine_rate_default');
-      setContractFineRate(saved ? Number(saved) : 10.0);
-    }
-    if (veh.dailyInterestRate !== undefined) {
-      setContractInterestRate(veh.dailyInterestRate);
-    } else {
-      const saved = localStorage.getItem('fleet_daily_interest_rate_default');
-      setContractInterestRate(saved ? Number(saved) : 1.0);
-    }
+
+    const savedFine = localStorage.getItem('fleet_fine_rate_default');
+    setContractFineRate(savedFine ? Number(savedFine) : 10.0);
+    const savedInterest = localStorage.getItem('fleet_daily_interest_rate_default');
+    setContractInterestRate(savedInterest ? Number(savedInterest) : 1.0);
+
+    setIsSuccess(false);
+    setIsBlankContractSuccess(false);
+    setGeneratedPdfUrl(null);
+    setGeneratedPdfFileName('');
+    setShowInlinePdfPreview(false);
+    setIsSavedNotification(false);
+    setShowVistoriaForm(false);
+    setShowContactPicker(false);
+    setContactSearch('');
+    setContactPickerNotice(null);
+    setShowQuickManualAdd(false);
+    setQuickManualName('');
+    setQuickManualPhone('');
+    setCopiedLinkNotification(false);
+    setVistoriaSuccessMsg(false);
+    setCopiedReminderNotification(null);
   };
+
+  // Sempre iniciar em branco ao abrir o modal, sem carregar dados anteriores
+  useEffect(() => {
+    if (isOpen) {
+      setSelectedVehicleId(initialVehicle ? initialVehicle.id : '');
+      resetContractFields();
+    }
+  }, [isOpen, initialVehicle]);
 
   const handleVehicleChange = (vehId: string) => {
     setSelectedVehicleId(vehId);
-    const found = vehicles.find(v => v.id === vehId);
-    if (found) {
-      populateFieldsFromVehicle(found);
-    }
   };
 
   if (!isOpen) return null;
@@ -694,10 +728,10 @@ Isso é fundamental para a vinculação correta do veículo. Qualquer dúvida es
         pixKey: pixKey.trim() || localStorage.getItem('fleet_landlord_pix') || '11953292570',
         startDate: startDate || new Date().toISOString().split('T')[0],
         endDate: endDate || 'Prazo Indeterminado',
-        rentalValue: Number(rentalValue) || 960,
+        rentalValue: Number(rentalValue) || 0,
         paymentPeriod,
         dueDay,
-        caucaoValue: Number(caucaoValue) || 1920,
+        caucaoValue: Number(caucaoValue) || 0,
         kmLimit,
         workshopName,
         insuranceCompany,
@@ -712,21 +746,20 @@ Isso é fundamental para a vinculação correta do veículo. Qualquer dúvida es
         ...currentVehicle,
         initialKm: Number(odometerKm) > 0 ? Number(odometerKm) : currentVehicle.initialKm,
         currentKm: Number(odometerKm) > 0 ? Number(odometerKm) : currentVehicle.currentKm,
-        driver: contractData.tenantName || currentVehicle.driver,
-        tenantCpfCnpj: contractData.tenantCpfCnpj || currentVehicle.tenantCpfCnpj,
-        tenantRg: contractData.tenantRg || currentVehicle.tenantRg,
-        tenantCnh: contractData.tenantCnh || currentVehicle.tenantCnh,
-        driverPhone: contractData.tenantPhone || currentVehicle.driverPhone,
-        tenantEmail: contractData.tenantEmail || currentVehicle.tenantEmail,
-        tenantAddress: contractData.tenantAddress || currentVehicle.tenantAddress,
-        startDate: contractData.startDate || currentVehicle.startDate,
-        endDate: endDate !== undefined ? endDate : currentVehicle.endDate,
+        driver: contractData.tenantName,
+        tenantCpfCnpj: contractData.tenantCpfCnpj,
+        tenantRg: contractData.tenantRg,
+        tenantCnh: contractData.tenantCnh,
+        driverPhone: contractData.tenantPhone,
+        tenantEmail: contractData.tenantEmail,
+        tenantAddress: contractData.tenantAddress,
+        startDate: contractData.startDate,
+        endDate: endDate.trim(),
         valorSemanal: contractData.rentalValue > 0 ? contractData.rentalValue : currentVehicle.valorSemanal,
-        caucaoValor: (() => {
-          const currentPaidPromises = (currentVehicle.promisePayments || []).filter(p => p.isPaid).reduce((s, p) => s + (p.amount || 0), 0);
-          return contractData.caucaoValue > 0 ? Math.max(0, contractData.caucaoValue - currentPaidPromises) : currentVehicle.caucaoValor;
-        })(),
+        caucaoValor: Number(caucaoValue) || 0,
+        promisePayments: promisePayments,
         contractNumber: contractData.contractNumber,
+        dueDay: dueDay.trim(),
         rentalCompany: contractData.landlordName || currentVehicle.rentalCompany,
         fineRate: Number(contractFineRate),
         dailyInterestRate: Number(contractInterestRate),
@@ -1250,6 +1283,7 @@ O contrato oficial em PDF já foi gerado e está arquivado nos documentos do ve�
                       className="w-full bg-[#111111] border border-white/10 rounded-xl px-3 py-2.5 text-white focus:outline-hidden focus:border-blue-500/50 cursor-pointer text-xs font-medium"
                       required
                     >
+                      <option value="">-- Selecione o Veículo --</option>
                       {vehicles.map((v) => (
                         <option key={v.id} value={v.id}>
                           {v.brand} {v.model} - Placa: {v.plate} ({v.driver ? `Motorista: ${v.driver}` : 'Disponível'})
@@ -1271,42 +1305,6 @@ O contrato oficial em PDF já foi gerado e está arquivado nos documentos do ve�
                   </div>
                 ) : null}
 
-                {/* Banner de Dados Carregados do Cadastro e Solicitação de Atualização */}
-                <div className="bg-amber-500/10 border border-amber-500/30 rounded-xl p-3.5 space-y-2 animate-in fade-in duration-150">
-                  <div className="flex items-start gap-2.5">
-                    <AlertTriangle className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />
-                    <div className="space-y-1.5 w-full">
-                      <div className="flex items-center justify-between flex-wrap gap-1">
-                        <span className="text-[11px] font-bold text-amber-300 uppercase tracking-wider">
-                          Dados do Carro Carregados do Cadastro
-                        </span>
-                        <span className="text-[10px] text-amber-400 font-semibold bg-amber-500/20 px-2 py-0.5 rounded-full border border-amber-500/30">
-                          ⚠️ Conferir e Atualizar
-                        </span>
-                      </div>
-                      <p className="text-[11px] text-gray-300 leading-relaxed">
-                        Puxamos automaticamente do cadastro deste veículo: 
-                        <strong className="text-white"> R$ {Number(rentalValue).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}/sem</strong> (valor semanal), 
-                        <strong className="text-white"> R$ {Number(caucaoValue).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</strong> (caução) e 
-                        <strong className="text-white"> {Number(odometerKm).toLocaleString('pt-BR')} KM</strong> (odômetro registrado).
-                      </p>
-                      <div className="p-2 bg-black/40 rounded-lg border border-amber-500/20 text-[10px] text-amber-200 flex items-center justify-between flex-wrap gap-2">
-                        <span>⚡ <strong>Atenção:</strong> Por favor, verifique e atualize a quilometragem atual do painel do carro para registrar na entrega deste contrato.</span>
-                        <button
-                          type="button"
-                          onClick={() => {
-                            const el = document.getElementById('odometerInput');
-                            if (el) el.focus();
-                          }}
-                          className="px-2 py-1 bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 border border-amber-500/40 rounded text-[10px] font-bold cursor-pointer transition-colors"
-                        >
-                          Ir para Odômetro ⬇️
-                        </button>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-
                 {/* Campo de Odômetro / Quilometragem */}
                 <div className="space-y-1.5 pt-1 bg-black/40 p-3 rounded-xl border border-amber-500/30">
                   <div className="flex items-center justify-between flex-wrap gap-1">
@@ -1314,11 +1312,6 @@ O contrato oficial em PDF já foi gerado e está arquivado nos documentos do ve�
                       <Gauge className="w-3.5 h-3.5 text-amber-400" />
                       <span>Odômetro / Quilometragem Atual do Carro (KM) *</span>
                     </label>
-                    {currentVehicle && (
-                      <span className="text-[10px] text-gray-400 font-mono bg-white/5 px-2 py-0.5 rounded border border-white/10">
-                        Último cadastro: {(currentVehicle.currentKm || currentVehicle.initialKm || 0).toLocaleString('pt-BR')} KM
-                      </span>
-                    )}
                   </div>
                   <div className="relative">
                     <Gauge className="w-4 h-4 text-amber-400 absolute left-3 top-2.5" />
@@ -1554,9 +1547,6 @@ O contrato oficial em PDF já foi gerado e está arquivado nos documentos do ve�
                         required
                       />
                     </div>
-                    <span className="text-[9px] text-gray-400 block mt-0.5">
-                      Puxado do cadastro: R$ {(currentVehicle?.valorSemanal || currentVehicle?.valorRecebido || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })} (atualize se necessário).
-                    </span>
                   </div>
 
                   <div className="space-y-1">
@@ -1646,15 +1636,313 @@ O contrato oficial em PDF já foi gerado e está arquivado nos documentos do ve�
                       placeholder="0,00"
                       className="w-full bg-[#111111] border border-white/10 rounded-xl px-3 py-2 text-white font-mono focus:outline-hidden focus:border-amber-500/50"
                     />
-                    <span className="text-[9px] text-gray-400 block mt-0.5">
-                      {(() => {
-                        const paidPromises = (currentVehicle?.promisePayments || [])
-                          .filter(p => p.isPaid)
-                          .reduce((sum, p) => sum + (p.amount || 0), 0);
-                        const total = (currentVehicle?.caucaoValor || 0) + paidPromises;
-                        return `Puxado do cadastro: R$ ${total.toLocaleString('pt-BR', { minimumFractionDigits: 2 })} (Inicial + Promessas Pagas).`;
-                      })()}
-                    </span>
+                  </div>
+
+                  {/* Promessas de Pagamento do Caução no Gerador de Contrato */}
+                  <div className="sm:col-span-2 bg-black/30 border border-white/5 p-3 rounded-xl space-y-2 mt-1">
+                    <div className="flex items-center justify-between">
+                      <span className="text-[11px] font-bold text-gray-300">Promessas de Pagamento (Caução)</span>
+                      {promisePayments.length > 0 && (
+                        <span className="text-[9px] text-emerald-400 bg-emerald-500/10 px-1.5 py-0.5 rounded border border-emerald-500/20 font-mono">
+                          {promisePayments.filter(p => p.isPaid).length}/{promisePayments.length} pagas
+                        </span>
+                      )}
+                    </div>
+
+                    {promisePayments.length === 0 && !showAddCaucaoPromise && !showBatchCaucaoPromise && (
+                      <p className="text-[10px] text-gray-500 italic py-1">Nenhuma promessa de caução cadastrada neste contrato.</p>
+                    )}
+
+                    <div className="space-y-1.5">
+                      {promisePayments.map((p) => {
+                        const dateParts = (p.date || '').split('-');
+                        const formattedDate = dateParts.length === 3 
+                          ? `${dateParts[2]}/${dateParts[1]}/${dateParts[0]}`
+                          : p.date;
+
+                        return (
+                          <div key={p.id} className="flex flex-col gap-1 text-xs bg-white/[0.03] p-2 rounded-lg border border-white/5">
+                            <div className="flex justify-between items-center">
+                              <span className="font-mono text-xs text-gray-200 font-bold">
+                                📅 {formattedDate} — R$ {(p.amount || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                              </span>
+                              <div className="flex items-center gap-1.5 shrink-0">
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setPromisePayments(prev => prev.map(item => item.id === p.id ? { ...item, isPaid: !item.isPaid, paidAt: !item.isPaid ? new Date().toLocaleDateString('pt-BR') : undefined } : item));
+                                  }}
+                                  className={`text-[9px] px-2 py-0.5 rounded font-bold cursor-pointer transition-colors ${
+                                    p.isPaid
+                                      ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30'
+                                      : 'bg-amber-500/20 text-amber-300 border border-amber-500/30'
+                                  }`}
+                                >
+                                  {p.isPaid ? '✓ Pago' : 'Pendente'}
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setPromisePayments(prev => prev.filter(item => item.id !== p.id));
+                                  }}
+                                  className="p-1 text-gray-500 hover:text-rose-400 transition-colors cursor-pointer rounded"
+                                  title="Excluir promessa"
+                                >
+                                  <X className="w-3 h-3" />
+                                </button>
+                              </div>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+
+                    {/* Formulário Individual */}
+                    {showAddCaucaoPromise && (
+                      <div className="p-3 bg-neutral-900 rounded-lg border border-blue-500/30 space-y-2 mt-2 animate-in fade-in duration-150">
+                        <span className="text-[10px] font-bold text-blue-400 block">+ Nova Promessa Individual de Caução</span>
+                        <div className="grid grid-cols-2 gap-2">
+                          <div>
+                            <label className="text-[9px] text-gray-400 block mb-0.5">Data Prevista</label>
+                            <input
+                              type="date"
+                              value={newCaucaoPromiseDate}
+                              onChange={(e) => setNewCaucaoPromiseDate(e.target.value)}
+                              className="w-full text-xs bg-black border border-white/10 rounded-md px-2 py-1 text-white focus:outline-hidden font-mono"
+                            />
+                          </div>
+                          <div>
+                            <label className="text-[9px] text-gray-400 block mb-0.5">Valor da Promessa (R$)</label>
+                            <CurrencyInput
+                              value={newCaucaoPromiseAmount}
+                              onChange={setNewCaucaoPromiseAmount}
+                              placeholder="0,00"
+                              className="w-full text-xs bg-black border border-white/10 rounded-md px-2 py-1 text-white focus:outline-hidden font-mono"
+                              autoFocus
+                            />
+                          </div>
+                        </div>
+                        <div className="flex justify-end gap-1.5 text-[10px] pt-1">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setShowAddCaucaoPromise(false);
+                              setNewCaucaoPromiseAmount(0);
+                            }}
+                            className="px-2.5 py-1 text-gray-400 hover:text-white cursor-pointer"
+                          >
+                            Cancelar
+                          </button>
+                          <button
+                            type="button"
+                            disabled={!newCaucaoPromiseAmount || newCaucaoPromiseAmount <= 0}
+                            onClick={() => {
+                              if (newCaucaoPromiseAmount > 0) {
+                                const dateToUse = newCaucaoPromiseDate || new Date().toISOString().split('T')[0];
+                                setPromisePayments(prev => [
+                                  ...prev,
+                                  {
+                                    id: `prom-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
+                                    date: dateToUse,
+                                    amount: Number(newCaucaoPromiseAmount),
+                                    isPaid: false
+                                  }
+                                ]);
+                                setShowAddCaucaoPromise(false);
+                                setNewCaucaoPromiseAmount(0);
+                              }
+                            }}
+                            className={`px-3 py-1 rounded font-bold transition-all ${
+                              newCaucaoPromiseAmount > 0
+                                ? 'bg-blue-600 hover:bg-blue-500 text-white cursor-pointer'
+                                : 'bg-white/10 text-gray-500 cursor-not-allowed'
+                            }`}
+                          >
+                            Adicionar
+                          </button>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Formulário Múltiplas Promessas (Em Lote) */}
+                    {showBatchCaucaoPromise && (
+                      <div className="p-3 bg-neutral-900 rounded-xl border border-indigo-500/40 space-y-3 mt-2 animate-in fade-in duration-150 shadow-xl">
+                        <div className="flex items-center justify-between border-b border-indigo-500/25 pb-2">
+                          <div className="flex items-center gap-1.5 text-indigo-300 font-bold text-xs">
+                            <Sparkles className="w-4 h-4 text-indigo-400" />
+                            <span>Gerar Múltiplas Promessas de Caução em Lote</span>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => setShowBatchCaucaoPromise(false)}
+                            className="text-gray-400 hover:text-white text-xs cursor-pointer"
+                          >
+                            <X className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
+
+                        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 bg-black/40 p-2.5 rounded-lg border border-white/5 text-[10px]">
+                          <div>
+                            <label className="text-gray-400 block mb-0.5">Qtd Parcelas</label>
+                            <input
+                              type="number"
+                              min="1"
+                              max="52"
+                              value={batchCaucaoCount}
+                              onChange={(e) => {
+                                const val = e.target.value;
+                                setBatchCaucaoCount(val === '' ? '' : Math.max(1, Math.min(52, parseInt(val) || 1)));
+                              }}
+                              className="w-full bg-black border border-white/10 rounded px-2 py-1 text-white font-mono"
+                            />
+                          </div>
+
+                          <div>
+                            <label className="text-gray-400 block mb-0.5">Valor Parcela (R$)</label>
+                            <CurrencyInput
+                              value={batchCaucaoAmount}
+                              onChange={setBatchCaucaoAmount}
+                              placeholder="0,00"
+                              className="w-full bg-black border border-white/10 rounded px-2 py-1 text-white font-mono"
+                            />
+                          </div>
+
+                          <div>
+                            <label className="text-gray-400 block mb-0.5">Frequência</label>
+                            <select
+                              value={batchCaucaoFrequency}
+                              onChange={(e) => setBatchCaucaoFrequency(e.target.value as any)}
+                              className="w-full bg-black border border-white/10 rounded px-2 py-1 text-white"
+                            >
+                              <option value="semanal">Semanal (+7 dias)</option>
+                              <option value="quinzenal">Quinzenal (+15 dias)</option>
+                              <option value="mensal">Mensal (+30 dias)</option>
+                            </select>
+                          </div>
+
+                          <div>
+                            <label className="text-gray-400 block mb-0.5">1ª Data</label>
+                            <input
+                              type="date"
+                              value={batchCaucaoStartDate}
+                              onChange={(e) => setBatchCaucaoStartDate(e.target.value)}
+                              className="w-full bg-black border border-white/10 rounded px-2 py-1 text-white font-mono"
+                            />
+                          </div>
+
+                          <div className="col-span-2 sm:col-span-4 pt-1 flex justify-end">
+                            <button
+                              type="button"
+                              onClick={handleGenerateBatchCaucaoItems}
+                              className="px-3 py-1 bg-indigo-600 hover:bg-indigo-500 text-white rounded font-bold text-xs flex items-center gap-1 cursor-pointer transition-all shadow-sm"
+                            >
+                              <Sparkles className="w-3.5 h-3.5" />
+                              <span>Gerar {batchCaucaoCount || 1} Parcelas na Lista</span>
+                            </button>
+                          </div>
+                        </div>
+
+                        {batchCaucaoItems.length > 0 && (
+                          <div className="space-y-1.5">
+                            <div className="flex items-center justify-between text-[11px] text-gray-300 font-bold px-1">
+                              <span>Prévia das Promessas ({batchCaucaoItems.length} parcelas)</span>
+                              <span className="text-emerald-400 font-mono">
+                                Total: R$ {batchCaucaoItems.reduce((acc, it) => acc + (it.amount || 0), 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                              </span>
+                            </div>
+
+                            <div className="max-h-48 overflow-y-auto space-y-1.5 border border-white/10 rounded-lg p-2 bg-black/50 scrollbar-thin">
+                              {batchCaucaoItems.map((item, index) => (
+                                <div key={item.id} className="flex items-center gap-2 text-xs bg-white/[0.02] p-1.5 rounded border border-white/5">
+                                  <span className="text-[10px] text-gray-400 font-mono w-6 text-center">#{index + 1}</span>
+                                  <input
+                                    type="date"
+                                    value={item.date}
+                                    onChange={(e) => {
+                                      const next = [...batchCaucaoItems];
+                                      next[index].date = e.target.value;
+                                      setBatchCaucaoItems(next);
+                                    }}
+                                    className="bg-black border border-white/10 rounded px-2 py-0.5 text-white font-mono text-[11px]"
+                                  />
+                                  <div className="flex-1">
+                                    <CurrencyInput
+                                      value={item.amount}
+                                      onChange={(val) => {
+                                        const next = [...batchCaucaoItems];
+                                        next[index].amount = Number(val) || 0;
+                                        setBatchCaucaoItems(next);
+                                      }}
+                                      placeholder="0,00"
+                                      className="w-full bg-black border border-white/10 rounded px-2 py-0.5 text-white font-mono text-[11px]"
+                                    />
+                                  </div>
+                                  <button
+                                    type="button"
+                                    onClick={() => setBatchCaucaoItems(batchCaucaoItems.filter((_, idx) => idx !== index))}
+                                    className="text-gray-500 hover:text-rose-400 p-1 cursor-pointer"
+                                  >
+                                    <X className="w-3.5 h-3.5" />
+                                  </button>
+                                </div>
+                              ))}
+                            </div>
+
+                            <div className="flex items-center justify-between pt-1">
+                              <button
+                                type="button"
+                                onClick={() => setBatchCaucaoItems([])}
+                                className="px-2.5 py-1 text-gray-400 hover:text-white text-[10px] cursor-pointer"
+                              >
+                                Limpar Lista
+                              </button>
+                              <button
+                                type="button"
+                                onClick={handleSaveBatchCaucaoPromises}
+                                className="px-4 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg text-xs font-bold cursor-pointer transition-all shadow-md flex items-center gap-1.5"
+                              >
+                                <CheckCircle2 className="w-3.5 h-3.5" />
+                                <span>Salvar Todas ({batchCaucaoItems.length} Promessas)</span>
+                              </button>
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    )}
+
+                    <div className="grid grid-cols-2 gap-2 pt-1">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          if (!showAddCaucaoPromise) {
+                            setNewCaucaoPromiseDate(new Date().toISOString().split('T')[0]);
+                            setNewCaucaoPromiseAmount(0);
+                            setShowBatchCaucaoPromise(false);
+                          }
+                          setShowAddCaucaoPromise(!showAddCaucaoPromise);
+                        }}
+                        className="text-xs text-blue-400 border border-blue-400/30 rounded py-1.5 hover:bg-blue-400/10 cursor-pointer font-medium transition-colors text-center"
+                      >
+                        {showAddCaucaoPromise ? 'Fechar Formulário' : '+ 1 Promessa de Caução'}
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => {
+                          if (!showBatchCaucaoPromise) {
+                            setShowAddCaucaoPromise(false);
+                            if (batchCaucaoItems.length === 0) {
+                              handleGenerateBatchCaucaoItems();
+                            }
+                          }
+                          setShowBatchCaucaoPromise(!showBatchCaucaoPromise);
+                        }}
+                        className="text-xs text-indigo-400 border border-indigo-400/30 bg-indigo-500/10 rounded py-1.5 hover:bg-indigo-500/20 cursor-pointer font-semibold transition-colors flex items-center justify-center gap-1.5 text-center shadow-xs"
+                      >
+                        <Sparkles className="w-3.5 h-3.5 text-indigo-400" />
+                        <span>Gerar Parcelas em Lote (Caução)</span>
+                      </button>
+                    </div>
                   </div>
 
                   <div className="space-y-1">

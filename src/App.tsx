@@ -2180,13 +2180,14 @@ export default function App() {
     const id = targetVehicle.id;
 
     try {
-      // 1. Generate PDF with vehicle history, contract & maintenance details
+      // 1. Generate PDF with vehicle history, contract, settlement, sinistros, vistorias & all attachments
       const { doc, fileName, pdfDataUrl } = await generateVehiclePDF(
         targetVehicle,
         maintenanceLogs,
         expenseLogs,
         vistorias,
-        fuelLogs
+        fuelLogs,
+        { settlement, sinistroLogs }
       );
 
       // Try auto download
@@ -2222,8 +2223,8 @@ export default function App() {
 
       setFinalizedContracts((prev) => [newContract, ...prev]);
 
-      // 3. Remove active contract documents from vehicle (since contract is now archived in Contratos Finalizados)
-      const remainingDocs = (targetVehicle.documents || []).filter((d) => d.category !== 'Contrato');
+      // 3. Remove contract/rental attachments from vehicle (keep only permanent CRLV); all attachments are now saved inside the Finalization PDF
+      const remainingDocs = (targetVehicle.documents || []).filter((d) => d.category === 'CRLV');
 
       // Preserve Locatário in contacts list
       if (targetVehicle.driver && targetVehicle.driver.trim()) {
@@ -4028,7 +4029,10 @@ export default function App() {
 
       <RentalContractModal
         isOpen={isRentalContractOpen}
-        onClose={() => setIsRentalContractOpen(false)}
+        onClose={() => {
+          setIsRentalContractOpen(false);
+          setSelectedContractVehicle(null);
+        }}
         vehicle={selectedContractVehicle}
         vehicles={sortedVehicles}
         onUpdateVehicle={handleUpdateVehicle}

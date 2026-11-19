@@ -1,6 +1,14 @@
 import { jsPDF } from 'jspdf';
-import { Vehicle, MaintenanceLog, ExpenseLog, Vistoria, FuelLog, isWeeklyPaymentPaid } from '../types';
+import * as pdfjsLib from 'pdfjs-dist';
+import { Vehicle, MaintenanceLog, ExpenseLog, Vistoria, FuelLog, SinistroLog, getFineAdminFee, getFineTotal, isWeeklyPaymentPaid } from '../types';
+import type { CaucaoSettlementData } from '../components/ConfirmFinalizeContractModal';
 import { getSavedContractClauses, replaceClauseVariables, getFullContractTextTemplate, groupClausesByTopic } from './contractClauses';
+
+try {
+  pdfjsLib.GlobalWorkerOptions.workerSrc = `https://unpkg.com/pdfjs-dist@${pdfjsLib.version || '4.0.379'}/build/pdf.worker.min.mjs`;
+} catch (e) {
+  console.warn('PDF.js worker initialization:', e);
+}
 
 export async function urlToDataUrl(url: string): Promise<{ dataUrl: string; format: 'PNG' | 'JPEG' } | null> {
   if (!url) return null;
@@ -68,12 +76,244 @@ export async function urlToDataUrl(url: string): Promise<{ dataUrl: string; form
   });
 }
 
+async function urlToDataUrlWithDimensions(
+  url: string
+): Promise<{ dataUrl: string; format: 'PNG' | 'JPEG'; width: number; height: number } | null> {
+  if (!url) return null;
+
+  return new Promise((resolve) => {
+    const img = new Image();
+    img.crossOrigin = 'Anonymous';
+    img.onload = () => {
+      try {
+        const naturalW = img.naturalWidth || img.width || 400;
+        const naturalH = img.naturalHeight || img.height || 300;
+        const MAX_DIM = 1000;
+        let width = naturalW;
+        let height = naturalH;
+
+        if (width > height) {
+          if (width > MAX_DIM) {
+            height = Math.round((height * MAX_DIM) / width);
+            width = MAX_DIM;
+          }
+        } else {
+          if (height > MAX_DIM) {
+            width = Math.round((width * MAX_DIM) / height);
+            height = MAX_DIM;
+          }
+        }
+
+        const canvas = document.createElement('canvas');
+        canvas.width = width;
+        canvas.height = height;
+        const ctx = canvas.getContext('2d');
+        if (ctx) {
+          ctx.fillStyle = '#FFFFFF';
+          ctx.fillRect(0, 0, width, height);
+          ctx.drawImage(img, 0, 0, width, height);
+          const dataUrl = canvas.toDataURL('image/jpeg', 0.78);
+          resolve({ dataUrl, format: 'JPEG', width, height });
+          return;
+        }
+      } catch (e) {
+        console.warn('Canvas conversion with dimensions failed:', e);
+      }
+
+      if (url.startsWith('data:image/png')) {
+        resolve({ dataUrl: url, format: 'PNG', width: 800, height: 600 });
+      } else if (url.startsWith('data:image/jpeg') || url.startsWith('data:image/jpg')) {
+        resolve({ dataUrl: url, format: 'JPEG', width: 800, height: 600 });
+      } else {
+        resolve(null);
+      }
+    };
+    img.onerror = () => resolve(null);
+    img.src = url;
+  });
+}
+
+async function pdfDataUrlToImages(
+  pdfUrl: string
+): Promise<Array<{ dataUrl: string; format: 'JPEG'; width: number; height: number }>> {
+  if (!pdfUrl) return [];
+  try {
+    let pdfData: Uint8Array;
+    if (pdfUrl.startsWith('data:')) {
+      const base64Index = pdfUrl.indexOf(';base64,');
+      if (base64Index !== -1) {
+        const base64 = pdfUrl.substring(base64Index + 8);
+        const binaryString = window.atob(base64);
+        const len = binaryString.length;
+        const bytes = new Uint8Array(len);
+        for (let i = 0; i < len; i++) {
+          bytes[i] = binaryString.charCodeAt(i);
+        }
+        pdfData = bytes;
+      } else {
+        const res = await fetch(pdfUrl);
+        const buffer = await res.arrayBuffer();
+        pdfData = new Uint8Array(buffer);
+      }
+    } else if (pdfUrl.startsWith('blob:') || pdfUrl.startsWith('http')) {
+      const res = await fetch(pdfUrl);
+      const buffer = await res.arrayBuffer();
+      pdfData = new Uint8Array(buffer);
+    } else {
+      const binaryString = window.atob(pdfUrl);
+      const len = binaryString.length;
+      const bytes = new Uint8Array(len);
+      for (let i = 0; i < len; i++) {
+        bytes[i] = binaryString.charCodeAt(i);
+      }
+      pdfData = bytes;
+    }
+
+    const loadingTask = pdfjsLib.getDocument({ data: pdfData });
+    const pdfDoc = await loadingTask.promise;
+    const pages: Array<{ dataUrl: string; format: 'JPEG'; width: number; height: number }> = [];
+
+    for (let pageNum = 1; pageNum <= pdfDoc.numPages; pageNum++) {
+      try {
+        const page = await pdfDoc.getPage(pageNum);
+        const viewport = page.getViewport({ scale: 1.4 });
+        const canvas = document.createElement('canvas');
+        canvas.width = Math.round(viewport.width);
+        canvas.height = Math.round(viewport.height);
+        const ctx = canvas.getContext('2d');
+        if (ctx) {
+          ctx.fillStyle = '#FFFFFF';
+          ctx.fillRect(0, 0, canvas.width, canvas.height);
+          await page.render({ canvasContext: ctx, viewport, canvas }).promise;
+          pages.push({
+            dataUrl: canvas.toDataURL('image/jpeg', 0.74),
+            format: 'JPEG',
+            width: canvas.width,
+            height: canvas.height,
+          });
+        }
+      } catch (pageErr) {
+        console.warn(`Erro ao renderizar página ${pageNum} do PDF anexo:`, pageErr);
+      }
+    }
+
+    return pages;
+  } catch (err) {
+    console.warn('Erro ao extrair páginas de PDF anexo para o PDF final:', err);
+    return [];
+  }
+}
+
+function isPdfAttachment(url: string, fileType?: string, fileName?: string): boolean {
+  if (fileType === 'pdf') return true;
+  if (url.startsWith('data:application/pdf')) return true;
+  if (fileName && fileName.toLowerCase().endsWith('.pdf')) return true;
+  return false;
+}
+
+async function renderAttachmentIntoPdf(
+  doc: jsPDF,
+  url: string,
+  label: string,
+  startY: number,
+  options?: { fileType?: string; fileName?: string; maxW?: number; maxH?: number; x?: number }
+): Promise<number> {
+  if (!url) return startY;
+  let y = startY;
+  const x = options?.x ?? 18;
+  const maxW = options?.maxW ?? 174;
+  const maxH = options?.maxH ?? 210;
+
+  if (isPdfAttachment(url, options?.fileType, options?.fileName)) {
+    const pages = await pdfDataUrlToImages(url);
+    if (pages.length === 0) {
+      if (y > 272) { doc.addPage(); y = 15; }
+      doc.setFont('helvetica', 'italic');
+      doc.setFontSize(8);
+      doc.text(`[Anexo PDF: ${label} — não foi possível renderizar visualmente]`, x, y);
+      return y + 6;
+    }
+
+    for (let i = 0; i < pages.length; i++) {
+      const p = pages[i];
+      const ratio = p.width > 0 && p.height > 0 ? p.height / p.width : 1.414;
+      let drawW = maxW;
+      let drawH = drawW * ratio;
+      if (drawH > maxH) {
+        drawH = maxH;
+        drawW = drawH / ratio;
+      }
+
+      if (y + drawH + 10 > 282) {
+        doc.addPage();
+        y = 15;
+      }
+
+      doc.setFont('helvetica', 'italic');
+      doc.setFontSize(8);
+      doc.setTextColor(100, 116, 139);
+      doc.text(`${label}${pages.length > 1 ? ` (Página ${i + 1}/${pages.length})` : ''}`, x, y);
+      y += 4;
+
+      try {
+        doc.setDrawColor(203, 213, 225);
+        doc.rect(x, y, drawW, drawH);
+        doc.addImage(p.dataUrl, p.format, x, y, drawW, drawH);
+        y += drawH + 6;
+      } catch (err) {
+        console.warn('Erro ao inserir página de PDF anexo:', err);
+        y += 6;
+      }
+    }
+    doc.setTextColor(51, 65, 85);
+    return y;
+  }
+
+  const imgData = await urlToDataUrlWithDimensions(url);
+  if (!imgData) return y;
+
+  const ratio = imgData.width > 0 && imgData.height > 0 ? imgData.height / imgData.width : 0.75;
+  let drawW = Math.min(maxW, 150);
+  let drawH = drawW * ratio;
+  const capH = Math.min(maxH, 115);
+  if (drawH > capH) {
+    drawH = capH;
+    drawW = drawH / ratio;
+  }
+
+  if (y + drawH + 10 > 282) {
+    doc.addPage();
+    y = 15;
+  }
+
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(8);
+  doc.setTextColor(71, 85, 105);
+  doc.text(label, x, y);
+  y += 4;
+
+  try {
+    doc.setDrawColor(203, 213, 225);
+    doc.rect(x, y, drawW, drawH);
+    doc.addImage(imgData.dataUrl, imgData.format, x, y, drawW, drawH);
+    y += drawH + 6;
+  } catch (err) {
+    console.warn('Erro ao inserir imagem anexa no PDF:', err);
+  }
+  doc.setTextColor(51, 65, 85);
+  return y;
+}
+
 export async function generateVehiclePDF(
   vehicle: Vehicle,
   maintenanceLogs: MaintenanceLog[],
   expenseLogs: ExpenseLog[],
   vistorias: Vistoria[],
-  fuelLogs: FuelLog[]
+  fuelLogs: FuelLog[],
+  options?: {
+    settlement?: CaucaoSettlementData;
+    sinistroLogs?: SinistroLog[];
+  }
 ): Promise<{ doc: jsPDF; fileName: string; pdfDataUrl: string }> {
   const doc = new jsPDF({
     orientation: 'p',
@@ -119,13 +359,16 @@ export async function generateVehiclePDF(
   doc.setFontSize(10);
   doc.setTextColor(textColor[0], textColor[1], textColor[2]);
 
+  const payments = (vehicle.weeklyPayments || []).filter(isWeeklyPaymentPaid);
+  const totalPaid = payments.reduce((acc, p) => acc + p.amount, 0);
+
   const vehicleFields = [
     [`Marca / Modelo:`, `${vehicle.brand} ${vehicle.model}`],
     [`Placa:`, `${vehicle.plate}`],
     [`Ano / Cor:`, `${vehicle.year} / ${vehicle.color}`],
     [`Odômetro Final:`, `${(vehicle.currentKm || 0).toLocaleString('pt-BR')} km`],
     [`Locadora / Empresa:`, vehicle.rentalCompany || 'Não informada'],
-    [`Valor Recebido Acumulado:`, `R$ ${(vehicle.valorRecebido || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`],
+    [`Total Recebido (Pago):`, `R$ ${(totalPaid > 0 ? totalPaid : (vehicle.valorRecebido || 0)).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`],
     [`Nível Combustível:`, `${vehicle.fuelLevel || 8}/8 (${((vehicle.fuelLevel || 8) / 8 * 100).toFixed(0)}%)`],
     [`Seguro / IPVA:`, `R$ ${(vehicle.seguro || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })} / R$ ${(vehicle.ipva || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`]
   ];
@@ -144,20 +387,25 @@ export async function generateVehiclePDF(
 
   y += (Math.ceil(vehicleFields.length / 2) * 6) + 6;
 
-  // Section 2: Dados do Locatário / Motorista
+  // Section 2: Dados do Locatário / Motorista + CNH & Comprovante de Endereço
   doc.setFillColor(241, 245, 249);
   doc.rect(14, y, 182, 7, 'F');
   doc.setTextColor(primaryColor[0], primaryColor[1], primaryColor[2]);
   doc.setFont('helvetica', 'bold');
   doc.setFontSize(11);
-  doc.text('2. DADOS DO LOCATÁRIO / MOTORISTA', 18, y + 5);
+  doc.text('2. DADOS E ANEXOS DO LOCATÁRIO / MOTORISTA', 18, y + 5);
 
   y += 12;
+  doc.setFontSize(9.5);
+  doc.setTextColor(textColor[0], textColor[1], textColor[2]);
 
-  const driverFields = [
+  const driverFields: [string, string][] = [
     [`Nome do Motorista:`, vehicle.driver || 'Não cadastrado'],
     [`Telefone:`, vehicle.driverPhone || 'Não informado'],
-    [`Data Início Locação:`, vehicle.startDate ? new Date(vehicle.startDate + 'T12:00:00').toLocaleDateString('pt-BR') : 'Não informada']
+    [`CPF / CNPJ:`, vehicle.tenantCpfCnpj || 'Não informado'],
+    [`RG:`, vehicle.tenantRg || 'Não informado'],
+    [`CNH:`, `${vehicle.tenantCnh || 'Não informada'}${vehicle.driverCnhExpiration ? ` (Val: ${new Date(vehicle.driverCnhExpiration + 'T12:00:00').toLocaleDateString('pt-BR')})` : ''}`],
+    [`Data Início Locação:`, vehicle.startDate ? new Date(vehicle.startDate + 'T12:00:00').toLocaleDateString('pt-BR') : 'Não informada'],
   ];
 
   driverFields.forEach((field, i) => {
@@ -172,23 +420,40 @@ export async function generateVehiclePDF(
     doc.text(field[1], xPos + doc.getTextWidth(field[0]) + 2, yPos);
   });
 
-  y += (Math.ceil(driverFields.length / 2) * 6) + 6;
+  y += (Math.ceil(driverFields.length / 2) * 6) + 2;
 
-  // Section 3: Histórico Financeiro e Pagamentos
+  if (vehicle.tenantAddress) {
+    doc.setFont('helvetica', 'bold');
+    doc.text('Endereço:', 18, y);
+    doc.setFont('helvetica', 'normal');
+    const addrLines = doc.splitTextToSize(vehicle.tenantAddress, 155);
+    doc.text(addrLines, 38, y);
+    y += addrLines.length * 5 + 2;
+  }
+
+  if (vehicle.driverCnhPhotoUrl) {
+    y = await renderAttachmentIntoPdf(doc, vehicle.driverCnhPhotoUrl, 'Anexo do Motorista: CNH Digitalizada / Foto', y);
+  }
+  if (vehicle.driverAddressProofUrl) {
+    y = await renderAttachmentIntoPdf(doc, vehicle.driverAddressProofUrl, 'Anexo do Motorista: Comprovante de Endereço', y);
+  }
+
+  y += 4;
+  if (y > 235) { doc.addPage(); y = 15; }
+
+  // Section 3: Histórico Financeiro, Pagamentos e Acerto da Caução
   doc.setFillColor(241, 245, 249);
   doc.rect(14, y, 182, 7, 'F');
   doc.setTextColor(primaryColor[0], primaryColor[1], primaryColor[2]);
   doc.setFont('helvetica', 'bold');
   doc.setFontSize(11);
-  doc.text('3. HISTÓRICO DE PAGAMENTOS E FINANCEIRO', 18, y + 5);
+  doc.text('3. HISTÓRICO DE PAGAMENTOS E ACERTO DE CAUÇÃO', 18, y + 5);
 
   y += 12;
 
-  const payments = (vehicle.weeklyPayments || []).filter(isWeeklyPaymentPaid);
-  const totalPaid = payments.reduce((acc, p) => acc + p.amount, 0);
-
   doc.setFontSize(9);
   doc.setFont('helvetica', 'normal');
+  doc.setTextColor(textColor[0], textColor[1], textColor[2]);
   doc.text(`Total de parcelas pagas registradas: R$ ${totalPaid.toLocaleString('pt-BR', { minimumFractionDigits: 2 })} (${payments.length} parcela(s))`, 18, y);
   y += 6;
 
@@ -197,20 +462,19 @@ export async function generateVehiclePDF(
   doc.setTextColor(255, 255, 255);
   doc.setFont('helvetica', 'bold');
   doc.rect(14, y, 182, 6, 'F');
-  doc.text('Data Registro', 18, y + 4.5);
-  doc.text('Valor do Pagamento (R$)', 80, y + 4.5);
+  doc.text('Data Pagamento', 18, y + 4.5);
+  doc.text('Valor Pago (R$)', 80, y + 4.5);
 
   y += 6;
   doc.setTextColor(textColor[0], textColor[1], textColor[2]);
   doc.setFont('helvetica', 'normal');
 
-  const displayPayments = payments.slice(0, 10);
-  if (displayPayments.length === 0) {
-    doc.text('Nenhum pagamento registrado no cartão.', 18, y + 5);
+  if (payments.length === 0) {
+    doc.text('Nenhum pagamento confirmado registrado.', 18, y + 5);
     y += 8;
   } else {
-    displayPayments.forEach((p, idx) => {
-      if (y > 260) {
+    payments.forEach((p, idx) => {
+      if (y > 268) {
         doc.addPage();
         y = 15;
       }
@@ -218,24 +482,76 @@ export async function generateVehiclePDF(
         doc.setFillColor(248, 250, 252);
         doc.rect(14, y, 182, 5.5, 'F');
       }
-      doc.text(new Date(p.date + 'T12:00:00').toLocaleDateString('pt-BR'), 18, y + 4);
+      const dateStr = new Date((p.paidDate || p.date) + 'T12:00:00').toLocaleDateString('pt-BR');
+      doc.text(dateStr, 18, y + 4);
       doc.text(`R$ ${p.amount.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`, 80, y + 4);
       y += 5.5;
     });
   }
 
-  y += 4;
+  // Resumo do Acerto de Caução (se informado no fechamento)
+  if (options?.settlement) {
+    const s = options.settlement;
+    y += 5;
+    if (y > 235) { doc.addPage(); y = 15; }
+    doc.setFillColor(254, 249, 195);
+    doc.rect(14, y, 182, 6.5, 'F');
+    doc.setTextColor(133, 77, 14);
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(9.5);
+    doc.text('RESUMO DO ACERTO DA CAUÇÃO NA DEVOLUÇÃO', 18, y + 4.5);
+    y += 9;
 
-  // Check page overflow
-  if (y > 230) {
-    doc.addPage();
-    y = 15;
+    doc.setFontSize(9);
+    doc.setTextColor(textColor[0], textColor[1], textColor[2]);
+    const settlementRows = [
+      ['Caução Depositada:', `+ R$ ${s.caucaoOriginal.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`],
+      ['(-) Aluguéis / Dias em Aberto:', `- R$ ${s.descontoAluguelPendente.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`],
+      ['(-) Avarias / Reparos:', `- R$ ${s.descontoAvarias.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`],
+      ['(-) Lavagem / Higienização:', `- R$ ${(s.descontoLavagem || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`],
+      ['(-) Diferença de Combustível:', `- R$ ${s.descontoCombustivel.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`],
+      ['(-) Multas (Trânsito + Adm.):', `- R$ ${s.descontoMultas.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`],
+      ['(-) Pedágios / Tag:', `- R$ ${(s.descontoPedagios || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`],
+    ];
+    settlementRows.forEach(([k, v], idx) => {
+      if (y > 270) { doc.addPage(); y = 15; }
+      const col = idx % 2;
+      const xPos = col === 0 ? 18 : 108;
+      doc.setFont('helvetica', 'bold');
+      doc.text(k, xPos, y);
+      doc.setFont('helvetica', 'normal');
+      doc.text(v, xPos + 50, y);
+      if (col === 1 || idx === settlementRows.length - 1) y += 5;
+    });
+    if (s.observacoesAcerto) {
+      doc.setFont('helvetica', 'italic');
+      doc.text(`Obs. Acerto: ${s.observacoesAcerto}`, 18, y);
+      y += 5.5;
+    }
+    doc.setFont('helvetica', 'bold');
+    doc.setTextColor(s.saldoFinal >= 0 ? 5 : 190, s.saldoFinal >= 0 ? 150 : 18, s.saldoFinal >= 0 ? 105 : 60);
+    doc.text(
+      `${s.saldoFinal >= 0 ? 'SALDO A DEVOLVER AO LOCATÁRIO' : 'SALDO DEVEDOR DO LOCATÁRIO'}: R$ ${Math.abs(s.saldoFinal).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`,
+      18,
+      y + 1
+    );
+    y += 7;
+    doc.setTextColor(textColor[0], textColor[1], textColor[2]);
   }
+
+  y += 4;
+  if (y > 235) { doc.addPage(); y = 15; }
 
   // Section 4: Histórico de Manutenções e Despesas
   const vehMaint = maintenanceLogs.filter((m) => m.vehicleId === vehicle.id);
   const vehExp = expenseLogs.filter((e) => e.vehicleId === vehicle.id);
-  const vehVistorias = vistorias.filter((v) => v.vehicleId === vehicle.id);
+  const cleanPlate = vehicle.plate.replace(/[^A-Z0-9]/gi, '').toUpperCase();
+  const vehVistorias = vistorias.filter(
+    (v) =>
+      v.vehicleId === vehicle.id ||
+      (v.vehiclePlate && v.vehiclePlate.replace(/[^A-Z0-9]/gi, '').toUpperCase() === cleanPlate)
+  );
+  const vehSinistros = (options?.sinistroLogs || []).filter((s) => s.vehicleId === vehicle.id);
 
   doc.setFillColor(241, 245, 249);
   doc.rect(14, y, 182, 7, 'F');
@@ -257,7 +573,6 @@ export async function generateVehiclePDF(
   doc.text(`Total em Despesas Eventuais (${vehExp.length} registro(s)): R$ ${totalExpCost.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`, 18, y);
   y += 8;
 
-  // Maintenance list details
   if (vehMaint.length > 0) {
     doc.setFont('helvetica', 'bold');
     doc.text('Registros de Manutenção:', 18, y);
@@ -271,10 +586,69 @@ export async function generateVehiclePDF(
       doc.text(`• ${m.date ? new Date(m.date + 'T12:00:00').toLocaleDateString('pt-BR') : 'S/D'} - [${m.type}] ${m.description}${extraInfo} (R$ ${(m.cost || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })})`, 22, y);
       y += 5.5;
     });
-    y += 4;
+    y += 3;
   }
 
-  // Section 5: Detalhamento de Vistorias
+  if (vehExp.length > 0) {
+    if (y > 265) { doc.addPage(); y = 15; }
+    doc.setFont('helvetica', 'bold');
+    doc.text('Despesas Eventuais / Pedágios / Taxas:', 18, y);
+    y += 5;
+    doc.setFont('helvetica', 'normal');
+    vehExp.forEach((e) => {
+      if (y > 270) { doc.addPage(); y = 15; }
+      doc.text(`• ${e.date ? new Date(e.date + 'T12:00:00').toLocaleDateString('pt-BR') : 'S/D'} - [${e.category}] ${e.description || '-'} (R$ ${(e.cost || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })})`, 22, y);
+      y += 5.5;
+    });
+    y += 3;
+  }
+
+  // Section 5: Multas e Sinistros (com anexos)
+  const vehFines = vehicle.fines || [];
+  if (vehFines.length > 0 || vehSinistros.length > 0) {
+    if (y > 240) { doc.addPage(); y = 15; }
+    doc.setFillColor(241, 245, 249);
+    doc.rect(14, y, 182, 7, 'F');
+    doc.setTextColor(primaryColor[0], primaryColor[1], primaryColor[2]);
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(11);
+    doc.text(`5. MULTAS E SINISTROS (${vehFines.length} multa(s), ${vehSinistros.length} sinistro(s))`, 18, y + 5);
+    y += 12;
+    doc.setFontSize(9);
+    doc.setTextColor(textColor[0], textColor[1], textColor[2]);
+
+    for (const f of vehFines) {
+      if (y > 265) { doc.addPage(); y = 15; }
+      const adminFee = getFineAdminFee(f);
+      const totalF = getFineTotal(f);
+      doc.setFont('helvetica', 'bold');
+      doc.text(`• ${f.dataHora} - ${f.descricao} | Total: R$ ${totalF.toLocaleString('pt-BR', { minimumFractionDigits: 2 })} [${f.status}]`, 20, y);
+      y += 5;
+      if (adminFee > 0 || (f.extraAdminFineAmount || 0) > 0) {
+        doc.setFont('helvetica', 'normal');
+        doc.text(`  (Nominal: R$ ${(f.valor || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}${adminFee > 0 ? ` + Taxa Adm ${f.adminFeePct ?? 20}%: R$ ${adminFee.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}` : ''}${(f.extraAdminFineAmount || 0) > 0 ? ` + Multa Adm: R$ ${(f.extraAdminFineAmount || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}` : ''})`, 22, y);
+        y += 5;
+      }
+      if (f.notificationUrl) {
+        y = await renderAttachmentIntoPdf(doc, f.notificationUrl, `Notificação da Multa (${f.dataHora})`, y, { maxW: 140, maxH: 100 });
+      }
+    }
+
+    for (const sin of vehSinistros) {
+      if (y > 265) { doc.addPage(); y = 15; }
+      doc.setFont('helvetica', 'bold');
+      doc.text(`• Sinistro ${sin.date ? new Date(sin.date + 'T12:00:00').toLocaleDateString('pt-BR') : ''} - ${sin.description} (Custo: R$ ${(sin.repairCost || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })})`, 20, y);
+      y += 5;
+      if (sin.boUrl) {
+        y = await renderAttachmentIntoPdf(doc, sin.boUrl, 'Anexo B.O. do Sinistro', y, { maxW: 150, maxH: 110 });
+      }
+      for (let idx = 0; idx < (sin.photos || []).length; idx++) {
+        y = await renderAttachmentIntoPdf(doc, sin.photos[idx], `Foto Sinistro #${idx + 1}`, y, { maxW: 130, maxH: 90 });
+      }
+    }
+  }
+
+  // Section 6: Detalhamento de Vistorias
   if (y > 240) { doc.addPage(); y = 15; }
 
   doc.setFillColor(241, 245, 249);
@@ -282,7 +656,7 @@ export async function generateVehiclePDF(
   doc.setTextColor(primaryColor[0], primaryColor[1], primaryColor[2]);
   doc.setFont('helvetica', 'bold');
   doc.setFontSize(11);
-  doc.text(`5. HISTÓRICO E LAUDOS DE VISTORIAS (${vehVistorias.length})`, 18, y + 5);
+  doc.text(`6. HISTÓRICO E LAUDOS DE VISTORIAS (${vehVistorias.length})`, 18, y + 5);
 
   y += 12;
   doc.setFontSize(9);
@@ -345,7 +719,7 @@ export async function generateVehiclePDF(
         y += 5;
       }
 
-      // Vistoria Photos
+      // Vistoria Photos (converting to JPEG via canvas with aspect ratio)
       if (v.photos && v.photos.length > 0) {
         if (y > 220) { doc.addPage(); y = 15; }
         doc.setFont('helvetica', 'bold');
@@ -355,7 +729,7 @@ export async function generateVehiclePDF(
         let imgX = 22;
         for (const photoUrl of v.photos) {
           if (!photoUrl) continue;
-          const imgData = await urlToDataUrl(photoUrl);
+          const imgData = await urlToDataUrlWithDimensions(photoUrl);
           if (imgData) {
             try {
               if (imgX + 45 > 190) {
@@ -373,13 +747,15 @@ export async function generateVehiclePDF(
         if (imgX > 22) {
           y += 34;
         }
+      } else if (v.pdfDataUrl) {
+        y = await renderAttachmentIntoPdf(doc, v.pdfDataUrl, `Laudo PDF Vistoria #${index + 1}`, y, { fileType: 'pdf' });
       }
 
       y += 4;
     }
   }
 
-  // Section 6: Documentos e Anexos do Veículo
+  // Section 7: Documentos e Anexos do Veículo / Contrato (Imagens e PDFs completos)
   if (y > 240) { doc.addPage(); y = 15; }
 
   const docs = vehicle.documents || [];
@@ -388,7 +764,7 @@ export async function generateVehiclePDF(
   doc.setTextColor(primaryColor[0], primaryColor[1], primaryColor[2]);
   doc.setFont('helvetica', 'bold');
   doc.setFontSize(11);
-  doc.text(`6. DOCUMENTOS E ANEXOS REGISTRADOS DO VEÍCULO (${docs.length})`, 18, y + 5);
+  doc.text(`7. DOCUMENTOS E ANEXOS DO CONTRATO E VEÍCULO (${docs.length})`, 18, y + 5);
 
   y += 12;
   doc.setFontSize(9);
@@ -396,30 +772,31 @@ export async function generateVehiclePDF(
 
   if (docs.length === 0) {
     doc.setFont('helvetica', 'italic');
-    doc.text('Nenhum documento anexado ao cadastro do veículo.', 18, y);
+    doc.text('Nenhum documento anexado ao contrato/veículo.', 18, y);
     y += 8;
   } else {
     for (const d of docs) {
-      if (y > 250) { doc.addPage(); y = 15; }
+      if (y > 255) { doc.addPage(); y = 15; }
 
       doc.setFont('helvetica', 'bold');
-      doc.text(`• [${d.category || 'Geral'}] ${d.name}`, 22, y);
+      doc.text(`• [${d.category || 'Geral'}] ${d.name}`, 18, y);
+      y += 4.5;
       doc.setFont('helvetica', 'normal');
-      doc.text(`(Enviado em: ${d.uploadDate || 'S/D'} ${d.fileSize ? `- ${d.fileSize}` : ''})`, 110, y);
+      doc.setFontSize(8);
+      doc.setTextColor(100, 116, 139);
+      doc.text(`Enviado em: ${d.uploadDate || 'S/D'}${d.fileSize ? ` • ${d.fileSize}` : ''}`, 22, y);
+      doc.setFontSize(9);
+      doc.setTextColor(textColor[0], textColor[1], textColor[2]);
       y += 5;
 
-      // If document image contentUrl is embedded
       if (d.contentUrl) {
-        const docImgData = await urlToDataUrl(d.contentUrl);
-        if (docImgData) {
-          try {
-            if (y > 220) { doc.addPage(); y = 15; }
-            doc.addImage(docImgData.dataUrl, docImgData.format, 22, y, 55, 38);
-            y += 42;
-          } catch (err) {
-            console.warn('Erro ao inserir imagem do documento no PDF:', err);
-          }
-        }
+        y = await renderAttachmentIntoPdf(
+          doc,
+          d.contentUrl,
+          `Anexo: [${d.category || 'Geral'}] ${d.name}`,
+          y,
+          { fileType: d.fileType, fileName: d.name }
+        );
       }
     }
   }
