@@ -3,10 +3,16 @@ import { Capacitor, registerPlugin } from '@capacitor/core';
 const Filesystem = registerPlugin<any>('Filesystem');
 const Share = registerPlugin<any>('Share');
 const Directory = { Cache: 'CACHE', Documents: 'DOCUMENTS', Data: 'DATA' };
-import { Vehicle, ExpenseLog, WeeklyPayment, Vistoria, VehicleDocument, MaintenanceLog, FuelLog, SinistroLog, PromisePayment, TireState } from '../types';
+import { Vehicle, ExpenseLog, WeeklyPayment, Vistoria, VehicleDocument, MaintenanceLog, FuelLog, SinistroLog, PromisePayment, TireState, FinalizedContract } from '../types';
 import { generateVistoriaPDF, generatePaymentReceiptPDF } from '../utils/pdfGenerator';
 import { sendAppNotification, requestNotificationPermission } from '../utils/notifications';
 import { syncVehicleFipe, applyManualFipeOverride } from '../utils/fipeService';
+import {
+  resolveVehiclePeriodsForMonth,
+  buildDisplayVehicleForPeriod,
+  applyScopedVehicleUpdate,
+  getVehicleRevenueForMonth,
+} from '../utils/driverHistory';
 import { PdfViewer } from './PdfViewer';
 import { encodeVistoriaParams } from '../utils/vistoriaUrl';
 import { db, isPreview } from '../firebase';
@@ -70,7 +76,15 @@ import { TiresManagementModal } from './TiresManagementModal';
 import { FinesManagementModal } from './FinesManagementModal';
 import CurrencyInput from './CurrencyInput';
 import { ConfirmDeleteModal } from './ConfirmDeleteModal';
+import { PaymentDateConfirmModal } from './PaymentDateConfirmModal';
 import { printImage, printPdfDataUrl, downloadFileDirect, shareFileWithAttachment, openFileExternal } from '../utils/printHelper';
+import {
+  WEEKDAY_OPTIONS,
+  getWeekdayLabel,
+  getDueDayTextFromWeekday,
+  resolveVehiclePaymentDayOfWeek,
+  generateMonthlyPaymentsForVehicle,
+} from '../utils/paymentSchedule';
 
 interface InlineEditProps {
   value: number;
@@ -490,6 +504,7 @@ interface VehicleCardProps {
   onOpenInterestCalculator?: (vehicle: Vehicle) => void;
   onShowDeleteConfirm?: (title: string, description: string, onConfirm: () => void) => void;
   isQuotaExhausted?: boolean;
+  finalizedContracts?: FinalizedContract[];
 }
 
 
@@ -505,11 +520,11 @@ const getWeekNumber = (date: Date) => {
 };
 
 export const VehicleCard: React.FC<VehicleCardProps> = ({
-  vehicle,
+  vehicle: liveVehicle,
   vehicleExpenses,
   maintenanceLogs,
   onEdit,
-  onUpdateVehicle,
+  onUpdateVehicle: onRawUpdateVehicle,
   onAddExpense,
   onDeleteExpense,
   onDeleteVehicle,
@@ -532,8 +547,37 @@ export const VehicleCard: React.FC<VehicleCardProps> = ({
   onOpenInterestCalculator,
   onShowDeleteConfirm,
   isQuotaExhausted,
+  finalizedContracts = [],
 }) => {
   const [isExpanded, setIsExpanded] = useState(false); // Default to collapsed/closed as requested by user
+
+  const currentMonth = selectedMonth !== undefined ? selectedMonth : new Date().getMonth();
+  const currentYear = selectedYear !== undefined ? selectedYear : new Date().getFullYear();
+
+  const [selectedPeriodIdx, setSelectedPeriodIdx] = useState(0);
+  useEffect(() => {
+    setSelectedPeriodIdx(0);
+  }, [currentMonth, currentYear, liveVehicle.id]);
+
+  const monthResolution = resolveVehiclePeriodsForMonth(liveVehicle, currentMonth, currentYear, finalizedContracts);
+  const safePeriodIdx = Math.min(selectedPeriodIdx, Math.max(0, monthResolution.periods.length - 1));
+  const activeMonthPeriod = monthResolution.periods[safePeriodIdx] || null;
+  const displayVehicle = buildDisplayVehicleForPeriod(liveVehicle, activeMonthPeriod, monthResolution.isPastMonth);
+
+  // Scoped shadows: UI reads displayVehicle for driver/contract/payment fields, and writes safely back to either active or historical period
+  const vehicle = displayVehicle;
+  const onUpdateVehicle = (updated: Vehicle) => {
+    onRawUpdateVehicle(
+      applyScopedVehicleUpdate(
+        liveVehicle,
+        updated,
+        activeMonthPeriod,
+        monthResolution.isPastMonth,
+        currentMonth,
+        currentYear
+      )
+    );
+  };
 
   const today = new Date();
   const currentWeek = getWeekNumber(today);
@@ -625,11 +669,16 @@ export const VehicleCard: React.FC<VehicleCardProps> = ({
   const [paymentWhatsAppAmount, setPaymentWhatsAppAmount] = useState<number>(() => vehicle.valorSemanal || vehicle.valorRecebido || 0);
   const [paymentWhatsAppDueDate, setPaymentWhatsAppDueDate] = useState<string>(() => {
     const payments = vehicle.weeklyPayments || [];
-    if (payments.length > 0) {
-      const sorted = [...payments].sort((a, b) => b.date.localeCompare(a.date));
-      return getNextWeekDate(sorted[0].date);
+    const todayIso = new Date().toISOString().split('T')[0];
+    const pastOrToday = payments.filter((p) => p.date <= todayIso).sort((a, b) => b.date.localeCompare(a.date));
+    if (pastOrToday.length > 0) {
+      return getNextWeekDate(pastOrToday[0].date);
     }
-    return vehicle.startDate ? getNextWeekDate(vehicle.startDate) : new Date().toISOString().split('T')[0];
+    const upcoming = payments.filter((p) => p.date > todayIso).sort((a, b) => a.date.localeCompare(b.date));
+    if (upcoming.length > 0) {
+      return upcoming[0].date;
+    }
+    return vehicle.startDate ? getNextWeekDate(vehicle.startDate) : todayIso;
   });
   const [jurosMoraPercentage, setJurosMoraPercentage] = useState<number>(10);
   const [jurosMoratoriosPercentage, setJurosMoratoriosPercentage] = useState<number>(1);
@@ -650,6 +699,81 @@ export const VehicleCard: React.FC<VehicleCardProps> = ({
   const [batchStartDate, setBatchStartDate] = useState(() => new Date().toISOString().split('T')[0]);
   const [batchItems, setBatchItems] = useState<Array<{ id: string; date: string; amount: number }>>([]);
   const [showPromiseHistory, setShowPromiseHistory] = useState(false);
+
+  // Payment / Promise confirmation calendar modal state
+  const [paymentConfirmModal, setPaymentConfirmModal] = useState<{
+    type: 'weekly' | 'promise';
+    title: string;
+    amount: number;
+    promiseId?: string;
+    initialDate?: string;
+  } | null>(null);
+
+  const handleConfirmPaymentWithDate = (selectedDate: string) => {
+    if (!paymentConfirmModal) return;
+    if (paymentConfirmModal.type === 'weekly') {
+      const quickAmt = paymentConfirmModal.amount;
+      if (quickAmt <= 0) {
+        setPaymentConfirmModal(null);
+        return;
+      }
+      const newPay = {
+        id: `wp-${Date.now()}-${Math.random().toString(36).substr(2, 5)}`,
+        date: selectedDate,
+        amount: quickAmt,
+      };
+      const updatedWeeklyPayments = [...(vehicle.weeklyPayments || []), newPay];
+      onUpdateVehicle({
+        ...vehicle,
+        weeklyPayments: updatedWeeklyPayments,
+      });
+      const brDate = selectedDate.split('-').reverse().join('/');
+      sendAppNotification(`💰 Pagamento Semanal Confirmado: ${vehicle.brand} (${vehicle.plate})`, {
+        body: `Pagamento de R$ ${quickAmt.toLocaleString('pt-BR', { minimumFractionDigits: 2 })} confirmado para o dia ${brDate}!`,
+        eventKey: 'payment_registered',
+      });
+    } else if (paymentConfirmModal.type === 'promise') {
+      const parts = selectedDate.split('-');
+      const brDate = parts.length === 3 ? `${parts[2]}/${parts[1]}/${parts[0]}` : selectedDate;
+      const now = new Date();
+      const todayIsoLocal = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+      const paidAtStr = selectedDate === todayIsoLocal
+        ? `${brDate} às ${now.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}`
+        : brDate;
+
+      let found = false;
+      const updatedPromises = (vehicle.promisePayments || []).map((p, idx) => {
+        const isMatch = paymentConfirmModal.promiseId
+          ? p.id === paymentConfirmModal.promiseId
+          : (!p.isPaid && !found);
+        if (isMatch) {
+          found = true;
+          return {
+            ...p,
+            id: p.id || `prom-${idx}-${Date.now()}`,
+            isPaid: true,
+            paidAt: paidAtStr,
+            paidDate: selectedDate,
+          };
+        }
+        return {
+          ...p,
+          id: p.id || `prom-${idx}-${Date.now()}`,
+        };
+      });
+
+      onUpdateVehicle({
+        ...vehicle,
+        promisePayments: updatedPromises,
+      });
+
+      sendAppNotification(`💰 Promessa de Caução Confirmada: ${vehicle.brand} (${vehicle.plate})`, {
+        body: `Parcela de R$ ${(paymentConfirmModal.amount || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })} da caução confirmada em ${brDate}!`,
+        eventKey: 'payment_registered',
+      });
+    }
+    setPaymentConfirmModal(null);
+  };
 
   const handleGenerateBatchItems = () => {
     const count = Math.max(1, Math.min(52, Number(batchCount) || 1));
@@ -806,24 +930,34 @@ export const VehicleCard: React.FC<VehicleCardProps> = ({
   };
 
   React.useEffect(() => {
-    if (vehicle.driverPhone) setPaymentWhatsAppPhone(vehicle.driverPhone);
+    setPaymentWhatsAppPhone(vehicle.driverPhone || '');
     if (vehicle.valorSemanal) {
       setPaymentWhatsAppAmount(vehicle.valorSemanal);
     } else if (vehicle.valorRecebido) {
       setPaymentWhatsAppAmount(vehicle.valorRecebido);
+    } else {
+      setPaymentWhatsAppAmount(0);
     }
     const payments = vehicle.weeklyPayments || [];
-    if (payments.length > 0) {
-      const sorted = [...payments].sort((a, b) => b.date.localeCompare(a.date));
-      const nextDue = getNextWeekDate(sorted[0].date);
+    const todayIso = new Date().toISOString().split('T')[0];
+    const pastOrToday = payments.filter((p) => p.date <= todayIso).sort((a, b) => b.date.localeCompare(a.date));
+    if (pastOrToday.length > 0) {
+      const nextDue = getNextWeekDate(pastOrToday[0].date);
       setPaymentWhatsAppDueDate(nextDue);
       setNewPaymentDate(nextDue);
+    } else if (payments.length > 0) {
+      const upcoming = [...payments].sort((a, b) => a.date.localeCompare(b.date));
+      setPaymentWhatsAppDueDate(upcoming[0].date);
+      setNewPaymentDate(upcoming[0].date);
     } else if (vehicle.startDate) {
       const nextDue = getNextWeekDate(vehicle.startDate);
       setPaymentWhatsAppDueDate(nextDue);
       setNewPaymentDate(nextDue);
+    } else {
+      setPaymentWhatsAppDueDate(todayIso);
+      setNewPaymentDate(todayIso);
     }
-  }, [vehicle.driverPhone, vehicle.valorSemanal, vehicle.valorRecebido, vehicle.startDate]);
+  }, [vehicle.driver, vehicle.driverPhone, vehicle.valorSemanal, vehicle.valorRecebido, vehicle.startDate, currentMonth, currentYear]);
 
   // Expense form state
   const [showAddExpense, setShowAddExpense] = useState(false);
@@ -1206,10 +1340,7 @@ export const VehicleCard: React.FC<VehicleCardProps> = ({
     return null;
   };
 
-  // Helper to check if a date string belongs to current month and year
-  const currentMonth = selectedMonth !== undefined ? selectedMonth : new Date().getMonth();
-  const currentYear = selectedYear !== undefined ? selectedYear : new Date().getFullYear();
-
+  // Helper to check if a date string belongs to selected month and year
   const isCurrentMonth = (dateStr: string) => {
     if (!dateStr) return false;
     const parts = dateStr.split('-');
@@ -1227,14 +1358,15 @@ export const VehicleCard: React.FC<VehicleCardProps> = ({
     .reduce((sum, wp) => sum + wp.amount, 0);
 
   // Financial fields
-  // If there are weekly payments in the current month, they automatically sum up to become the "Valor Recebido".
-  // Otherwise, it falls back to the manually edited/saved vehicle.valorRecebido.
+  // In previous months (or when multiple drivers shared a month), sum revenue accurately across recorded periods for that month
   const hasWeeklyPaymentsInCurrentMonth = (vehicle.weeklyPayments || [])
     .some((wp) => isCurrentMonth(wp.date));
 
-  const valorRecebido = hasWeeklyPaymentsInCurrentMonth 
-    ? totalWeeklyReceivedInCurrentMonth 
-    : (vehicle.valorRecebido || 0);
+  const valorRecebido = monthResolution.isPastMonth || monthResolution.periods.length > 1
+    ? getVehicleRevenueForMonth(liveVehicle, currentMonth, currentYear, finalizedContracts)
+    : hasWeeklyPaymentsInCurrentMonth
+    ? totalWeeklyReceivedInCurrentMonth
+    : ((vehicle.weeklyPayments || []).length > 0 ? 0 : (vehicle.valorRecebido || 0));
 
   const financiamento = vehicle.financiamento || 0;
   const seguro = vehicle.seguro || 0;
@@ -1815,26 +1947,118 @@ export const VehicleCard: React.FC<VehicleCardProps> = ({
     reader.readAsDataURL(file);
   };
 
-  const processVistoriaPhoto = (file: File) => {
-    if (!file.type.startsWith('image/')) return;
-    const reader = new FileReader();
-    reader.onload = (e) => {
-      const dataUrl = e.target?.result as string;
-      setNewVistoriaPhotos(prev => [...prev, dataUrl]);
+  const compressVistoriaPhotoFile = (file: File): Promise<string> => {
+    return new Promise((resolve) => {
+      if (!file.type.startsWith('image/')) return resolve('');
+      const reader = new FileReader();
+      reader.onload = (ev) => {
+        const rawUrl = ev.target?.result as string;
+        if (!rawUrl) return resolve('');
+        const img = new Image();
+        img.onload = () => {
+          try {
+            const canvas = document.createElement('canvas');
+            const MAX_DIM = 900;
+            let width = img.width || 800;
+            let height = img.height || 600;
+            if (width > height) {
+              if (width > MAX_DIM) {
+                height = Math.round((height * MAX_DIM) / width);
+                width = MAX_DIM;
+              }
+            } else {
+              if (height > MAX_DIM) {
+                width = Math.round((width * MAX_DIM) / height);
+                height = MAX_DIM;
+              }
+            }
+            canvas.width = width;
+            canvas.height = height;
+            const ctx = canvas.getContext('2d');
+            if (ctx) {
+              ctx.fillStyle = '#FFFFFF';
+              ctx.fillRect(0, 0, width, height);
+              ctx.drawImage(img, 0, 0, width, height);
+              resolve(canvas.toDataURL('image/jpeg', 0.72));
+              return;
+            }
+          } catch (err) {
+            console.warn('Erro ao comprimir foto da vistoria:', err);
+          }
+          resolve(rawUrl);
+        };
+        img.onerror = () => resolve(rawUrl);
+        img.src = rawUrl;
+      };
+      reader.onerror = () => resolve('');
+      reader.readAsDataURL(file);
+    });
+  };
+
+  const processVistoriaPhoto = async (file: File) => {
+    const compressed = await compressVistoriaPhotoFile(file);
+    if (compressed) {
+      setNewVistoriaPhotos(prev => [...prev, compressed]);
+    }
+  };
+
+  const handleUploadPhotosToExistingVistoria = async (v: Vistoria, files: FileList | null) => {
+    if (!files || files.length === 0 || !onSaveVistoria) return;
+    const compressedList: string[] = [];
+    for (const file of Array.from(files)) {
+      const dataUrl = await compressVistoriaPhotoFile(file);
+      if (dataUrl) compressedList.push(dataUrl);
+    }
+    if (compressedList.length === 0) return;
+
+    const updatedVistoria: Vistoria = {
+      ...v,
+      photos: [...(v.photos || []), ...compressedList],
+      status: v.status === 'approved' ? 'approved' : 'pending',
     };
-    reader.readAsDataURL(file);
+
+    let pdfUrl = '';
+    let pdfName = '';
+    try {
+      const generated = await generateVistoriaPDF(vehicle, updatedVistoria);
+      pdfUrl = generated.pdfDataUrl;
+      pdfName = generated.fileName;
+    } catch (err) {
+      console.error('Erro ao regerar PDF após upload de fotos na vistoria:', err);
+    }
+
+    onSaveVistoria(updatedVistoria, pdfUrl || undefined, pdfName || undefined);
+    setExpandedVistoriaId(updatedVistoria.id);
+  };
+
+  const handleOpenManualEntregaVistoria = () => {
+    if (!isVistoriaExpanded) setIsVistoriaExpanded(true);
+    const nextState = !showAddVistoria || newVistoriaType !== 'entrega';
+    setNewVistoriaType('entrega');
+    const entregaItems = getChecklistForVistoriaType('entrega', checklistConfig);
+    const initCheck: Record<string, boolean> = {};
+    entregaItems.forEach(it => { initCheck[it] = true; });
+    setNewVistoriaChecklist(initCheck);
+    setShowAddVistoria(nextState);
+    setShowScheduleVistoria(false);
+    setShowPaymentWhatsApp(false);
+    setShowAddPayment(false);
+    setShowMaintenanceWhatsApp(false);
+    setIsRequestingNewVistoria(false);
+    setSharingVistoria(null);
   };
 
   const handleVistoriaFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = Array.from(e.target.files || []);
-    files.forEach(processVistoriaPhoto);
+    files.forEach((file) => { void processVistoriaPhoto(file); });
+    e.target.value = '';
   };
 
   const handleVistoriaDrop = (e: React.DragEvent) => {
     e.preventDefault();
     setIsDraggingPhoto(false);
     const files = Array.from(e.dataTransfer.files || []);
-    files.forEach(processVistoriaPhoto);
+    files.forEach((file) => { void processVistoriaPhoto(file); });
   };
 
   const handleVistoriaDragOver = (e: React.DragEvent) => {
@@ -2318,11 +2542,47 @@ _Enviado via sistema de gestão de frota._`;
               {vehicle.brand} <span className="font-medium text-gray-300 break-all break-words">{vehicle.model}</span>
             </h3>
             <div className="text-xs text-gray-400 mt-1 flex flex-col sm:flex-row sm:items-center justify-between gap-2 flex-wrap min-w-0 max-w-full">
-              <div className="flex items-center gap-1.5 flex-wrap min-w-0">
-                <User className="w-3.5 h-3.5 text-gray-500 shrink-0" />
-                <span>Locatário: <strong className="text-gray-200 font-semibold break-all">{vehicle.driver || 'Não definido'}</strong></span>
-                {vehicle.driverPhone && (
-                  <span className="text-[10px] text-gray-500 font-mono shrink-0">({vehicle.driverPhone})</span>
+              <div className="flex flex-col gap-1 min-w-0">
+                <div className="flex items-center gap-1.5 flex-wrap min-w-0">
+                  <User className="w-3.5 h-3.5 text-gray-500 shrink-0" />
+                  <span>
+                    Locatário:{' '}
+                    <strong className={`font-semibold break-all ${vehicle.driver ? 'text-gray-200' : 'text-gray-500 italic'}`}>
+                      {vehicle.driver || (monthResolution.isPastMonth ? 'Sem locatário neste mês' : 'Não definido')}
+                    </strong>
+                  </span>
+                  {vehicle.driverPhone && (
+                    <span className="text-[10px] text-gray-500 font-mono shrink-0">({vehicle.driverPhone})</span>
+                  )}
+                  {monthResolution.isPastMonth && activeMonthPeriod && activeMonthPeriod.kind !== 'active' && (
+                    <span
+                      className="text-[9px] font-bold bg-amber-500/15 text-amber-300 border border-amber-500/30 px-1.5 py-0.5 rounded-md flex items-center gap-1 shrink-0"
+                      title="Motorista preservado no histórico do mês selecionado"
+                    >
+                      <History className="w-2.5 h-2.5" />
+                      <span>Histórico{activeMonthPeriod.periodLabel ? ` (${activeMonthPeriod.periodLabel})` : ''}</span>
+                    </span>
+                  )}
+                </div>
+
+                {monthResolution.periods.length > 1 && (
+                  <div className="flex items-center gap-1 flex-wrap pl-5" onClick={(e) => e.stopPropagation()}>
+                    <span className="text-[9px] text-gray-500 uppercase font-bold">Neste mês:</span>
+                    {monthResolution.periods.map((p, idx) => (
+                      <button
+                        key={p.periodId}
+                        type="button"
+                        onClick={() => setSelectedPeriodIdx(idx)}
+                        className={`text-[9px] px-2 py-0.5 rounded-md border font-semibold transition-all cursor-pointer ${
+                          idx === safePeriodIdx
+                            ? 'bg-blue-500/20 text-blue-300 border-blue-500/40'
+                            : 'bg-white/[0.03] text-gray-400 border-white/10 hover:text-white'
+                        }`}
+                      >
+                        {p.snapshot.driver || 'Motorista'}{p.periodLabel ? ` (${p.periodLabel})` : ''}
+                      </button>
+                    ))}
+                  </div>
                 )}
               </div>
 
@@ -2357,7 +2617,7 @@ _Enviado via sistema de gestão de frota._`;
                   <span>Lembrete Pagamento</span>
                 </button>
 
-                {/* #2 Botão Pagamento Rápido (1 Clique) */}
+                {/* #2 Botão Pagamento Rápido */}
                 {(vehicle.valorSemanal || vehicle.valorRecebido > 0) && (
                   <button
                     type="button"
@@ -2365,39 +2625,26 @@ _Enviado via sistema de gestão de frota._`;
                     onClick={(e) => {
                       e.stopPropagation();
                       if (alreadyPaid) return;
-                      // Use the fixed weekly value if available, otherwise fallback to the generic received value
                       const quickAmt = vehicle.valorSemanal || vehicle.valorRecebido || 0;
                       if (quickAmt <= 0) return;
-                      
-                      const todayIso = new Date().toISOString().split('T')[0];
-                      const newPay = {
-                        id: `wp-${Date.now()}-${Math.random().toString(36).substr(2, 5)}`,
-                        date: todayIso,
-                        amount: quickAmt
-                      };
-                      
-                      // Explicitly clone and update to ensure state propagation
-                      const updatedWeeklyPayments = [...(vehicle.weeklyPayments || []), newPay];
-                      
-                      onUpdateVehicle({
-                        ...vehicle,
-                        weeklyPayments: updatedWeeklyPayments
-                      });
-                      
-                      sendAppNotification(`💰 Pagamento Semanal Confirmado: ${vehicle.brand} (${vehicle.plate})`, {
-                        body: `Pagamento rápido de R$ ${quickAmt.toLocaleString('pt-BR', { minimumFractionDigits: 2 })} lançado em 1 clique!`,
-                        eventKey: 'payment_registered'
+                      const now = new Date();
+                      const todayLocal = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+                      setPaymentConfirmModal({
+                        type: 'weekly',
+                        title: 'Confirmar Pagamento Semanal',
+                        amount: quickAmt,
+                        initialDate: todayLocal,
                       });
                     }}
                     className={`text-[10px] text-amber-300 hover:text-slate-950 bg-amber-500/15 hover:bg-amber-400 border border-amber-500/30 px-2 py-0.5 rounded font-bold transition-all flex items-center gap-1 cursor-pointer shadow-xs shrink-0 ${alreadyPaid ? 'opacity-50 cursor-not-allowed' : ''}`}
-                    title={alreadyPaid ? "Pagamento semanal já confirmado" : "Lançar pagamento semanal de hoje com 1 clique"}
+                    title={alreadyPaid ? "Pagamento semanal já confirmado" : "Escolher a data no calendário e confirmar pagamento semanal"}
                   >
                     <Check className="w-3 h-3" />
                     <span>{alreadyPaid ? 'Confirmado' : `Confirmar Semanal (R$ ${(vehicle.valorSemanal || vehicle.valorRecebido || 0).toLocaleString('pt-BR')})`}</span>
                   </button>
                 )}
 
-                {/* #3 Botão Confirmar Próxima Promessa de Caução (1 Clique) */}
+                {/* #3 Botão Confirmar Próxima Promessa de Caução */}
                 {nextPendingPromise && (
                   <button
                     type="button"
@@ -2406,36 +2653,14 @@ _Enviado via sistema de gestão de frota._`;
                     onClick={(e) => {
                       e.stopPropagation();
                       if (alreadyPaidPromiseThisWeek) return;
-                      const nowStr = `${new Date().toLocaleDateString('pt-BR')} às ${new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}`;
-                      const todayIso = new Date().toISOString().split('T')[0];
-                      
-                      let found = false;
-                      const updatedPromises = (vehicle.promisePayments || []).map((p, idx) => {
-                        const isMatch = nextPendingPromise.id ? (p.id === nextPendingPromise.id) : (!p.isPaid && !found);
-                        if (isMatch) {
-                          found = true;
-                          return { 
-                            ...p, 
-                            id: p.id || `prom-${idx}-${Date.now()}`,
-                            isPaid: true, 
-                            paidAt: nowStr,
-                            paidDate: todayIso
-                          };
-                        }
-                        return {
-                          ...p,
-                          id: p.id || `prom-${idx}-${Date.now()}`
-                        };
-                      });
-                      
-                      onUpdateVehicle({
-                        ...vehicle,
-                        promisePayments: updatedPromises
-                      });
-                      
-                      sendAppNotification(`💰 Promessa de Caução Confirmada: ${vehicle.brand} (${vehicle.plate})`, {
-                        body: `Parcela de R$ ${(nextPendingPromise.amount || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })} da caução confirmada em 1 clique!`,
-                        eventKey: 'payment_registered'
+                      const now = new Date();
+                      const todayLocal = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+                      setPaymentConfirmModal({
+                        type: 'promise',
+                        title: 'Confirmar Promessa de Caução',
+                        amount: nextPendingPromise.amount || 0,
+                        promiseId: nextPendingPromise.id,
+                        initialDate: todayLocal,
                       });
                     }}
                     className={`text-[10px] font-bold transition-all flex items-center gap-1 shadow-xs shrink-0 ${
@@ -2443,7 +2668,7 @@ _Enviado via sistema de gestão de frota._`;
                         ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 opacity-60 cursor-not-allowed'
                         : 'text-indigo-300 hover:text-white bg-indigo-500/20 hover:bg-indigo-600 border border-indigo-500/30 cursor-pointer'
                     }`}
-                    title={alreadyPaidPromiseThisWeek ? "Parcela da promessa já confirmada nesta semana. Para alterar, acesse o cadastro do carro." : "Confirmar recebimento da próxima parcela da promessa de caução em 1 clique"}
+                    title={alreadyPaidPromiseThisWeek ? "Parcela da promessa já confirmada nesta semana. Para alterar, acesse o cadastro do carro." : "Escolher a data no calendário e confirmar recebimento da promessa de caução"}
                   >
                     <Check className="w-3 h-3 text-emerald-400" />
                     <span>{alreadyPaidPromiseThisWeek ? 'Confirmado' : `Confirmar Promessa (R$ ${(nextPendingPromise.amount || 0).toLocaleString('pt-BR')})`}</span>
@@ -2478,7 +2703,7 @@ _Enviado via sistema de gestão de frota._`;
                 type="button"
                 onClick={(e) => {
                   e.stopPropagation();
-                  onFinalizeContract(vehicle);
+                  onFinalizeContract(liveVehicle);
                 }}
                 className="px-2.5 py-1.5 text-xs font-bold text-amber-300 bg-amber-500/15 hover:bg-amber-500/25 border border-amber-500/30 rounded-xl transition-all flex items-center gap-1.5 cursor-pointer shadow-sm shadow-amber-500/10"
                 title="Finalizar contrato de locação (salva o histórico e mantém o veículo salvo no sistema)"
@@ -2585,7 +2810,7 @@ _Enviado via sistema de gestão de frota._`;
             <button
               onClick={(e) => {
                 e.stopPropagation();
-                onEdit(vehicle);
+                onEdit(liveVehicle);
               }}
               className="p-2 text-gray-400 hover:text-white hover:bg-white/5 rounded-xl transition-colors cursor-pointer"
               title="Editar informações do veículo"
@@ -3489,13 +3714,31 @@ _Enviado via sistema de gestão de frota._`;
                 </div>
                 
                 {(() => {
-                  const lifetimeRevenue = (vehicle.weeklyPayments || []).reduce((sum, p) => sum + (p.amount || 0), 0);
+                  const seenRoiPayIds = new Set<string>();
+                  const allRoiPayments: WeeklyPayment[] = [];
+                  for (const wp of liveVehicle.weeklyPayments || []) {
+                    const key = wp.id || `${wp.date}_${wp.amount}`;
+                    if (!seenRoiPayIds.has(key)) {
+                      seenRoiPayIds.add(key);
+                      allRoiPayments.push(wp);
+                    }
+                  }
+                  for (const h of liveVehicle.driverHistory || []) {
+                    for (const wp of h.weeklyPayments || []) {
+                      const key = wp.id || `${wp.date}_${wp.amount}`;
+                      if (!seenRoiPayIds.has(key)) {
+                        seenRoiPayIds.add(key);
+                        allRoiPayments.push(wp);
+                      }
+                    }
+                  }
+                  const lifetimeRevenue = allRoiPayments.reduce((sum, p) => sum + (p.amount || 0), 0);
                   const lifetimeMaint = maintenanceLogs.reduce((sum, log) => sum + (log.cost || 0), 0);
                   const lifetimeExp = vehicleExpenses.reduce((sum, exp) => sum + (exp.cost || 0), 0);
                   const lifetimeSinistro = sinistroLogs.reduce((sum, s) => sum + (s.repairCost || 0), 0);
                   
                   // Simple monthly cost projection for ROI (Fixed costs * months active)
-                  const start = new Date(vehicle.startDate || '2026-01-01');
+                  const start = new Date(vehicle.startDate || liveVehicle.startDate || '2026-01-01');
                   const now = new Date();
                   const monthsDiff = Math.max(1, (now.getFullYear() - start.getFullYear()) * 12 + (now.getMonth() - start.getMonth()));
                   
@@ -3755,13 +3998,25 @@ _Enviado via sistema de gestão de frota._`;
                                   <button
                                     type="button"
                                     onClick={() => {
-                                      const nowStr = `${new Date().toLocaleDateString('pt-BR')} às ${new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}`;
+                                      if (!p.isPaid) {
+                                        const now = new Date();
+                                        const todayLocal = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+                                        setPaymentConfirmModal({
+                                          type: 'promise',
+                                          title: `Confirmar Parcela #${idx + 1} do Caução`,
+                                          amount: p.amount || 0,
+                                          promiseId: p.id,
+                                          initialDate: todayLocal,
+                                        });
+                                        return;
+                                      }
                                       onUpdateVehicle({
                                         ...vehicle,
                                         promisePayments: (vehicle.promisePayments || []).map(prev => prev.id === p.id ? { 
                                           ...prev, 
-                                          isPaid: !prev.isPaid,
-                                          paidAt: !prev.isPaid ? (prev.paidAt || nowStr) : undefined
+                                          isPaid: false,
+                                          paidAt: undefined,
+                                          paidDate: undefined
                                         } : prev)
                                       });
                                     }}
@@ -4275,6 +4530,38 @@ _Enviado via sistema de gestão de frota._`;
                     </button>
                   )}
                   <button
+                    type="button"
+                    onClick={() => {
+                      const amt = Number(vehicle.valorSemanal) || Number(vehicle.valorRecebido) || 0;
+                      const dayOfWeek = resolveVehiclePaymentDayOfWeek(vehicle);
+                      if (amt <= 0) {
+                        alert('Defina o Valor Semanal no cadastro do carro antes de gerar os pagamentos do mês.');
+                        return;
+                      }
+                      if (dayOfWeek === null) {
+                        alert('Escolha o Dia da Semana do Pagamento no cadastro do carro (ou informe a Data Início) antes de gerar os pagamentos.');
+                        return;
+                      }
+                      const { vehicle: updatedVehicle, addedCount } = generateMonthlyPaymentsForVehicle(
+                        { ...vehicle, autoMonthlyPayments: true },
+                        currentMonth,
+                        currentYear
+                      );
+                      onUpdateVehicle(updatedVehicle);
+                      if (addedCount > 0) {
+                        sendAppNotification(`📅 Pagamentos do Mês Gerados: ${vehicle.brand} (${vehicle.plate})`, {
+                          body: `${addedCount} pagamento(s) de R$ ${amt.toLocaleString('pt-BR', { minimumFractionDigits: 2 })} (${getWeekdayLabel(dayOfWeek)}) criados para o mês!`,
+                          eventKey: 'payment_registered',
+                        });
+                      }
+                    }}
+                    className="text-[11px] text-purple-300 hover:text-purple-200 font-bold flex items-center gap-1 px-2 py-0.5 bg-purple-500/15 hover:bg-purple-500/25 border border-purple-500/25 rounded-md transition-all cursor-pointer"
+                    title="Gerar automaticamente todos os pagamentos do mês usando o valor semanal e o dia da semana cadastrados no veículo"
+                  >
+                    <Sparkles className="w-3.5 h-3.5 text-purple-400" />
+                    <span>Gerar Mês</span>
+                  </button>
+                  <button
                     onClick={() => {
                       const nextState = !showAddPayment;
                       setShowAddPayment(nextState);
@@ -4297,6 +4584,71 @@ _Enviado via sistema de gestão de frota._`;
                   </button>
                 </div>
               </div>
+
+              {/* Programação Automática do Cadastro */}
+              {(() => {
+                const resolvedDay = resolveVehiclePaymentDayOfWeek(vehicle);
+                const weeklyAmt = Number(vehicle.valorSemanal) || Number(vehicle.valorRecebido) || 0;
+                return (
+                  <div className="flex flex-wrap items-center justify-between gap-2 px-2.5 py-2 rounded-lg bg-black/40 border border-white/5 text-[10px]">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span className="text-gray-400 font-semibold">Regra do Cadastro:</span>
+                      <span className="font-mono font-bold text-emerald-300">
+                        R$ {weeklyAmt.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                      </span>
+                      <span className="text-gray-600">•</span>
+                      <span className="text-blue-300 font-semibold">
+                        Dia: {resolvedDay !== null ? getWeekdayLabel(resolvedDay) : 'Não definido'}
+                      </span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <select
+                        value={vehicle.paymentDayOfWeek !== undefined ? String(vehicle.paymentDayOfWeek) : (resolvedDay !== null ? String(resolvedDay) : '')}
+                        onChange={(e) => {
+                          const val = e.target.value;
+                          if (val === '') return;
+                          const dayNum = Number(val);
+                          onUpdateVehicle({
+                            ...vehicle,
+                            paymentDayOfWeek: dayNum,
+                            dueDay: getDueDayTextFromWeekday(dayNum),
+                          });
+                        }}
+                        className="bg-neutral-900 border border-white/10 text-gray-200 rounded px-2 py-0.5 text-[10px] font-semibold cursor-pointer focus:outline-hidden focus:border-blue-500"
+                        title="Alterar dia da semana do pagamento"
+                      >
+                        <option value="">Dia da semana...</option>
+                        {WEEKDAY_OPTIONS.map((w) => (
+                          <option key={w.value} value={w.value}>
+                            {w.label}
+                          </option>
+                        ))}
+                      </select>
+                      <label className="flex items-center gap-1 cursor-pointer text-gray-300" title="Gerar automaticamente ao virar ou selecionar mês">
+                        <input
+                          type="checkbox"
+                          checked={Boolean(vehicle.autoMonthlyPayments)}
+                          onChange={(e) => {
+                            const enabled = e.target.checked;
+                            if (enabled) {
+                              const { vehicle: genVeh } = generateMonthlyPaymentsForVehicle(
+                                { ...vehicle, autoMonthlyPayments: true },
+                                currentMonth,
+                                currentYear
+                              );
+                              onUpdateVehicle(genVeh);
+                            } else {
+                              onUpdateVehicle({ ...vehicle, autoMonthlyPayments: false });
+                            }
+                          }}
+                          className="w-3 h-3 accent-emerald-500 cursor-pointer"
+                        />
+                        <span className="text-[10px]">Auto Mês</span>
+                      </label>
+                    </div>
+                  </div>
+                );
+              })()}
 
               {/* WhatsApp Payment Reminder Panel */}
               {showPaymentWhatsApp && (
@@ -5428,6 +5780,22 @@ _Enviado via sistema de gestão de frota._`;
                     <span>Entrega</span>
                   </button>
 
+                  {/* Botão 1B: Subir Fotos Entrega (Realizada pelo Gestor) */}
+                  <button
+                    type="button"
+                    onClick={handleOpenManualEntregaVistoria}
+                    className={`text-[11px] font-bold flex items-center justify-center gap-1 px-2.5 py-1 rounded-md border transition-all cursor-pointer ${
+                      showAddVistoria && newVistoriaType === 'entrega'
+                        ? 'bg-cyan-600 text-white border-cyan-400 shadow-md shadow-cyan-600/20'
+                        : 'bg-cyan-500/10 text-cyan-300 hover:text-cyan-200 border-cyan-500/25 hover:bg-cyan-500/20'
+                    }`}
+                    id={`btn-vistoria-entrega-fotos-${vehicle.id}`}
+                    title="Subir fotos e registrar a Vistoria de Entrega diretamente pelo sistema"
+                  >
+                    <Camera className="w-3.5 h-3.5" />
+                    <span>+ Fotos Entrega</span>
+                  </button>
+
                   {/* Botão 2: periódica (Link p/ Motorista) */}
                   <button
                     type="button"
@@ -5987,6 +6355,25 @@ _Enviado via sistema de gestão de frota._`;
                             </div>
 
                             <div className="flex items-center gap-1.5 flex-wrap justify-start sm:justify-end w-full sm:w-auto pt-1 sm:pt-0 border-t border-white/5 sm:border-0" onClick={(e) => e.stopPropagation()}>
+                              {onSaveVistoria && (
+                                <label
+                                  className="px-2 py-0.5 bg-cyan-500/15 hover:bg-cyan-500/25 text-cyan-300 rounded border border-cyan-500/30 font-bold transition-all text-[10px] flex items-center gap-1 cursor-pointer"
+                                  title="Subir fotos diretamente para esta vistoria"
+                                >
+                                  <Camera className="w-3 h-3 text-cyan-300" />
+                                  <span>+ Fotos</span>
+                                  <input
+                                    type="file"
+                                    accept="image/*"
+                                    multiple
+                                    className="hidden"
+                                    onChange={(e) => {
+                                      void handleUploadPhotosToExistingVistoria(v, e.target.files);
+                                      e.target.value = '';
+                                    }}
+                                  />
+                                </label>
+                              )}
                               {v.status !== 'approved' && onApproveVistoria && (
                                 <button
                                   type="button"
@@ -6089,10 +6476,28 @@ _Enviado via sistema de gestão de frota._`;
 
                               {v.photos && v.photos.length > 0 ? (
                                 <div>
-                                  <h4 className="text-[9px] font-bold text-blue-400 uppercase tracking-wider mb-1.5 flex items-center gap-1">
-                                    <Camera className="w-3 h-3 text-blue-400" />
-                                    Fotos Registradas ({v.photos.length}) - Clique para ampliar
-                                  </h4>
+                                  <div className="flex items-center justify-between gap-2 mb-1.5 flex-wrap">
+                                    <h4 className="text-[9px] font-bold text-blue-400 uppercase tracking-wider flex items-center gap-1">
+                                      <Camera className="w-3 h-3 text-blue-400" />
+                                      Fotos Registradas ({v.photos.length}) - Clique para ampliar
+                                    </h4>
+                                    {onSaveVistoria && (
+                                      <label className="px-2 py-0.5 bg-cyan-500/15 hover:bg-cyan-500/25 border border-cyan-500/30 text-cyan-300 rounded text-[10px] font-bold flex items-center gap-1 cursor-pointer transition-all">
+                                        <UploadCloud className="w-3 h-3" />
+                                        <span>Adicionar Mais Fotos</span>
+                                        <input
+                                          type="file"
+                                          accept="image/*"
+                                          multiple
+                                          className="hidden"
+                                          onChange={(e) => {
+                                            void handleUploadPhotosToExistingVistoria(v, e.target.files);
+                                            e.target.value = '';
+                                          }}
+                                        />
+                                      </label>
+                                    )}
+                                  </div>
                                   <div className="flex gap-2 flex-wrap">
                                     {v.photos.map((ph, pIdx) => (
                                       <div 
@@ -6115,9 +6520,27 @@ _Enviado via sistema de gestão de frota._`;
                                   </div>
                                 </div>
                               ) : (
-                                <div className="p-2 bg-black/20 rounded border border-white/5 flex items-center gap-2 text-[10px] text-gray-400">
-                                  <Camera className="w-3.5 h-3.5 text-gray-500 shrink-0" />
-                                  <span>Nenhuma foto foi anexada durante o registro desta vistoria.</span>
+                                <div className="p-2.5 bg-black/20 rounded border border-white/5 flex items-center justify-between gap-2 flex-wrap text-[10px] text-gray-400">
+                                  <div className="flex items-center gap-2">
+                                    <Camera className="w-3.5 h-3.5 text-gray-500 shrink-0" />
+                                    <span>Nenhuma foto foi anexada durante o registro desta vistoria.</span>
+                                  </div>
+                                  {onSaveVistoria && (
+                                    <label className="px-2.5 py-1 bg-cyan-600/20 hover:bg-cyan-600/30 border border-cyan-500/30 text-cyan-300 rounded-md text-[10px] font-bold flex items-center gap-1.5 cursor-pointer transition-all">
+                                      <UploadCloud className="w-3.5 h-3.5" />
+                                      <span>Subir Fotos Agora</span>
+                                      <input
+                                        type="file"
+                                        accept="image/*"
+                                        multiple
+                                        className="hidden"
+                                        onChange={(e) => {
+                                          void handleUploadPhotosToExistingVistoria(v, e.target.files);
+                                          e.target.value = '';
+                                        }}
+                                      />
+                                    </label>
+                                  )}
                                 </div>
                               )}
 
@@ -6250,6 +6673,16 @@ _Enviado via sistema de gestão de frota._`;
                           <p className="text-[9px] text-emerald-400/90 italic">
                             Nas vistorias de <strong>entrega</strong> e <strong>periódica</strong>, o link único de utilização única é enviado ao motorista. A vistoria de <strong>devolução</strong> é feita diretamente por você no botão <strong>"+ Fazer devolução"</strong>.
                           </p>
+                          {requestVistoriaType === 'entrega' && (
+                            <button
+                              type="button"
+                              onClick={handleOpenManualEntregaVistoria}
+                              className="mt-1 w-full py-1.5 px-2.5 bg-cyan-500/15 hover:bg-cyan-500/25 border border-cyan-500/30 text-cyan-300 rounded-md text-[10px] font-bold flex items-center justify-center gap-1.5 transition-all cursor-pointer"
+                            >
+                              <Camera className="w-3.5 h-3.5" />
+                              <span>Prefere subir as fotos agora? Abrir Vistoria de Entrega pelo aparelho</span>
+                            </button>
+                          )}
                         </div>
 
                         {/* 2. Seleção dos Itens a Vistoriar */}
@@ -6697,7 +7130,7 @@ _Enviado via sistema de gestão de frota._`;
                         {onFinalizeContract && (
                           <button
                             type="button"
-                            onClick={() => onFinalizeContract(vehicle)}
+                            onClick={() => onFinalizeContract(liveVehicle)}
                             className="w-full py-2.5 bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 font-bold text-xs rounded-xl flex items-center justify-center gap-2 border border-amber-500/30 transition-all cursor-pointer shadow-md shadow-amber-500/10"
                           >
                             <Archive className="w-4 h-4 text-amber-400" />
@@ -8046,6 +8479,16 @@ _Enviado via sistema de gestão de frota._`;
           </div>
         </div>
       )}
+
+      <PaymentDateConfirmModal
+        isOpen={Boolean(paymentConfirmModal)}
+        title={paymentConfirmModal?.title || 'Confirmar Pagamento'}
+        subtitle={`${vehicle.brand} ${vehicle.model} (${vehicle.plate})${vehicle.driver ? ` • ${vehicle.driver}` : ''}`}
+        amount={paymentConfirmModal?.amount}
+        initialDate={paymentConfirmModal?.initialDate}
+        onConfirm={handleConfirmPaymentWithDate}
+        onClose={() => setPaymentConfirmModal(null)}
+      />
     </div>
   );
 };

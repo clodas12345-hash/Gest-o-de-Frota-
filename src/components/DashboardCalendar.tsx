@@ -105,12 +105,22 @@ export function DashboardCalendar({
         });
       }
 
-      // Weekly Payments
-      (vehicle.weeklyPayments || []).forEach((pay) => {
+      // Weekly Payments (active + historical periods, deduplicated by id)
+      const seenCalPayIds = new Set<string>();
+      const allCalPayments = [
+        ...(vehicle.weeklyPayments || []).map((pay) => ({ pay, driverName: vehicle.driver })),
+        ...(vehicle.driverHistory || []).flatMap((h) =>
+          (h.weeklyPayments || []).map((pay) => ({ pay, driverName: h.driver }))
+        ),
+      ];
+      allCalPayments.forEach(({ pay, driverName }) => {
+        const key = pay.id || `${pay.date}_${pay.amount}`;
+        if (seenCalPayIds.has(key)) return;
+        seenCalPayIds.add(key);
         if (pay.date === dateStr) {
           events.push({
             type: 'payment',
-            title: `Pagamento (${new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(pay.amount)})`,
+            title: `Pagamento (${new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(pay.amount)})${driverName ? ` - ${driverName}` : ''}`,
             vehiclePlate: vehicle.plate,
             vehicleModel: `${vehicle.brand} ${vehicle.model}`,
             id: pay.id

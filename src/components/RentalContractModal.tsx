@@ -44,7 +44,8 @@ import {
   EyeOff,
   Download,
   FileCheck2,
-  Send
+  Send,
+  Camera
 } from 'lucide-react';
 import { PdfViewer } from './PdfViewer';
 import { printPdfDataUrl, downloadFileDirect, openFileExternal } from '../utils/printHelper';
@@ -1868,6 +1869,17 @@ O contrato oficial em PDF já foi gerado e está arquivado nos documentos do ve�
                   >
                     <ClipboardCheck className="w-4 h-4 text-purple-400" />
                     <span>Enviar Link Vistoria Entrega</span>
+                  </button>
+
+                  {/* Botão Subir Fotos Vistoria de Entrega */}
+                  <button
+                    type="button"
+                    onClick={() => setShowVistoriaForm(true)}
+                    className="px-4 py-2.5 bg-blue-600/20 hover:bg-blue-600/30 text-blue-300 border border-blue-500/30 font-bold rounded-xl flex items-center justify-center gap-1.5 transition-all cursor-pointer text-xs shadow-md shadow-blue-500/10"
+                    title="Abrir formulário para subir fotos e realizar a Vistoria de Entrega diretamente"
+                  >
+                    <Camera className="w-4 h-4 text-blue-400" />
+                    <span>Subir Fotos Entrega</span>
                   </button>
 
                   {/* Botão Contrato em Branco */}

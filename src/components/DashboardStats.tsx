@@ -1,4 +1,5 @@
-import { Vehicle, FuelLog, MaintenanceLog, ExpenseLog } from '../types';
+import { Vehicle, FuelLog, MaintenanceLog, ExpenseLog, FinalizedContract } from '../types';
+import { getVehicleRevenueForMonth } from '../utils/driverHistory';
 import { DollarSign, Fuel, Wrench, Landmark, Coins, Wallet, TrendingUp, TrendingDown } from 'lucide-react';
 
 interface DashboardStatsProps {
@@ -6,6 +7,7 @@ interface DashboardStatsProps {
   fuelLogs: FuelLog[];
   maintenanceLogs: MaintenanceLog[];
   expenseLogs: ExpenseLog[];
+  finalizedContracts?: FinalizedContract[];
   selectedMonth?: number;
   selectedYear?: number;
 }
@@ -15,6 +17,7 @@ export function DashboardStats({
   fuelLogs,
   maintenanceLogs,
   expenseLogs,
+  finalizedContracts = [],
   selectedMonth,
   selectedYear,
 }: DashboardStatsProps) {
@@ -34,17 +37,9 @@ export function DashboardStats({
     return false;
   };
 
-  // 1. Total Valor Recebido (Revenue)
+  // 1. Total Valor Recebido (Revenue — includes active & historical drivers for the selected month)
   const totalValorRecebido = vehicles.reduce((sum, v) => {
-    const totalWeeklyInCurrentMonth = (v.weeklyPayments || [])
-      .filter((wp) => isCurrentMonth(wp.date))
-      .reduce((s, wp) => s + wp.amount, 0);
-    const hasWeeklyPayments = (v.weeklyPayments || [])
-      .some((wp) => isCurrentMonth(wp.date));
-    const effectiveValorRecebido = hasWeeklyPayments
-      ? totalWeeklyInCurrentMonth
-      : (v.valorRecebido || 0);
-    return sum + effectiveValorRecebido;
+    return sum + getVehicleRevenueForMonth(v, currentMonth, currentYear, finalizedContracts);
   }, 0);
 
   // 2. Total Despesas Fixas (Financiamento, Seguro, IPVA, Manutenção Preventiva, Custo Extra)
@@ -145,14 +140,7 @@ export function DashboardStats({
           {/* Per-vehicle split */}
           <div className="mt-2 pt-1.5 border-t border-white/5 space-y-1">
             {vehicles.map((v) => {
-              const totalWeeklyInCurrentMonth = (v.weeklyPayments || [])
-                .filter((wp) => isCurrentMonth(wp.date))
-                .reduce((s, wp) => s + wp.amount, 0);
-              const hasWeeklyPayments = (v.weeklyPayments || [])
-                .some((wp) => isCurrentMonth(wp.date));
-              const effectiveValorRecebido = hasWeeklyPayments
-                ? totalWeeklyInCurrentMonth
-                : (v.valorRecebido || 0);
+              const effectiveValorRecebido = getVehicleRevenueForMonth(v, currentMonth, currentYear, finalizedContracts);
 
               return (
                 <div 
@@ -277,14 +265,7 @@ export function DashboardStats({
           {/* Per-vehicle split */}
           <div className="mt-2 pt-1.5 border-t border-white/5 space-y-1">
             {vehicles.map((v) => {
-              const totalWeeklyInCurrentMonth = (v.weeklyPayments || [])
-                .filter((wp) => isCurrentMonth(wp.date))
-                .reduce((s, wp) => s + wp.amount, 0);
-              const hasWeeklyPayments = (v.weeklyPayments || [])
-                .some((wp) => isCurrentMonth(wp.date));
-              const vReceita = hasWeeklyPayments
-                ? totalWeeklyInCurrentMonth
-                : (v.valorRecebido || 0);
+              const vReceita = getVehicleRevenueForMonth(v, currentMonth, currentYear, finalizedContracts);
 
               const vFinanciamento = v.financiamento || 0;
               const vSeguro = v.seguro || 0;
