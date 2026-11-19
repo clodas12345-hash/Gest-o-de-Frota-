@@ -7769,11 +7769,7 @@ _Enviado via sistema de gestão de frota._`;
                         <div className="flex justify-between items-start">
                           <div>
                             <div className="flex items-center gap-2">
-                              <span className="text-[10px] font-mono text-gray-500">{fine.dataHora}</span>
-                              <span className="px-1.5 py-0.2 rounded text-[9px] font-bold bg-rose-500/20 text-rose-300 border border-rose-500/30">
-                                {fine.orgaoEmissor || 'DETRAN'}
-                              </span>
-                              <span className="text-[10px] text-gray-400">Auto: {fine.autoInfracao || 'S/N'}</span>
+                              <span className="text-[10px] font-mono text-gray-400">{fine.dataHora}</span>
                             </div>
                             <h5 className="text-xs font-bold text-white mt-1">{fine.descricao}</h5>
                             <p className="text-[10px] text-gray-400">
