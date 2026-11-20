@@ -451,10 +451,12 @@ export async function generateVehiclePDF(
 
   y += 12;
 
-  doc.setFontSize(9);
-  doc.setFont('helvetica', 'normal');
-  doc.setTextColor(textColor[0], textColor[1], textColor[2]);
-  doc.text(`Total de parcelas pagas registradas: R$ ${totalPaid.toLocaleString('pt-BR', { minimumFractionDigits: 2 })} (${payments.length} parcela(s))`, 18, y);
+  const totalPaidPromises = (vehicle.promisePayments || []).filter(p => p.isPaid).reduce((acc, p) => acc + (p.amount || 0), 0);
+  const totalPromises = (vehicle.promisePayments || []).reduce((acc, p) => acc + (p.amount || 0), 0);
+
+  doc.text(`Caução Inicial: R$ ${(vehicle.caucaoValor || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })} | Promessas de Caução: R$ ${totalPromises.toLocaleString('pt-BR', { minimumFractionDigits: 2 })} (Pagas: R$ ${totalPaidPromises.toLocaleString('pt-BR', { minimumFractionDigits: 2 })})`, 18, y);
+  y += 5.5;
+  doc.text(`Total de parcelas semanais pagas registradas: R$ ${totalPaid.toLocaleString('pt-BR', { minimumFractionDigits: 2 })} (${payments.length} parcela(s))`, 18, y);
   y += 6;
 
   // Payments table header

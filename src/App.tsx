@@ -2174,57 +2174,66 @@ export default function App() {
     }
   };
 
-  const handleConfirmFinalizeContract = async (settlement?: CaucaoSettlementData) => {
+  const handleConfirmFinalizeContract = async (settlement?: CaucaoSettlementData, isPreFinalize = false) => {
     if (!vehiclePendingFinalize) return;
     const targetVehicle = vehiclePendingFinalize;
     const id = targetVehicle.id;
 
     try {
-      // 1. Generate PDF with vehicle history, contract, settlement, sinistros, vistorias & all attachments
-      const { doc, fileName, pdfDataUrl } = await generateVehiclePDF(
-        targetVehicle,
-        maintenanceLogs,
-        expenseLogs,
-        vistorias,
-        fuelLogs,
-        { settlement, sinistroLogs }
-      );
+      let fileName = '';
+      let pdfDataUrl = '';
 
-      // Try auto download
-      try {
-        doc.save(fileName);
-      } catch (saveErr) {
-        console.warn('Could not auto-trigger browser download:', saveErr);
+      if (!isPreFinalize) {
+        // 1. Generate PDF with vehicle history, contract, settlement, sinistros, vistorias & all attachments
+        const resPdf = await generateVehiclePDF(
+          targetVehicle,
+          maintenanceLogs,
+          expenseLogs,
+          vistorias,
+          fuelLogs,
+          { settlement, sinistroLogs }
+        );
+        fileName = resPdf.fileName;
+        pdfDataUrl = resPdf.pdfDataUrl;
+
+        // Try auto download
+        try {
+          resPdf.doc.save(fileName);
+        } catch (saveErr) {
+          console.warn('Could not auto-trigger browser download:', saveErr);
+        }
+
+        // 2. Save to Contratos Finalizados folder
+        const payments = (targetVehicle.weeklyPayments || []).filter(isWeeklyPaymentPaid);
+        const totalPaid = payments.reduce((acc, p) => acc + (p.amount || 0), 0);
+        const todayIso = getTodayIsoLocal();
+
+        const newContract: FinalizedContract = {
+          id: `contract-final-${Date.now()}`,
+          vehicleId: id,
+          brand: targetVehicle.brand,
+          model: targetVehicle.model,
+          plate: targetVehicle.plate,
+          driver: targetVehicle.driver || 'Não informado',
+          driverPhone: targetVehicle.driverPhone,
+          startDate: targetVehicle.startDate,
+          endDate: targetVehicle.endDate || todayIso,
+          terminationDate: new Date().toLocaleDateString('pt-BR'),
+          pdfFileName: fileName,
+          pdfDataUrl,
+          totalPaid,
+          documentsCount: targetVehicle.documents?.length || 0,
+          maintenanceCount: maintenanceLogs.filter((m) => m.vehicleId === id).length,
+          viewed: false
+        };
+
+        setFinalizedContracts((prev) => [newContract, ...prev]);
       }
 
-      // 2. Save to Contratos Finalizados folder
-      const payments = (targetVehicle.weeklyPayments || []).filter(isWeeklyPaymentPaid);
-      const totalPaid = payments.reduce((acc, p) => acc + (p.amount || 0), 0);
-      const todayIso = getTodayIsoLocal();
-
-      const newContract: FinalizedContract = {
-        id: `contract-final-${Date.now()}`,
-        vehicleId: id,
-        brand: targetVehicle.brand,
-        model: targetVehicle.model,
-        plate: targetVehicle.plate,
-        driver: targetVehicle.driver || 'Não informado',
-        driverPhone: targetVehicle.driverPhone,
-        startDate: targetVehicle.startDate,
-        endDate: targetVehicle.endDate || todayIso,
-        terminationDate: new Date().toLocaleDateString('pt-BR'),
-        pdfFileName: fileName,
-        pdfDataUrl,
-        totalPaid,
-        documentsCount: targetVehicle.documents?.length || 0,
-        maintenanceCount: maintenanceLogs.filter((m) => m.vehicleId === id).length,
-        viewed: false
-      };
-
-      setFinalizedContracts((prev) => [newContract, ...prev]);
-
-      // 3. Remove contract/rental attachments from vehicle (keep only permanent CRLV); all attachments are now saved inside the Finalization PDF
-      const remainingDocs = (targetVehicle.documents || []).filter((d) => d.category === 'CRLV');
+      // 3. Remove contract/rental attachments from vehicle (keep only permanent CRLV) if definitive, or keep docs if pre-finalized
+      const remainingDocs = isPreFinalize 
+        ? (targetVehicle.documents || []) 
+        : (targetVehicle.documents || []).filter((d) => d.category === 'CRLV');
 
       // Preserve Locatário in contacts list
       if (targetVehicle.driver && targetVehicle.driver.trim()) {
@@ -2273,7 +2282,7 @@ export default function App() {
         (targetVehicle.caucaoValor && targetVehicle.caucaoValor > 0)
       );
       const historySnapshot = shouldArchiveHistory
-        ? createDriverHistorySnapshot(targetForSnapshot, 'finalized', todayIso)
+        ? createDriverHistorySnapshot(targetForSnapshot, 'finalized', getTodayIsoLocal())
         : null;
       const updatedDriverHistory = historySnapshot
         ? [historySnapshot, ...(targetVehicle.driverHistory || [])]
@@ -2294,7 +2303,7 @@ export default function App() {
           )
         : targetVehicle.fines;
 
-      // 4. Update vehicle: PRESERVE vehicle, maintenance & driverHistory info, RESET active driver/contract info and remove old contracts from vehicle
+      // 4. Update vehicle: PRESERVE vehicle, maintenance & driverHistory info, RESET active driver/contract info
       const updatedVehicle: Vehicle = {
         ...targetVehicle,
         fines: updatedFines,
@@ -2323,16 +2332,23 @@ export default function App() {
 
       setVehicles((prev) => prev.map((v) => (v.id === id ? updatedVehicle : v)));
 
-      sendAppNotification(`📁 Contrato Finalizado: ${targetVehicle.brand} (${targetVehicle.plate})`, {
-        body: `Contrato de ${targetVehicle.driver || 'motorista'} arquivado em Contratos Finalizados com sucesso.`,
-        eventKey: 'contract_finalized',
-      });
-
-      setDeleteToastMsg(`Contrato do veículo ${targetVehicle.brand} ${targetVehicle.model} (${targetVehicle.plate}) finalizado com sucesso! Relatório arquivado em 'Contratos Finalizados' e dados de manutenção mantidos no sistema.`);
+      if (isPreFinalize) {
+        sendAppNotification(`🚗 Veículo Liberado (Aguardando Multas): ${targetVehicle.brand} (${targetVehicle.plate})`, {
+          body: `O motorista ${targetVehicle.driver || ''} foi encerrado e o carro liberado para novos contratos, mantendo o acerto salvo.`,
+          eventKey: 'contract_finalized',
+        });
+        setDeleteToastMsg(`Veículo ${targetVehicle.brand} ${targetVehicle.model} (${targetVehicle.plate}) liberado para novo motorista com sucesso! O acerto de caução foi registrado no histórico e o contrato ficou pré-finalizado (aguardando eventuais multas futuras).`);
+      } else {
+        sendAppNotification(`📁 Contrato Finalizado: ${targetVehicle.brand} (${targetVehicle.plate})`, {
+          body: `Contrato de ${targetVehicle.driver || 'motorista'} arquivado em Contratos Finalizados com sucesso.`,
+          eventKey: 'contract_finalized',
+        });
+        setDeleteToastMsg(`Contrato do veículo ${targetVehicle.brand} ${targetVehicle.model} (${targetVehicle.plate}) finalizado com sucesso! Relatório arquivado em 'Contratos Finalizados' e dados de manutenção mantidos no sistema.`);
+      }
       setTimeout(() => setDeleteToastMsg(null), 6000);
     } catch (err) {
-      console.error('Erro ao finalizar contrato:', err);
-      setDeleteToastMsg('Erro ao finalizar contrato. Tente novamente.');
+      console.error('Erro ao processar acerto/finalização:', err);
+      setDeleteToastMsg('Erro ao processar finalização. Tente novamente.');
       setTimeout(() => setDeleteToastMsg(null), 4000);
     } finally {
       setVehiclePendingFinalize(null);

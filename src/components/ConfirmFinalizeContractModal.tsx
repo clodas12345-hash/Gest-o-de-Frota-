@@ -22,7 +22,7 @@ interface ConfirmFinalizeContractModalProps {
   expenseLogs?: ExpenseLog[];
   maintenanceLogs?: MaintenanceLog[];
   isLoading?: boolean;
-  onConfirm: (settlement?: CaucaoSettlementData) => void;
+  onConfirm: (settlement?: CaucaoSettlementData, isPreFinalize?: boolean) => void;
   onCancel: () => void;
 }
 
@@ -717,23 +717,52 @@ export function ConfirmFinalizeContractModal({
           <button
             type="button"
             onClick={() =>
-              onConfirm({
-                caucaoOriginal,
-                descontoAluguelPendente,
-                descontoAvarias,
-                descontoLavagem,
-                descontoCombustivel,
-                descontoMultas,
-                descontoPedagios,
-                observacoesAcerto,
-                saldoFinal
-              })
+              onConfirm(
+                {
+                  caucaoOriginal,
+                  descontoAluguelPendente,
+                  descontoAvarias,
+                  descontoLavagem,
+                  descontoCombustivel,
+                  descontoMultas,
+                  descontoPedagios,
+                  observacoesAcerto,
+                  saldoFinal
+                },
+                true
+              )
+            }
+            disabled={isLoading}
+            className="px-3.5 py-2 text-xs font-bold text-blue-300 bg-blue-600/20 hover:bg-blue-600/30 border border-blue-500/30 rounded-xl transition-all cursor-pointer shadow-sm flex items-center gap-1.5 disabled:opacity-50"
+            title="Libera o veículo imediatamente para um novo motorista, mantendo o acerto salvo mas adiando a geração do PDF final (ideal para aguardar chegada de multas futuras)"
+          >
+            <span>Liberar Carro (Aguardar Multas)</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() =>
+              onConfirm(
+                {
+                  caucaoOriginal,
+                  descontoAluguelPendente,
+                  descontoAvarias,
+                  descontoLavagem,
+                  descontoCombustivel,
+                  descontoMultas,
+                  descontoPedagios,
+                  observacoesAcerto,
+                  saldoFinal
+                },
+                false
+              )
             }
             disabled={isLoading}
             className="px-4 py-2 text-xs font-bold text-slate-900 bg-amber-400 hover:bg-amber-300 rounded-xl transition-all cursor-pointer shadow-md shadow-amber-400/20 flex items-center gap-1.5 disabled:opacity-50"
+            title="Gera o PDF final de contrato, arquiva em Contratos Finalizados e libera o veículo"
           >
             <CheckCircle2 className="w-4 h-4" />
-            <span>{isLoading ? 'Finalizando...' : 'Confirmar e Finalizar Contrato'}</span>
+            <span>{isLoading ? 'Processando...' : 'Finalizar Definitivamente (Gerar PDF)'}</span>
           </button>
         </div>
 

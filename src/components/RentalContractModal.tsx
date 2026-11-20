@@ -711,6 +711,9 @@ Isso é fundamental para a vinculação correta do veículo. Qualquer dúvida es
     setIsGenerating(true);
 
     try {
+      const totalPromises = promisePayments.reduce((acc, p) => acc + (p.amount || 0), 0);
+      const totalCaucao = (Number(caucaoValue) || 0) + totalPromises;
+
       const contractData: RentalContractData = {
         contractNumber: contractNumber || generateNextContractNumber(currentVehicle.plate, vehicles, `${currentVehicle.brand} ${currentVehicle.model}`),
         tenantName: tenantName.trim(),
@@ -731,7 +734,7 @@ Isso é fundamental para a vinculação correta do veículo. Qualquer dúvida es
         rentalValue: Number(rentalValue) || 0,
         paymentPeriod,
         dueDay,
-        caucaoValue: Number(caucaoValue) || 0,
+        caucaoValue: totalCaucao > 0 ? totalCaucao : 1920,
         kmLimit,
         workshopName,
         insuranceCompany,
@@ -872,6 +875,9 @@ Isso é fundamental para a vinculação correta do veículo. Qualquer dúvida es
         fuelLogs: []
       } as any);
 
+      const totalPromises = promisePayments.reduce((acc, p) => acc + (p.amount || 0), 0);
+      const totalCaucao = (Number(caucaoValue) || 0) + totalPromises;
+
       const blankData: RentalContractData = {
         contractNumber: 'MINUTA / EM BRANCO',
         tenantName: '[Nome Completo]',
@@ -891,7 +897,7 @@ Isso é fundamental para a vinculação correta do veículo. Qualquer dúvida es
         rentalValue: Number(rentalValue) > 0 ? Number(rentalValue) : 960,
         paymentPeriod: paymentPeriod || 'Semanal',
         dueDay: 'toda segunda-feira, com vencimento até às 23h59',
-        caucaoValue: Number(caucaoValue) > 0 ? Number(caucaoValue) : 1920,
+        caucaoValue: totalCaucao > 0 ? totalCaucao : 1920,
         workshopName: workshopName || 'Pneus Andriatti (Penha, SP)',
         kmLimit: kmLimit || '5.000 km por mês',
         insuranceCompany: insuranceCompany || 'LOOVI SEGUROS',
