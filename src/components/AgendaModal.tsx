@@ -233,14 +233,16 @@ export const AgendaModal: React.FC<AgendaModalProps> = ({
     const formattedName = toTitleCase(name.trim());
     const finalRegion = region.trim() || 'Locatário';
 
+    const existingEditingContact = editingId ? contacts.find((c) => c.id === editingId) : undefined;
     const contactToSave: AgendaContact = {
+      ...(existingEditingContact || {}),
       id: editingId || `contact-${Date.now()}`,
       name: formattedName,
       phone: cleanPhone,
       email: email.trim(),
       region: toTitleCase(finalRegion),
-      cpfCnpj: cpf.trim() || undefined,
-      cnh: cnh.trim() || undefined,
+      cpfCnpj: cpf.trim() || existingEditingContact?.cpfCnpj || undefined,
+      cnh: cnh.trim() || existingEditingContact?.cnh || undefined,
       activeVehiclePlate: selectedVehiclePlate || undefined
     };
 
@@ -616,6 +618,12 @@ export const AgendaModal: React.FC<AgendaModalProps> = ({
                           <MapPin className="w-3 h-3 text-emerald-400" />
                           {toTitleCase(contact.region)}
                         </span>
+                        {contact.activeVehiclePlate && (
+                          <span className="flex items-center gap-1 px-1.5 py-0.5 rounded bg-blue-500/15 text-blue-300 border border-blue-500/25 font-bold">
+                            <Car className="w-3 h-3 text-blue-400" />
+                            {contact.activeVehiclePlate}
+                          </span>
+                        )}
                         {contact.email && (
                           <span className="flex items-center gap-1">
                             <Mail className="w-3 h-3 text-emerald-400" />

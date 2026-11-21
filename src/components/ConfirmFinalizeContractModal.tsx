@@ -1,19 +1,9 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { Archive, CheckCircle2, X, ShieldCheck, Calculator, MessageCircle, FileText, AlertOctagon } from 'lucide-react';
-import { Vehicle, SinistroLog, ExpenseLog, MaintenanceLog, getFineTotal, isWeeklyPaymentPaid } from '../types';
+import { Vehicle, SinistroLog, ExpenseLog, MaintenanceLog, CaucaoSettlementData, getFineTotal, isWeeklyPaymentPaid } from '../types';
 import CurrencyInput from './CurrencyInput';
 
-export interface CaucaoSettlementData {
-  caucaoOriginal: number;
-  descontoAluguelPendente: number;
-  descontoAvarias: number;
-  descontoLavagem: number;
-  descontoCombustivel: number;
-  descontoMultas: number;
-  descontoPedagios: number;
-  observacoesAcerto: string;
-  saldoFinal: number;
-}
+export type { CaucaoSettlementData };
 
 interface ConfirmFinalizeContractModalProps {
   isOpen: boolean;
@@ -222,16 +212,20 @@ export function ConfirmFinalizeContractModal({
       cleanPhone = '55' + cleanPhone;
     }
 
+    const returnDtObj = new Date((returnDate || new Date().toISOString().split('T')[0]) + 'T12:00:00');
+    const due30DtObj = new Date(returnDtObj);
+    due30DtObj.setDate(due30DtObj.getDate() + 30);
+
     const statusLine =
       saldoFinal >= 0
-        ? `✅ *SALDO A DEVOLVER AO LOCATÁRIO:* ${formatBRL(saldoFinal)}`
+        ? `✅ *PRÉVIA DE SALDO A DEVOLVER AO LOCATÁRIO:* ${formatBRL(saldoFinal)}\n⏳ *Prazo de Quitação / Liberação da Caução (30 dias):* ${due30DtObj.toLocaleDateString('pt-BR')} (sujeito a eventuais multas/avarias do período)`
         : `⚠️ *SALDO DEVEDOR A PAGAR PELO LOCATÁRIO:* ${formatBRL(saldoFinal)}`;
 
     const finesSummary = detectedDebits.pendingFines.length > 0
       ? ` (${detectedDebits.pendingFines.length} multa(s): ${detectedDebits.pendingFines.map(f => `${f.descricao} ${formatBRL(getFineTotal(f))}`).join(', ')})`
       : '';
 
-    const text = `📋 *DEMONSTRATIVO DE FECHAMENTO E ACERTO DE CAUÇÃO*\n\n🚗 *Veículo:* ${vehicle.brand} ${vehicle.model} (${vehicle.plate})\n👤 *Locatário:* ${vehicle.driver || 'Não informado'}\n📅 *Período:* ${vehicle.startDate ? new Date(vehicle.startDate + 'T12:00:00').toLocaleDateString('pt-BR') : ''} até ${new Date(returnDate + 'T12:00:00').toLocaleDateString('pt-BR')} (${daysUsed} dias rodados)\n📊 *Diária Proporcional:* ${formatBRL(dailyRate)}/dia (Semanal ${formatBRL(weeklyRate)})\n\n💵 *Total Devido do Período:* ${formatBRL(expectedTotal)}\n➖ *Total Já Pago:* ${formatBRL(totalPaid)} (${paidWeeksCount} semanais pagas)\n🟰 *Aluguéis em Aberto:* ${formatBRL(descontoAluguelPendente)}\n\n--- *ACERTO DA CAUÇÃO* ---\n💰 *Caução Depositada:* +${formatBRL(caucaoOriginal)}\n➖ *Aluguéis em Aberto:* -${formatBRL(descontoAluguelPendente)}\n➖ *Avarias / Oficina:* -${formatBRL(descontoAvarias)}\n➖ *Lavagem / Higienização:* -${formatBRL(descontoLavagem)}\n➖ *Diferença Combustível:* -${formatBRL(descontoCombustivel)}\n➖ *Multas (Trânsito/Adm):* -${formatBRL(descontoMultas)}${finesSummary}\n➖ *Pedágios / Tag:* -${formatBRL(descontoPedagios)}\n${observacoesAcerto ? `📝 *Obs:* ${observacoesAcerto}\n` : ''}\n${statusLine}`;
+    const text = `📋 *TERMO DE ENCERRAMENTO E PRÉVIA DO ACERTO DE CAUÇÃO*\n\n🚗 *Veículo:* ${vehicle.brand} ${vehicle.model} (${vehicle.plate})\n👤 *Locatário:* ${vehicle.driver || 'Não informado'}\n📅 *Período:* ${vehicle.startDate ? new Date(vehicle.startDate + 'T12:00:00').toLocaleDateString('pt-BR') : ''} até ${returnDtObj.toLocaleDateString('pt-BR')} (${daysUsed} dias rodados)\n📊 *Diária Proporcional:* ${formatBRL(dailyRate)}/dia (Semanal ${formatBRL(weeklyRate)})\n\n💵 *Total Devido do Período:* ${formatBRL(expectedTotal)}\n➖ *Total Já Pago:* ${formatBRL(totalPaid)} (${paidWeeksCount} semanais pagas)\n🟰 *Aluguéis em Aberto:* ${formatBRL(descontoAluguelPendente)}\n\n--- *ACERTO DA CAUÇÃO* ---\n💰 *Caução Depositada:* +${formatBRL(caucaoOriginal)}\n➖ *Aluguéis em Aberto:* -${formatBRL(descontoAluguelPendente)}\n➖ *Avarias / Oficina:* -${formatBRL(descontoAvarias)}\n➖ *Lavagem / Higienização:* -${formatBRL(descontoLavagem)}\n➖ *Diferença Combustível:* -${formatBRL(descontoCombustivel)}\n➖ *Multas (Trânsito/Adm):* -${formatBRL(descontoMultas)}${finesSummary}\n➖ *Pedágios / Tag:* -${formatBRL(descontoPedagios)}\n${observacoesAcerto ? `📝 *Obs:* ${observacoesAcerto}\n` : ''}\n${statusLine}`;
 
     const url = cleanPhone
       ? `https://wa.me/${cleanPhone}?text=${encodeURIComponent(text)}`
@@ -692,24 +686,25 @@ export function ConfirmFinalizeContractModal({
             </div>
           </div>
 
-          <div className="p-3 bg-emerald-500/10 border border-emerald-500/20 rounded-xl text-[11px] text-emerald-300 space-y-1">
+          <div className="p-3 bg-emerald-500/10 border border-emerald-500/20 rounded-xl text-[11px] text-emerald-300 space-y-1.5">
             <p className="font-bold flex items-center gap-1.5 text-emerald-400">
-              <ShieldCheck className="w-4 h-4" />
-              <span>O que é mantido no sistema:</span>
+              <ShieldCheck className="w-4 h-4 shrink-0" />
+              <span>Fluxo em 2 Etapas (Encerramento → Quitação em 30 dias):</span>
             </p>
             <p className="text-gray-300 text-[10px] leading-relaxed">
-              O veículo continua salvo na frota para novas locações, mantendo KM atual, manutenção preventiva e dossiê arquivado em <strong className="text-amber-300">'Contratos Finalizados'</strong>.
+              • <strong className="text-blue-300">Pré-Finalizar (30 dias):</strong> Gera o <strong className="text-white">Termo de Encerramento de Contrato (PDF)</strong> com a prévia detalhada a pagar/receber, ativa o lembrete/push de 30 dias e libera o carro imediatamente para novo motorista — permitindo lançar multas ou avarias que chegarem nesse período.<br />
+              • <strong className="text-amber-300">Finalizar Agora:</strong> Gera direto o <strong className="text-white">Termo de Encerramento e Quitação de Débitos (PDF)</strong> sem aguardar os 30 dias.
             </p>
           </div>
         </div>
 
         {/* Footer Actions */}
-        <div className="px-5 py-3.5 border-t border-white/10 bg-[#181818] flex items-center justify-end gap-2.5 shrink-0">
+        <div className="px-5 py-3.5 border-t border-white/10 bg-[#181818] flex flex-wrap items-center justify-end gap-2.5 shrink-0">
           <button
             type="button"
             onClick={onCancel}
             disabled={isLoading}
-            className="px-4 py-2 text-xs font-bold text-gray-300 hover:text-white bg-white/5 hover:bg-white/10 rounded-xl transition-all cursor-pointer border border-white/10"
+            className="px-3.5 py-2 text-xs font-bold text-gray-300 hover:text-white bg-white/5 hover:bg-white/10 rounded-xl transition-all cursor-pointer border border-white/10"
           >
             Cancelar
           </button>
@@ -727,16 +722,26 @@ export function ConfirmFinalizeContractModal({
                   descontoMultas,
                   descontoPedagios,
                   observacoesAcerto,
-                  saldoFinal
+                  saldoFinal,
+                  returnDate,
+                  daysUsed,
+                  missingDays,
+                  dailyRate,
+                  weeklyRate,
+                  expectedTotal,
+                  totalPaid,
+                  earlyFineRatePct,
+                  earlyFineAmount
                 },
                 true
               )
             }
             disabled={isLoading}
-            className="px-3.5 py-2 text-xs font-bold text-blue-300 bg-blue-600/20 hover:bg-blue-600/30 border border-blue-500/30 rounded-xl transition-all cursor-pointer shadow-sm flex items-center gap-1.5 disabled:opacity-50"
-            title="Libera o veículo imediatamente para um novo motorista, mantendo o acerto salvo mas adiando a geração do PDF final (ideal para aguardar chegada de multas futuras)"
+            className="px-3.5 py-2 text-xs font-bold text-blue-200 bg-blue-600/25 hover:bg-blue-600/40 border border-blue-500/40 rounded-xl transition-all cursor-pointer shadow-sm flex items-center gap-1.5 disabled:opacity-50"
+            title="Gera o Termo de Encerramento (prévia detalhada), ativa o lembrete de 30 dias e libera o veículo imediatamente para novo motorista"
           >
-            <span>Liberar Carro (Aguardar Multas)</span>
+            <FileText className="w-3.5 h-3.5 text-blue-300" />
+            <span>{isLoading ? 'Processando...' : 'Pré-Finalizar & Termo de Encerramento (30d)'}</span>
           </button>
 
           <button
@@ -752,17 +757,26 @@ export function ConfirmFinalizeContractModal({
                   descontoMultas,
                   descontoPedagios,
                   observacoesAcerto,
-                  saldoFinal
+                  saldoFinal,
+                  returnDate,
+                  daysUsed,
+                  missingDays,
+                  dailyRate,
+                  weeklyRate,
+                  expectedTotal,
+                  totalPaid,
+                  earlyFineRatePct,
+                  earlyFineAmount
                 },
                 false
               )
             }
             disabled={isLoading}
             className="px-4 py-2 text-xs font-bold text-slate-900 bg-amber-400 hover:bg-amber-300 rounded-xl transition-all cursor-pointer shadow-md shadow-amber-400/20 flex items-center gap-1.5 disabled:opacity-50"
-            title="Gera o PDF final de contrato, arquiva em Contratos Finalizados e libera o veículo"
+            title="Emite imediatamente o Termo de Encerramento e Quitação de Débitos e arquiva o contrato"
           >
             <CheckCircle2 className="w-4 h-4" />
-            <span>{isLoading ? 'Processando...' : 'Finalizar Definitivamente (Gerar PDF)'}</span>
+            <span>{isLoading ? 'Processando...' : 'Quitação Definitiva Agora (Gerar PDF)'}</span>
           </button>
         </div>
 

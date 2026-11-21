@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
-import { Vehicle, FuelLog, MaintenanceLog, ExpenseLog, AgendaContact, Vistoria, VehicleDocument, FinalizedContract, SinistroLog, getFineTotal, isWeeklyPaymentPaid } from './types';
+import { Vehicle, FuelLog, MaintenanceLog, ExpenseLog, AgendaContact, Vistoria, VehicleDocument, FinalizedContract, SinistroLog, LateContractDebit, CustomReminder, getFineTotal, isWeeklyPaymentPaid } from './types';
 import { decodeVistoriaParams } from './utils/vistoriaUrl';
 import { 
   INITIAL_VEHICLES, 
@@ -46,11 +46,12 @@ import { BatchOdometerModal } from './components/BatchOdometerModal';
 import { InterestCalculatorModal } from './components/InterestCalculatorModal';
 import { RegisterDriverModal } from './components/RegisterDriverModal';
 import { ContractEditorModal } from './components/ContractEditorModal';
-import { generateVehiclePDF, generateVistoriaPDF, generateExecutiveMonthlyPDF } from './utils/pdfGenerator';
+import { generateVehiclePDF, generateVistoriaPDF, generateExecutiveMonthlyPDF, generateTermoEncerramentoPDF, generateTermoQuitacaoPDF } from './utils/pdfGenerator';
 import { getSavedContractClauses, saveContractClauses, getFullContractTextTemplate, saveFullContractTextTemplate } from './utils/contractClauses';
-import { sendAppNotification, requestNotificationPermission, scheduleVistoriaReminders, cancelVistoriaReminders, VISTORIA_REMINDER_SLOTS, isNotificationEventEnabled } from './utils/notifications';
+import { sendAppNotification, requestNotificationPermission, scheduleVistoriaReminders, cancelVistoriaReminders, VISTORIA_REMINDER_SLOTS, isNotificationEventEnabled, schedule30DayQuitationReminder, cancel30DayQuitationReminder, scheduleCustomReminderNotification, cancelCustomReminderNotification } from './utils/notifications';
 import { generateMonthlyPaymentsForVehicle, resolveVehiclePaymentDayOfWeek } from './utils/paymentSchedule';
 import { archivePreviousDriverIfChanged, createDriverHistorySnapshot, getTodayIsoLocal } from './utils/driverHistory';
+import { buildContactFromVehicle, isActiveContractVehicle, syncDriverToDevicePhonebook, upsertContactInList } from './utils/agendaSync';
 import logoImg from './assets/logo.png';
 
 // Icons
@@ -84,7 +85,11 @@ import {
   Gauge,
   FileDown,
   ChevronLeft,
-  ChevronRight
+  ChevronRight,
+  Check,
+  Clock,
+  Trash2,
+  Bell
 } from 'lucide-react';
 
 function ensureFuturePaymentsForVehicles(vehicles: Vehicle[]): Vehicle[] {
@@ -314,6 +319,9 @@ export default function App() {
     localStorage.setItem('fleet_friday_reminder_done_date', todayDateStr);
   };
 
+  const [is30DayQuitationPopupOpen, setIs30DayQuitationPopupOpen] = useState(false);
+  const scheduledQuitationPushRef = useRef<Set<string>>(new Set());
+
   // Helper to determine if a vehicle is currently rented
   const isVehicleRented = (v: Vehicle): boolean => {
     const driver = (v.driver || '').trim();
@@ -342,6 +350,17 @@ export default function App() {
   });
   const [isSettingsOpen, setIsSettingsOpen] = useState<boolean>(false);
   const [settingsInitialTab, setSettingsInitialTab] = useState<'settings' | 'calendar' | 'charts' | 'history' | 'contract'>('settings');
+  const [settingsSubModal, setSettingsSubModal] = useState<'whatsapp' | 'reminders' | null>(null);
+  const [customReminders, setCustomReminders] = useState<CustomReminder[]>(() => {
+    const saved = localStorage.getItem('fleet_custom_reminders');
+    if (saved) {
+      try {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed)) return parsed;
+      } catch {}
+    }
+    return [];
+  });
   const [isNotificationCenterOpen, setIsNotificationCenterOpen] = useState<boolean>(false);
   const [isChecklistConfigOpen, setIsChecklistConfigOpen] = useState<boolean>(false);
   const [isRentalContractOpen, setIsRentalContractOpen] = useState<boolean>(false);
@@ -674,6 +693,239 @@ export default function App() {
     return saved ? JSON.parse(saved) : [];
   });
 
+  const due30DayContracts = useMemo(() => {
+    const todayIso = getTodayIsoLocal();
+    const todayMs = new Date(`${todayIso}T12:00:00`).getTime();
+    return finalizedContracts
+      .filter((c) => c.status === 'pre_finalized')
+      .map((c) => {
+        const returnIso = c.returnDate || c.settlement?.returnDate || todayIso;
+        const dueIso =
+          c.dueDate30Days ||
+          (() => {
+            const d = new Date(`${returnIso}T12:00:00`);
+            d.setDate(d.getDate() + 30);
+            return d.toISOString().split('T')[0];
+          })();
+        const dueMs = new Date(`${dueIso}T12:00:00`).getTime();
+        const daysRemaining = Math.ceil((dueMs - todayMs) / (1000 * 60 * 60 * 24));
+        return { contract: c, dueIso, daysRemaining };
+      });
+  }, [finalizedContracts]);
+
+  const matured30DayContracts = useMemo(
+    () => due30DayContracts.filter((item) => item.daysRemaining <= 0),
+    [due30DayContracts]
+  );
+
+  // Monitoramento de prazo de 30 dias para Quitação, Lembretes Push e Pop-up de Devolução da Caução
+  useEffect(() => {
+    if (due30DayContracts.length === 0) return;
+
+    due30DayContracts.forEach(({ contract, dueIso }) => {
+      const scheduleKey = `${contract.id}:${dueIso}:${contract.settlement?.saldoFinal ?? 0}`;
+      if (!scheduledQuitationPushRef.current.has(scheduleKey)) {
+        scheduledQuitationPushRef.current.add(scheduleKey);
+        schedule30DayQuitationReminder({
+          contractId: contract.id,
+          vehicleLabel: `${contract.brand} ${contract.model} (${contract.plate})`,
+          driverName: contract.driver,
+          dueDate30DaysIso: dueIso,
+          saldoFinal: contract.settlement?.saldoFinal
+        });
+      }
+    });
+
+    const todayIso = getTodayIsoLocal();
+    const lastCheckKey = localStorage.getItem('fleet_last_30d_quitation_check');
+    if (lastCheckKey !== todayIso && isNotificationEventEnabled('contract_30d_quitation')) {
+      localStorage.setItem('fleet_last_30d_quitation_check', todayIso);
+      due30DayContracts.forEach(({ contract, dueIso, daysRemaining }) => {
+        const saldo = contract.settlement?.saldoFinal ?? 0;
+        const saldoLabel =
+          saldo >= 0
+            ? `Caução a devolver: R$ ${saldo.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`
+            : `Saldo devedor do motorista: R$ ${Math.abs(saldo).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`;
+
+        if (daysRemaining <= 0) {
+          sendAppNotification(`✅ 30 Dias Concluídos — Devolver Caução: ${contract.brand} (${contract.plate})`, {
+            body: `Motorista ${contract.driver}: completou 30 dias da devolução! ${saldoLabel}. Gere o Termo de Encerramento e Quitação de Débitos.`,
+            eventKey: 'contract_30d_quitation',
+          });
+        } else if (daysRemaining <= 5) {
+          sendAppNotification(`⏳ Faltam ${daysRemaining}d p/ Devolução da Caução: ${contract.brand} (${contract.plate})`, {
+            body: `Prazo de 30 dias de ${contract.driver} vence em ${new Date(`${dueIso}T12:00:00`).toLocaleDateString('pt-BR')}. ${saldoLabel}.`,
+            eventKey: 'contract_30d_quitation',
+          });
+        }
+      });
+    }
+
+    const dismissedPopupDate = localStorage.getItem('fleet_30d_popup_dismissed_date');
+    if (
+      matured30DayContracts.length > 0 &&
+      dismissedPopupDate !== todayIso &&
+      isNotificationEventEnabled('contract_30d_quitation')
+    ) {
+      setIs30DayQuitationPopupOpen(true);
+    }
+  }, [due30DayContracts, matured30DayContracts.length]);
+
+  const scheduledCustomReminderIdsRef = useRef<Set<string>>(new Set());
+
+  // Agendamento de Push e Verificação de Vencimento dos Lembretes Personalizados
+  useEffect(() => {
+    const checkAndScheduleReminders = () => {
+      const nowMs = Date.now();
+      const newlyNotifiedIds: string[] = [];
+
+      customReminders.forEach((rem) => {
+        if (rem.completed || !rem.pushEnabled || !rem.dueDate) return;
+        const scheduleKey = `${rem.id}:${rem.dueDate}:${rem.dueTime || '09:00'}:${rem.title}:${rem.notes || ''}`;
+        if (!scheduledCustomReminderIdsRef.current.has(scheduleKey)) {
+          scheduledCustomReminderIdsRef.current.add(scheduleKey);
+          scheduleCustomReminderNotification(rem);
+        }
+
+        if (!rem.notifiedAt && isNotificationEventEnabled('custom_reminder')) {
+          const timePart = rem.dueTime && /^\d{2}:\d{2}$/.test(rem.dueTime) ? rem.dueTime : '09:00';
+          const targetDate = new Date(`${rem.dueDate}T${timePart}:00`);
+          if (!Number.isNaN(targetDate.getTime()) && targetDate.getTime() <= nowMs) {
+            newlyNotifiedIds.push(rem.id);
+            const dateBR = new Date(`${rem.dueDate}T12:00:00`).toLocaleDateString('pt-BR');
+            sendAppNotification(`📌 Lembrete: ${rem.title}`, {
+              body: rem.notes?.trim()
+                ? `${rem.notes.trim()} (${dateBR} às ${timePart})`
+                : `Agendado para ${dateBR} às ${timePart}.`,
+              eventKey: 'custom_reminder'
+            });
+          }
+        }
+      });
+
+      if (newlyNotifiedIds.length > 0) {
+        const nowIso = new Date().toISOString();
+        setCustomReminders((prev) =>
+          prev.map((r) => (newlyNotifiedIds.includes(r.id) ? { ...r, notifiedAt: nowIso } : r))
+        );
+      }
+    };
+
+    checkAndScheduleReminders();
+    const timer = window.setInterval(checkAndScheduleReminders, 60000);
+    return () => window.clearInterval(timer);
+  }, [customReminders]);
+
+  const handleAddCustomReminder = async (input: Omit<CustomReminder, 'id' | 'createdAt' | 'completed'>) => {
+    const newRem: CustomReminder = {
+      id: `rem-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+      title: input.title,
+      notes: input.notes,
+      dueDate: input.dueDate,
+      dueTime: input.dueTime || '09:00',
+      pushEnabled: input.pushEnabled,
+      completed: false,
+      createdAt: new Date().toISOString()
+    };
+    setCustomReminders((prev) => [newRem, ...prev]);
+    if (newRem.pushEnabled) {
+      await scheduleCustomReminderNotification(newRem);
+    }
+  };
+
+  const handleToggleCustomReminder = (id: string) => {
+    setCustomReminders((prev) =>
+      prev.map((r) => {
+        if (r.id !== id) return r;
+        const nextCompleted = !r.completed;
+        const updated: CustomReminder = {
+          ...r,
+          completed: nextCompleted,
+          completedAt: nextCompleted ? new Date().toISOString() : undefined
+        };
+        if (nextCompleted) {
+          cancelCustomReminderNotification(id);
+        } else if (updated.pushEnabled) {
+          scheduleCustomReminderNotification(updated);
+        }
+        return updated;
+      })
+    );
+  };
+
+  const handleDeleteCustomReminder = (id: string) => {
+    cancelCustomReminderNotification(id);
+    setCustomReminders((prev) => prev.filter((r) => r.id !== id));
+  };
+
+  const handleUpdateCustomReminder = async (updated: CustomReminder) => {
+    setCustomReminders((prev) => prev.map((r) => (r.id === updated.id ? updated : r)));
+    if (updated.pushEnabled && !updated.completed) {
+      await scheduleCustomReminderNotification(updated);
+    } else {
+      await cancelCustomReminderNotification(updated.id);
+    }
+  };
+
+  const syncedActiveContractKeysRef = useRef<Set<string>>(new Set());
+
+  // Sincroniza automaticamente todos os contratos ativos (motoristas atuais dos veículos) para a Agenda Telefônica
+  useEffect(() => {
+    const activeContactsToSync: { contact: AgendaContact; signature: string; vehiclePlate: string }[] = [];
+
+    vehicles.forEach((v) => {
+      if (!isActiveContractVehicle(v)) return;
+      const contact = buildContactFromVehicle(v);
+      if (!contact) return;
+
+      const sig = [
+        v.id,
+        contact.name,
+        contact.phone,
+        contact.cpfCnpj || '',
+        contact.rg || '',
+        contact.cnh || '',
+        contact.email || '',
+        contact.address || '',
+        v.plate || '',
+      ].join('|');
+
+      if (!syncedActiveContractKeysRef.current.has(sig)) {
+        syncedActiveContractKeysRef.current.add(sig);
+        activeContactsToSync.push({ contact, signature: sig, vehiclePlate: v.plate });
+      }
+    });
+
+    if (activeContactsToSync.length === 0) return;
+
+    setContacts((prev) => {
+      let next = prev;
+      let anyChanged = false;
+      activeContactsToSync.forEach(({ contact }) => {
+        const res = upsertContactInList(next, contact);
+        if (res.changed) {
+          next = res.next;
+          anyChanged = true;
+        }
+      });
+      return anyChanged ? next : prev;
+    });
+
+    activeContactsToSync.forEach(({ contact, vehiclePlate }) => {
+      if (contact.phone) {
+        syncDriverToDevicePhonebook({
+          name: contact.name,
+          phone: contact.phone,
+          email: contact.email,
+          cpfCnpj: contact.cpfCnpj,
+          cnh: contact.cnh,
+          address: contact.address,
+          plate: vehiclePlate,
+        });
+      }
+    });
+  }, [vehicles]);
+
   const [isAgendaOpen, setIsAgendaOpen] = useState(false);
   const [isFinalizedContractsOpen, setIsFinalizedContractsOpen] = useState(false);
   const [agendaPreFill, setAgendaPreFill] = useState<{ name: string; phone: string } | null>(null);
@@ -918,6 +1170,10 @@ export default function App() {
             setFinalizedContracts(d.finalizedContracts);
             lastSyncedJsonRef.current['finalizedContracts'] = JSON.stringify(d.finalizedContracts);
           }
+          if (d.customReminders && Array.isArray(d.customReminders)) {
+            setCustomReminders(d.customReminders);
+            lastSyncedJsonRef.current['customReminders'] = JSON.stringify(d.customReminders);
+          }
           if (d.contractClauses && Array.isArray(d.contractClauses) && d.contractClauses.length > 0) {
             saveContractClauses(d.contractClauses);
           }
@@ -936,6 +1192,7 @@ export default function App() {
             expenseLogs,
             vistorias,
             finalizedContracts,
+            customReminders,
             updatedAt: new Date().toISOString()
           });
           setDoc(docRef, initialPayload, { merge: true }).catch(err => console.warn('Error initializing fleetData in cloud:', err));
@@ -1018,6 +1275,10 @@ export default function App() {
           if (d.finalizedContracts && Array.isArray(d.finalizedContracts)) {
             lastSyncedJsonRef.current['finalizedContracts'] = JSON.stringify(d.finalizedContracts);
             setFinalizedContracts(d.finalizedContracts);
+          }
+          if (d.customReminders && Array.isArray(d.customReminders)) {
+            lastSyncedJsonRef.current['customReminders'] = JSON.stringify(d.customReminders);
+            setCustomReminders(d.customReminders);
           }
           const lastContractEdit = lastUpdateTimestampRef.current['contractTemplates'] || 0;
           if (Date.now() - lastContractEdit >= 4000) {
@@ -1240,6 +1501,14 @@ export default function App() {
 
     saveToCloud('finalizedContracts', finalizedContracts);
   }, [finalizedContracts]);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem('fleet_custom_reminders', JSON.stringify(customReminders));
+    } catch (e) { console.warn('Storage quota exceeded', e); }
+
+    saveToCloud('customReminders', customReminders);
+  }, [customReminders]);
 
   const handleDeleteFinalizedContract = (id: string) => {
     setFinalizedContracts((prev) => prev.filter((c) => c.id !== id));
@@ -1503,6 +1772,11 @@ export default function App() {
     }
     const finalVehicle = prevVehicle ? archivePreviousDriverIfChanged(prevVehicle, vehicle) : vehicle;
     setVehicles((prev) => prev.map((v) => (v.id === vehicle.id ? finalVehicle : v)));
+
+    const activeContact = buildContactFromVehicle(finalVehicle);
+    if (activeContact) {
+      handleSaveContact(activeContact);
+    }
     
     // Explicitly trigger a cloud sync check without waiting for the next effect cycle
     // (Though useEffect will catch it, this ensures we don't lose the update if the user closes the app immediately)
@@ -2180,36 +2454,81 @@ export default function App() {
     const id = targetVehicle.id;
 
     try {
-      let fileName = '';
-      let pdfDataUrl = '';
+      const payments = (targetVehicle.weeklyPayments || []).filter(isWeeklyPaymentPaid);
+      const totalPaid = payments.reduce((acc, p) => acc + (p.amount || 0), 0);
+      const todayIso = getTodayIsoLocal();
+      const returnIso = settlement?.returnDate || todayIso;
+      const due30DateObj = new Date(`${returnIso}T12:00:00`);
+      due30DateObj.setDate(due30DateObj.getDate() + 30);
+      const dueDate30Days = due30DateObj.toISOString().split('T')[0];
 
-      if (!isPreFinalize) {
-        // 1. Generate PDF with vehicle history, contract, settlement, sinistros, vistorias & all attachments
-        const resPdf = await generateVehiclePDF(
-          targetVehicle,
-          maintenanceLogs,
-          expenseLogs,
-          vistorias,
-          fuelLogs,
-          { settlement, sinistroLogs }
-        );
-        fileName = resPdf.fileName;
-        pdfDataUrl = resPdf.pdfDataUrl;
+      const effectiveSettlement: CaucaoSettlementData = settlement || {
+        caucaoOriginal: targetVehicle.caucaoValor || 0,
+        descontoAluguelPendente: 0,
+        descontoAvarias: 0,
+        descontoLavagem: 0,
+        descontoCombustivel: 0,
+        descontoMultas: 0,
+        descontoPedagios: 0,
+        observacoesAcerto: '',
+        saldoFinal: targetVehicle.caucaoValor || 0,
+        returnDate: returnIso,
+      };
 
-        // Try auto download
+      const vehicleSnapshot: Partial<Vehicle> = {
+        brand: targetVehicle.brand,
+        model: targetVehicle.model,
+        plate: targetVehicle.plate,
+        year: targetVehicle.year,
+        color: targetVehicle.color,
+        rentalCompany: targetVehicle.rentalCompany,
+        driver: targetVehicle.driver,
+        driverPhone: targetVehicle.driverPhone,
+        tenantCpfCnpj: targetVehicle.tenantCpfCnpj,
+        tenantRg: targetVehicle.tenantRg,
+        tenantCnh: targetVehicle.tenantCnh,
+        tenantEmail: targetVehicle.tenantEmail,
+        tenantAddress: targetVehicle.tenantAddress,
+        driverCnhExpiration: targetVehicle.driverCnhExpiration,
+        driverCnhPhotoUrl: targetVehicle.driverCnhPhotoUrl,
+        driverAddressProofUrl: targetVehicle.driverAddressProofUrl,
+        startDate: targetVehicle.startDate,
+        endDate: returnIso,
+        contractNumber: targetVehicle.contractNumber,
+        weeklyPayments: targetVehicle.weeklyPayments,
+        valorSemanal: targetVehicle.valorSemanal,
+        valorRecebido: targetVehicle.valorRecebido,
+        caucaoValor: targetVehicle.caucaoValor,
+        caucaoData: targetVehicle.caucaoData,
+        caucaoObservacoes: targetVehicle.caucaoObservacoes,
+        promisePayments: targetVehicle.promisePayments,
+        fines: targetVehicle.fines,
+        documents: targetVehicle.documents,
+        currentKm: targetVehicle.currentKm,
+        initialKm: targetVehicle.initialKm,
+        fuelLevel: targetVehicle.fuelLevel,
+        seguro: targetVehicle.seguro,
+        ipva: targetVehicle.ipva,
+      };
+
+      const newContractId = `contract-final-${Date.now()}`;
+
+      if (isPreFinalize) {
+        // 1º MOMENTO: Gera o Termo de Encerramento de Contrato (prévia detalhada a pagar/receber) + ativa push de 30 dias
+        requestNotificationPermission().catch(() => false);
+        const resPdf = await generateTermoEncerramentoPDF(targetVehicle, effectiveSettlement, {
+          returnDate: returnIso,
+          dueDate30Days,
+        });
+
         try {
-          resPdf.doc.save(fileName);
+          resPdf.doc.save(resPdf.fileName);
         } catch (saveErr) {
           console.warn('Could not auto-trigger browser download:', saveErr);
         }
 
-        // 2. Save to Contratos Finalizados folder
-        const payments = (targetVehicle.weeklyPayments || []).filter(isWeeklyPaymentPaid);
-        const totalPaid = payments.reduce((acc, p) => acc + (p.amount || 0), 0);
-        const todayIso = getTodayIsoLocal();
-
-        const newContract: FinalizedContract = {
-          id: `contract-final-${Date.now()}`,
+        const preFinalizedContract: FinalizedContract = {
+          id: newContractId,
           vehicleId: id,
           brand: targetVehicle.brand,
           model: targetVehicle.model,
@@ -2217,23 +2536,90 @@ export default function App() {
           driver: targetVehicle.driver || 'Não informado',
           driverPhone: targetVehicle.driverPhone,
           startDate: targetVehicle.startDate,
-          endDate: targetVehicle.endDate || todayIso,
-          terminationDate: new Date().toLocaleDateString('pt-BR'),
-          pdfFileName: fileName,
-          pdfDataUrl,
+          endDate: returnIso,
+          terminationDate: new Date(`${returnIso}T12:00:00`).toLocaleDateString('pt-BR'),
+          pdfFileName: resPdf.fileName,
+          pdfDataUrl: resPdf.pdfDataUrl,
+          preFinalizePdfFileName: resPdf.fileName,
+          preFinalizePdfDataUrl: resPdf.pdfDataUrl,
           totalPaid,
           documentsCount: targetVehicle.documents?.length || 0,
           maintenanceCount: maintenanceLogs.filter((m) => m.vehicleId === id).length,
-          viewed: false
+          viewed: false,
+          status: 'pre_finalized',
+          returnDate: returnIso,
+          dueDate30Days,
+          settlement: effectiveSettlement,
+          initialSettlement: effectiveSettlement,
+          lateDebits: [],
+          vehicleSnapshot,
+        };
+
+        setFinalizedContracts((prev) => [preFinalizedContract, ...prev]);
+
+        await schedule30DayQuitationReminder({
+          contractId: newContractId,
+          vehicleLabel: `${targetVehicle.brand} ${targetVehicle.model} (${targetVehicle.plate})`,
+          driverName: targetVehicle.driver || 'Motorista',
+          dueDate30DaysIso: dueDate30Days,
+          saldoFinal: effectiveSettlement.saldoFinal,
+        });
+      } else {
+        // FINALIZAÇÃO DEFINITIVA IMEDIATA: Gera direto o Termo de Encerramento e Quitação de Débitos
+        const resPdf = await generateTermoQuitacaoPDF(
+          targetVehicle,
+          maintenanceLogs,
+          expenseLogs,
+          vistorias,
+          fuelLogs,
+          {
+            settlement: effectiveSettlement,
+            initialSettlement: effectiveSettlement,
+            lateDebits: [],
+            sinistroLogs,
+            returnDate: returnIso,
+            dueDate30Days,
+            quitationDate: todayIso,
+          }
+        );
+
+        try {
+          resPdf.doc.save(resPdf.fileName);
+        } catch (saveErr) {
+          console.warn('Could not auto-trigger browser download:', saveErr);
+        }
+
+        const newContract: FinalizedContract = {
+          id: newContractId,
+          vehicleId: id,
+          brand: targetVehicle.brand,
+          model: targetVehicle.model,
+          plate: targetVehicle.plate,
+          driver: targetVehicle.driver || 'Não informado',
+          driverPhone: targetVehicle.driverPhone,
+          startDate: targetVehicle.startDate,
+          endDate: returnIso,
+          terminationDate: new Date().toLocaleDateString('pt-BR'),
+          pdfFileName: resPdf.fileName,
+          pdfDataUrl: resPdf.pdfDataUrl,
+          totalPaid,
+          documentsCount: targetVehicle.documents?.length || 0,
+          maintenanceCount: maintenanceLogs.filter((m) => m.vehicleId === id).length,
+          viewed: false,
+          status: 'finalized',
+          returnDate: returnIso,
+          dueDate30Days,
+          settlement: effectiveSettlement,
+          initialSettlement: effectiveSettlement,
+          lateDebits: [],
+          vehicleSnapshot,
         };
 
         setFinalizedContracts((prev) => [newContract, ...prev]);
       }
 
-      // 3. Remove contract/rental attachments from vehicle (keep only permanent CRLV) if definitive, or keep docs if pre-finalized
-      const remainingDocs = isPreFinalize 
-        ? (targetVehicle.documents || []) 
-        : (targetVehicle.documents || []).filter((d) => d.category === 'CRLV');
+      // Sempre preserva apenas o CRLV no card do veículo para liberar espaço limpo ao novo motorista
+      const remainingDocs = (targetVehicle.documents || []).filter((d) => d.category === 'CRLV');
 
       // Preserve Locatário in contacts list
       if (targetVehicle.driver && targetVehicle.driver.trim()) {
@@ -2262,7 +2648,7 @@ export default function App() {
         });
       }
 
-      // 3b. Preserve driver rental snapshot in vehicle.driverHistory so previous months keep all driver data
+      // Preserve driver rental snapshot in vehicle.driverHistory
       const settlementNote = settlement
         ? [
             settlement.observacoesAcerto?.trim(),
@@ -2288,7 +2674,6 @@ export default function App() {
         ? [historySnapshot, ...(targetVehicle.driverHistory || [])]
         : targetVehicle.driverHistory;
 
-      // Mark open fines settled during contract finalization as paid by tenant so they don't carry over to next driver
       const pendingFinesSum = (targetVehicle.fines || [])
         .filter((f) => f.status !== 'Paga pelo Locatário' && f.status !== 'Paga pela Locadora')
         .reduce((sum, f) => sum + getFineTotal(f), 0);
@@ -2303,7 +2688,7 @@ export default function App() {
           )
         : targetVehicle.fines;
 
-      // 4. Update vehicle: PRESERVE vehicle, maintenance & driverHistory info, RESET active driver/contract info
+      // Libera o veículo para novo motorista mantendo histórico e CRLV
       const updatedVehicle: Vehicle = {
         ...targetVehicle,
         fines: updatedFines,
@@ -2333,25 +2718,198 @@ export default function App() {
       setVehicles((prev) => prev.map((v) => (v.id === id ? updatedVehicle : v)));
 
       if (isPreFinalize) {
-        sendAppNotification(`🚗 Veículo Liberado (Aguardando Multas): ${targetVehicle.brand} (${targetVehicle.plate})`, {
-          body: `O motorista ${targetVehicle.driver || ''} foi encerrado e o carro liberado para novos contratos, mantendo o acerto salvo.`,
-          eventKey: 'contract_finalized',
+        const dueBR = new Date(`${dueDate30Days}T12:00:00`).toLocaleDateString('pt-BR');
+        sendAppNotification(`📋 Termo de Encerramento Gerado: ${targetVehicle.brand} (${targetVehicle.plate})`, {
+          body: `Prévia salva e carro liberado! Lembrete de 30 dias ativado para ${dueBR} (Quitação e devolução de caução).`,
+          eventKey: 'contract_pre_finalized',
         });
-        setDeleteToastMsg(`Veículo ${targetVehicle.brand} ${targetVehicle.model} (${targetVehicle.plate}) liberado para novo motorista com sucesso! O acerto de caução foi registrado no histórico e o contrato ficou pré-finalizado (aguardando eventuais multas futuras).`);
+        setDeleteToastMsg(`Termo de Encerramento gerado e baixado! O carro ${targetVehicle.plate} foi liberado para novo motorista e o lembrete push de 30 dias foi ativado para ${dueBR}.`);
       } else {
-        sendAppNotification(`📁 Contrato Finalizado: ${targetVehicle.brand} (${targetVehicle.plate})`, {
-          body: `Contrato de ${targetVehicle.driver || 'motorista'} arquivado em Contratos Finalizados com sucesso.`,
+        sendAppNotification(`📁 Termo de Quitação Emitido: ${targetVehicle.brand} (${targetVehicle.plate})`, {
+          body: `Termo de Encerramento e Quitação de Débitos de ${targetVehicle.driver || 'motorista'} arquivado em Contratos Finalizados.`,
           eventKey: 'contract_finalized',
         });
-        setDeleteToastMsg(`Contrato do veículo ${targetVehicle.brand} ${targetVehicle.model} (${targetVehicle.plate}) finalizado com sucesso! Relatório arquivado em 'Contratos Finalizados' e dados de manutenção mantidos no sistema.`);
+        setDeleteToastMsg(`Termo de Encerramento e Quitação de Débitos do veículo ${targetVehicle.brand} ${targetVehicle.model} (${targetVehicle.plate}) gerado e arquivado com sucesso!`);
       }
-      setTimeout(() => setDeleteToastMsg(null), 6000);
+      setTimeout(() => setDeleteToastMsg(null), 6500);
     } catch (err) {
       console.error('Erro ao processar acerto/finalização:', err);
       setDeleteToastMsg('Erro ao processar finalização. Tente novamente.');
       setTimeout(() => setDeleteToastMsg(null), 4000);
     } finally {
       setVehiclePendingFinalize(null);
+    }
+  };
+
+  const recalculateSettlementWithLateDebits = (
+    contract: FinalizedContract,
+    updatedDebits: LateContractDebit[]
+  ): CaucaoSettlementData => {
+    const base: CaucaoSettlementData = contract.initialSettlement || contract.settlement || {
+      caucaoOriginal: 0,
+      descontoAluguelPendente: 0,
+      descontoAvarias: 0,
+      descontoLavagem: 0,
+      descontoCombustivel: 0,
+      descontoMultas: 0,
+      descontoPedagios: 0,
+      observacoesAcerto: '',
+      saldoFinal: 0,
+    };
+    const sumCat = (cat: LateContractDebit['category']) =>
+      updatedDebits.filter((d) => d.category === cat).reduce((s, d) => s + (d.amount || 0), 0);
+
+    const next: CaucaoSettlementData = {
+      ...base,
+      descontoAvarias: Number((base.descontoAvarias + sumCat('Avaria')).toFixed(2)),
+      descontoLavagem: Number(((base.descontoLavagem || 0) + sumCat('Lavagem')).toFixed(2)),
+      descontoCombustivel: Number((base.descontoCombustivel + sumCat('Combustível')).toFixed(2)),
+      descontoMultas: Number((base.descontoMultas + sumCat('Multa')).toFixed(2)),
+      descontoPedagios: Number(((base.descontoPedagios || 0) + sumCat('Pedágio') + sumCat('Outros')).toFixed(2)),
+      saldoFinal: 0,
+    };
+
+    const totalDiscounts =
+      next.descontoAluguelPendente +
+      next.descontoAvarias +
+      (next.descontoLavagem || 0) +
+      next.descontoCombustivel +
+      next.descontoMultas +
+      (next.descontoPedagios || 0);
+    next.saldoFinal = Number((next.caucaoOriginal - totalDiscounts).toFixed(2));
+    return next;
+  };
+
+  const handleAddLateDebitToContract = (contractId: string, debit: LateContractDebit) => {
+    setFinalizedContracts((prev) =>
+      prev.map((c) => {
+        if (c.id !== contractId) return c;
+        const nextDebits = [debit, ...(c.lateDebits || [])];
+        const nextSettlement = recalculateSettlementWithLateDebits(c, nextDebits);
+        return {
+          ...c,
+          initialSettlement: c.initialSettlement || c.settlement,
+          lateDebits: nextDebits,
+          settlement: nextSettlement,
+        };
+      })
+    );
+    setDeleteToastMsg(`Lançamento [${debit.category}] adicionado ao contrato e saldo da caução recalculado!`);
+    setTimeout(() => setDeleteToastMsg(null), 4000);
+  };
+
+  const handleRemoveLateDebitFromContract = (contractId: string, debitId: string) => {
+    setFinalizedContracts((prev) =>
+      prev.map((c) => {
+        if (c.id !== contractId) return c;
+        const nextDebits = (c.lateDebits || []).filter((d) => d.id !== debitId);
+        const nextSettlement = recalculateSettlementWithLateDebits(c, nextDebits);
+        return {
+          ...c,
+          lateDebits: nextDebits,
+          settlement: nextSettlement,
+        };
+      })
+    );
+  };
+
+  const handleCompleteQuitationContract = async (contractId: string) => {
+    const targetContract = finalizedContracts.find((c) => c.id === contractId);
+    if (!targetContract) return;
+
+    try {
+      const liveVehicle = vehicles.find((v) => v.id === targetContract.vehicleId);
+      const snap = targetContract.vehicleSnapshot || {};
+      const reconstructedVehicle: Vehicle = {
+        id: targetContract.vehicleId,
+        brand: snap.brand || targetContract.brand,
+        model: snap.model || targetContract.model,
+        plate: snap.plate || targetContract.plate,
+        year: snap.year || liveVehicle?.year || new Date().getFullYear(),
+        color: snap.color || liveVehicle?.color || '',
+        rentalCompany: snap.rentalCompany || liveVehicle?.rentalCompany || '',
+        startDate: snap.startDate || targetContract.startDate || '',
+        endDate: snap.endDate || targetContract.returnDate || targetContract.endDate || '',
+        valorRecebido: snap.valorRecebido ?? liveVehicle?.valorRecebido ?? 0,
+        valorSemanal: snap.valorSemanal ?? liveVehicle?.valorSemanal ?? 0,
+        financiamento: liveVehicle?.financiamento || 0,
+        seguro: snap.seguro ?? liveVehicle?.seguro ?? 0,
+        ipva: snap.ipva ?? liveVehicle?.ipva ?? 0,
+        manutencaoPreventiva: liveVehicle?.manutencaoPreventiva || 0,
+        currentKm: snap.currentKm ?? liveVehicle?.currentKm ?? 0,
+        initialKm: snap.initialKm,
+        fuelLevel: snap.fuelLevel ?? 8,
+        driver: snap.driver || targetContract.driver,
+        driverPhone: snap.driverPhone || targetContract.driverPhone || '',
+        contractNumber: snap.contractNumber || '',
+        weeklyPayments: snap.weeklyPayments || [],
+        fines: snap.fines || [],
+        documents: snap.documents || [],
+        caucaoValor: snap.caucaoValor ?? 0,
+        caucaoData: snap.caucaoData || '',
+        caucaoObservacoes: snap.caucaoObservacoes || '',
+        promisePayments: snap.promisePayments || [],
+        tenantCpfCnpj: snap.tenantCpfCnpj,
+        tenantRg: snap.tenantRg,
+        tenantCnh: snap.tenantCnh,
+        tenantEmail: snap.tenantEmail,
+        tenantAddress: snap.tenantAddress,
+        driverCnhExpiration: snap.driverCnhExpiration,
+        driverCnhPhotoUrl: snap.driverCnhPhotoUrl,
+        driverAddressProofUrl: snap.driverAddressProofUrl,
+      };
+
+      const quitationIso = getTodayIsoLocal();
+      const resPdf = await generateTermoQuitacaoPDF(
+        reconstructedVehicle,
+        maintenanceLogs,
+        expenseLogs,
+        vistorias,
+        fuelLogs,
+        {
+          settlement: targetContract.settlement,
+          initialSettlement: targetContract.initialSettlement || targetContract.settlement,
+          lateDebits: targetContract.lateDebits || [],
+          sinistroLogs,
+          returnDate: targetContract.returnDate,
+          dueDate30Days: targetContract.dueDate30Days,
+          quitationDate: quitationIso,
+        }
+      );
+
+      try {
+        resPdf.doc.save(resPdf.fileName);
+      } catch (saveErr) {
+        console.warn('Could not auto-trigger browser download:', saveErr);
+      }
+
+      setFinalizedContracts((prev) =>
+        prev.map((c) =>
+          c.id === contractId
+            ? {
+                ...c,
+                status: 'finalized',
+                terminationDate: new Date(`${quitationIso}T12:00:00`).toLocaleDateString('pt-BR'),
+                pdfFileName: resPdf.fileName,
+                pdfDataUrl: resPdf.pdfDataUrl,
+                viewed: true,
+              }
+            : c
+        )
+      );
+
+      await cancel30DayQuitationReminder(contractId);
+
+      sendAppNotification(`✅ Termo de Quitação Emitido: ${targetContract.brand} (${targetContract.plate})`, {
+        body: `Contrato de ${targetContract.driver} consolidado com sucesso e arquivado em Contratos Quitados.`,
+        eventKey: 'contract_finalized',
+      });
+      setDeleteToastMsg(`Termo de Encerramento e Quitação de Débitos de ${targetContract.driver} (${targetContract.plate}) gerado e salvo com sucesso!`);
+      setTimeout(() => setDeleteToastMsg(null), 6000);
+    } catch (err) {
+      console.error('Erro ao gerar Termo de Quitação:', err);
+      setDeleteToastMsg('Erro ao gerar Termo de Quitação. Tente novamente.');
+      setTimeout(() => setDeleteToastMsg(null), 4000);
     }
   };
 
@@ -2725,13 +3283,18 @@ export default function App() {
 
   // Agenda Handlers
   const handleSaveContact = (contact: AgendaContact) => {
-    setContacts((prev) => {
-      const exists = prev.some((c) => c.id === contact.id);
-      if (exists) {
-        return prev.map((c) => (c.id === contact.id ? contact : c));
-      }
-      return [...prev, contact];
-    });
+    setContacts((prev) => upsertContactInList(prev, contact).next);
+    if (contact.phone) {
+      syncDriverToDevicePhonebook({
+        name: contact.name,
+        phone: contact.phone,
+        email: contact.email,
+        cpfCnpj: contact.cpfCnpj,
+        cnh: contact.cnh,
+        address: contact.address,
+        plate: contact.activeVehiclePlate,
+      });
+    }
   };
 
   const handleSaveMultipleContacts = (newContacts: AgendaContact[]) => {
@@ -3504,7 +4067,9 @@ export default function App() {
               }}
               onOpenFinalizedContracts={() => setIsFinalizedContractsOpen(true)}
               finalizedContractsCount={finalizedContracts.length}
-              unviewedContractsCount={finalizedContracts.filter((c) => !c.viewed).length}
+              unviewedContractsCount={
+                finalizedContracts.filter((c) => !c.viewed).length + matured30DayContracts.length
+              }
               onOpenHelp={() => setIsHelpOpen(true)}
               onOpenAgenda={() => setIsAgendaOpen(true)}
               onOpenLogForm={(type) => handleOpenForm(type)}
@@ -3520,7 +4085,17 @@ export default function App() {
                 }, 150);
               }}
               onOpenDocumentUpload={() => setIsUploadDocOpen(true)}
-              onOpenSettings={() => setIsSettingsOpen(true)}
+              onOpenSettings={() => {
+                setSettingsInitialTab('settings');
+                setSettingsSubModal(null);
+                setIsSettingsOpen(true);
+              }}
+              onOpenSettingsSubModal={(sub) => {
+                setSettingsInitialTab('settings');
+                setSettingsSubModal(sub);
+                setIsSettingsOpen(true);
+              }}
+              pendingRemindersCount={customReminders.filter((r) => !r.completed).length}
               onOpenNotificationCenter={() => setIsNotificationCenterOpen(true)}
               onOpenChecklistConfig={() => setIsChecklistConfigOpen(true)}
               onOpenInterestCalculator={() => {
@@ -3598,6 +4173,145 @@ export default function App() {
                 <CheckCircle2 className="w-3.5 h-3.5" />
                 <span>Marcar como Enviado / Concluir</span>
               </button>
+            </div>
+          </div>
+        )}
+
+        {/* Banner de Alerta: Prazo de 30 Dias Concluído (Devolução de Caução & Termo de Quitação) */}
+        {matured30DayContracts.length > 0 && (
+          <div className="p-4 rounded-2xl border flex flex-col md:flex-row items-start md:items-center justify-between gap-4 transition-all shadow-xl bg-gradient-to-r from-emerald-950/60 via-teal-950/50 to-emerald-900/50 border-emerald-500/40 shadow-emerald-900/20">
+            <div className="flex items-start gap-3">
+              <div className="p-2.5 rounded-xl shrink-0 bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 animate-pulse">
+                <BellRing className="w-5 h-5" />
+              </div>
+              <div>
+                <div className="flex items-center gap-2 flex-wrap">
+                  <h3 className="text-xs font-bold text-white uppercase tracking-wider">
+                    ⏳ Prazo de 30 Dias Concluído — Devolução de Caução & Termo de Quitação ({matured30DayContracts.length})
+                  </h3>
+                </div>
+                <p className="text-xs text-gray-200 mt-1">
+                  {matured30DayContracts.map(({ contract }) => {
+                    const saldo = contract.settlement?.saldoFinal ?? 0;
+                    const valStr = `R$ ${Math.abs(saldo).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`;
+                    return `${contract.brand} (${contract.plate}) • ${contract.driver} (${saldo >= 0 ? `Devolver: ${valStr}` : `Devedor: ${valStr}`})`;
+                  }).join(' | ')}
+                </p>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-2 shrink-0 self-end md:self-center">
+              <button
+                type="button"
+                onClick={() => setIsFinalizedContractsOpen(true)}
+                className="px-4 py-2 bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold text-xs rounded-xl transition-all flex items-center gap-1.5 shadow-md shadow-emerald-500/20 cursor-pointer"
+              >
+                <FolderArchive className="w-4 h-4" />
+                <span>Abrir & Gerar Termo de Quitação</span>
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* Banner de Lembretes / Tarefas Pendentes na Tela Inicial */}
+        {customReminders.some((r) => !r.completed) && (
+          <div className="p-4 rounded-2xl border bg-gradient-to-r from-amber-950/50 via-[#1a1610] to-amber-900/30 border-amber-500/40 shadow-xl shadow-amber-900/15 space-y-3" id="home-custom-reminders-banner">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <div className="flex items-center gap-2.5">
+                <div className="p-2 rounded-xl bg-amber-500/20 text-amber-300 border border-amber-500/30 shrink-0">
+                  <Bell className="w-4 h-4" />
+                </div>
+                <div>
+                  <h3 className="text-xs font-bold text-white uppercase tracking-wider flex items-center gap-2">
+                    <span>📌 Lembretes Pendentes (Não Esquecer)</span>
+                    <span className="px-2 py-0.5 rounded-full text-[10px] font-black bg-amber-500 text-slate-950">
+                      {customReminders.filter((r) => !r.completed).length}
+                    </span>
+                  </h3>
+                  <p className="text-[11px] text-amber-200/80">
+                    Tarefas adicionadas nas Configurações para acompanhar na tela inicial.
+                  </p>
+                </div>
+              </div>
+
+              <button
+                type="button"
+                onClick={() => {
+                  setSettingsInitialTab('settings');
+                  setSettingsSubModal('reminders');
+                  setIsSettingsOpen(true);
+                }}
+                className="px-3 py-1.5 bg-amber-500/20 hover:bg-amber-500/30 text-amber-200 border border-amber-500/40 rounded-xl text-[11px] font-bold flex items-center gap-1.5 transition-all cursor-pointer"
+              >
+                <Plus className="w-3.5 h-3.5" />
+                <span>Gerenciar / Novo Lembrete</span>
+              </button>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+              {[...customReminders]
+                .filter((r) => !r.completed)
+                .sort((a, b) => `${a.dueDate}T${a.dueTime || '09:00'}`.localeCompare(`${b.dueDate}T${b.dueTime || '09:00'}`))
+                .map((rem) => {
+                  const todayIso = getTodayIsoLocal();
+                  const isOverdue = rem.dueDate < todayIso;
+                  const isToday = rem.dueDate === todayIso;
+                  const dateBR = rem.dueDate ? new Date(`${rem.dueDate}T12:00:00`).toLocaleDateString('pt-BR') : '';
+                  return (
+                    <div
+                      key={rem.id}
+                      className={`p-3 rounded-xl border flex items-start justify-between gap-2.5 transition-all ${
+                        isOverdue
+                          ? 'bg-rose-950/40 border-rose-500/40'
+                          : isToday
+                          ? 'bg-amber-500/15 border-amber-400/50'
+                          : 'bg-black/40 border-white/10'
+                      }`}
+                    >
+                      <div className="min-w-0 flex-1 space-y-0.5">
+                        <div className="flex items-center gap-1.5 flex-wrap">
+                          <span
+                            className={`text-[9px] font-black uppercase px-1.5 py-0.5 rounded ${
+                              isOverdue
+                                ? 'bg-rose-500 text-white'
+                                : isToday
+                                ? 'bg-amber-500 text-slate-950'
+                                : 'bg-blue-500/20 text-blue-300 border border-blue-500/30'
+                            }`}
+                          >
+                            {isOverdue ? 'Atrasado' : isToday ? 'Hoje' : 'Agendado'}
+                          </span>
+                          <span className="text-[10px] font-mono text-amber-200/90 flex items-center gap-1">
+                            <Clock className="w-3 h-3" />
+                            {dateBR} {rem.dueTime ? `às ${rem.dueTime}` : ''}
+                          </span>
+                        </div>
+                        <p className="text-xs font-bold text-white leading-snug">{rem.title}</p>
+                        {rem.notes && <p className="text-[11px] text-gray-300 leading-snug">{rem.notes}</p>}
+                      </div>
+
+                      <div className="flex items-center gap-1 shrink-0">
+                        <button
+                          type="button"
+                          onClick={() => handleToggleCustomReminder(rem.id)}
+                          className="px-2 py-1.5 rounded-lg bg-emerald-500/20 hover:bg-emerald-500/35 text-emerald-300 border border-emerald-500/30 text-[10px] font-bold flex items-center gap-1 cursor-pointer"
+                          title="Concluir lembrete"
+                        >
+                          <Check className="w-3 h-3 stroke-[3]" />
+                          <span>Concluir</span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleDeleteCustomReminder(rem.id)}
+                          className="p-1.5 rounded-lg bg-rose-500/15 hover:bg-rose-500/30 text-rose-300 border border-rose-500/25 cursor-pointer"
+                          title="Excluir lembrete"
+                        >
+                          <Trash2 className="w-3 h-3" />
+                        </button>
+                      </div>
+                    </div>
+                  );
+                })}
             </div>
           </div>
         )}
@@ -3980,12 +4694,18 @@ export default function App() {
         onMarkContractAsViewed={handleMarkContractAsViewed}
         onMarkAllAsViewed={handleMarkAllContractsAsViewed}
         onDownloadBackup={handleDownloadBackup}
+        onAddLateDebit={handleAddLateDebitToContract}
+        onRemoveLateDebit={handleRemoveLateDebitFromContract}
+        onCompleteQuitation={handleCompleteQuitationContract}
       />
 
       {/* Settings Modal */}
       <SettingsModal
         isOpen={isSettingsOpen}
-        onClose={() => setIsSettingsOpen(false)}
+        onClose={() => {
+          setIsSettingsOpen(false);
+          setSettingsSubModal(null);
+        }}
         disableFridayReminder={disableFridayReminder}
         onToggleFridayReminder={handleToggleFridayReminder}
         maintNotificationsEnabled={maintNotificationsEnabled}
@@ -4016,8 +4736,14 @@ export default function App() {
         onShowDeleteConfirm={handleShowDeleteConfirm}
         onOpenBatchOdometer={() => setIsBatchOdometerOpen(true)}
         initialTab={settingsInitialTab}
+        initialSubModal={settingsSubModal}
         onContractUpdated={syncContractTemplatesToCloud}
         onOpenContractEditor={() => setIsContractEditorOpen(true)}
+        customReminders={customReminders}
+        onAddReminder={handleAddCustomReminder}
+        onToggleReminder={handleToggleCustomReminder}
+        onDeleteReminder={handleDeleteCustomReminder}
+        onUpdateReminder={handleUpdateCustomReminder}
       />
 
       {/* Centro de Notificações Modal */}
@@ -4184,6 +4910,99 @@ export default function App() {
         isOpen={isLogoViewerOpen}
         onClose={() => setIsLogoViewerOpen(false)}
       />
+
+      {/* Pop-up Lembrete de 30 Dias: Devolução de Caução & Termo de Quitação */}
+      {is30DayQuitationPopupOpen && matured30DayContracts.length > 0 && (
+        <div className="fixed inset-0 z-[2100] flex items-center justify-center p-4 bg-black/80 backdrop-blur-md animate-in fade-in duration-150">
+          <div className="bg-[#141416] border border-emerald-500/40 rounded-2xl w-full max-w-lg p-5 space-y-4 shadow-2xl">
+            <div className="flex items-start justify-between gap-3 border-b border-white/10 pb-3">
+              <div className="flex items-center gap-2.5">
+                <div className="p-2.5 rounded-xl bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">
+                  <BellRing className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="text-sm font-bold text-white">
+                    Lembrete 30 Dias: Devolução de Caução & Quitação
+                  </h3>
+                  <p className="text-[11px] text-emerald-300">
+                    {matured30DayContracts.length} contrato(s) completaram o prazo de 30 dias após a devolução
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  localStorage.setItem('fleet_30d_popup_dismissed_date', getTodayIsoLocal());
+                  setIs30DayQuitationPopupOpen(false);
+                }}
+                className="p-1.5 text-gray-400 hover:text-white bg-white/5 hover:bg-white/10 rounded-lg cursor-pointer"
+              >
+                ✕
+              </button>
+            </div>
+
+            <div className="space-y-2.5 max-h-72 overflow-y-auto pr-1">
+              {matured30DayContracts.map(({ contract, dueIso }) => {
+                const saldo = contract.settlement?.saldoFinal ?? 0;
+                const isRefund = saldo >= 0;
+                const lateCount = (contract.lateDebits || []).length;
+                return (
+                  <div
+                    key={contract.id}
+                    className="p-3 rounded-xl bg-white/[0.03] border border-white/10 space-y-1.5"
+                  >
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="text-xs font-bold text-white">
+                        {contract.brand} {contract.model} ({contract.plate})
+                      </span>
+                      <span className="text-[10px] font-mono text-amber-300 bg-amber-500/10 px-2 py-0.5 rounded border border-amber-500/20">
+                        Prazo: {new Date(`${dueIso}T12:00:00`).toLocaleDateString('pt-BR')}
+                      </span>
+                    </div>
+                    <p className="text-xs text-gray-300">
+                      Motorista: <strong className="text-white">{contract.driver}</strong> • {lateCount} lançamento(s) nos 30 dias
+                    </p>
+                    <div
+                      className={`px-3 py-2 rounded-lg border text-xs font-mono font-bold flex items-center justify-between ${
+                        isRefund
+                          ? 'bg-emerald-500/15 border-emerald-500/30 text-emerald-300'
+                          : 'bg-rose-500/15 border-rose-500/30 text-rose-300'
+                      }`}
+                    >
+                      <span>{isRefund ? 'VALOR DEVIDO DA CAUÇÃO A DEVOLVER:' : 'SALDO DEVEDOR DO MOTORISTA:'}</span>
+                      <span>R$ {Math.abs(saldo).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</span>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+
+            <div className="flex flex-wrap items-center justify-end gap-2 pt-2 border-t border-white/10">
+              <button
+                type="button"
+                onClick={() => {
+                  localStorage.setItem('fleet_30d_popup_dismissed_date', getTodayIsoLocal());
+                  setIs30DayQuitationPopupOpen(false);
+                }}
+                className="px-3.5 py-2 text-xs font-bold text-gray-300 hover:text-white bg-white/5 hover:bg-white/10 rounded-xl border border-white/10 cursor-pointer"
+              >
+                Lembrar Mais Tarde
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  localStorage.setItem('fleet_30d_popup_dismissed_date', getTodayIsoLocal());
+                  setIs30DayQuitationPopupOpen(false);
+                  setIsFinalizedContractsOpen(true);
+                }}
+                className="px-4 py-2 text-xs font-bold text-slate-950 bg-emerald-400 hover:bg-emerald-300 rounded-xl shadow-md shadow-emerald-500/20 cursor-pointer"
+              >
+                Abrir e Emitir Termo de Quitação
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Global Voice Assistant Floating Button */}
       <GlobalVoiceAssistant onDataExtracted={handleGlobalDataExtracted} />

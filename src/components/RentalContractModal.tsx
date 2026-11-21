@@ -6,6 +6,7 @@ import { sendAppNotification } from '../utils/notifications';
 import { DriverVistoriaForm } from './DriverVistoriaForm';
 import { getPublicWebBaseUrl } from './VehicleCard';
 import { encodeVistoriaParams } from '../utils/vistoriaUrl';
+import { buildContactFromVehicle, syncDriverToDevicePhonebook } from '../utils/agendaSync';
 import { Capacitor } from '@capacitor/core';
 import CurrencyInput from './CurrencyInput';
 import { 
@@ -372,6 +373,21 @@ export const RentalContractModal: React.FC<RentalContractModalProps> = ({
     };
 
     onUpdateVehicle(updatedVehicle);
+    const syncedContact = buildContactFromVehicle(updatedVehicle);
+    if (syncedContact) {
+      if (onSaveContact) {
+        onSaveContact(syncedContact);
+      }
+      syncDriverToDevicePhonebook({
+        name: syncedContact.name,
+        phone: syncedContact.phone,
+        email: syncedContact.email,
+        cpfCnpj: syncedContact.cpfCnpj,
+        cnh: syncedContact.cnh,
+        address: syncedContact.address,
+        plate: updatedVehicle.plate,
+      });
+    }
     setIsSavedNotification(true);
     setTimeout(() => setIsSavedNotification(false), 3500);
   };
@@ -790,6 +806,22 @@ Isso é fundamental para a vinculação correta do veículo. Qualquer dúvida es
       };
 
       onUpdateVehicle(updatedVehicle);
+
+      const syncedContact = buildContactFromVehicle(updatedVehicle);
+      if (syncedContact) {
+        if (onSaveContact) {
+          onSaveContact(syncedContact);
+        }
+        syncDriverToDevicePhonebook({
+          name: syncedContact.name,
+          phone: syncedContact.phone,
+          email: syncedContact.email,
+          cpfCnpj: syncedContact.cpfCnpj,
+          cnh: syncedContact.cnh,
+          address: syncedContact.address,
+          plate: updatedVehicle.plate,
+        });
+      }
 
       setGeneratedPdfUrl(pdfDataUrl);
       setGeneratedPdfFileName(fileName);

@@ -1,7 +1,6 @@
 import { jsPDF } from 'jspdf';
 import * as pdfjsLib from 'pdfjs-dist';
-import { Vehicle, MaintenanceLog, ExpenseLog, Vistoria, FuelLog, SinistroLog, getFineAdminFee, getFineTotal, isWeeklyPaymentPaid } from '../types';
-import type { CaucaoSettlementData } from '../components/ConfirmFinalizeContractModal';
+import { Vehicle, MaintenanceLog, ExpenseLog, Vistoria, FuelLog, SinistroLog, CaucaoSettlementData, LateContractDebit, getFineAdminFee, getFineTotal, isWeeklyPaymentPaid } from '../types';
 import { getSavedContractClauses, replaceClauseVariables, getFullContractTextTemplate, groupClausesByTopic } from './contractClauses';
 
 try {
@@ -823,6 +822,1010 @@ export async function generateVehiclePDF(
   // Generate data URL
   const pdfDataUrl = doc.output('datauristring');
 
+  return { doc, fileName, pdfDataUrl };
+}
+
+function formatDateBrSafe(isoDate?: string): string {
+  if (!isoDate) return 'Não informada';
+  if (/^\d{4}-\d{2}-\d{2}/.test(isoDate)) {
+    const clean = isoDate.slice(0, 10);
+    return new Date(`${clean}T12:00:00`).toLocaleDateString('pt-BR');
+  }
+  return isoDate;
+}
+
+function formatMoneyBr(val: number): string {
+  return `R$ ${(Number(val) || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+}
+
+async function appendVehicleDossierSections(
+  doc: jsPDF,
+  vehicle: Vehicle,
+  maintenanceLogs: MaintenanceLog[],
+  expenseLogs: ExpenseLog[],
+  vistorias: Vistoria[],
+  options?: {
+    settlement?: CaucaoSettlementData;
+    sinistroLogs?: SinistroLog[];
+  }
+) {
+  const primaryColor = [30, 41, 59];
+  const textColor = [51, 65, 85];
+  let y = 16;
+
+  // Section 1: Dados do Veículo
+  doc.setFillColor(241, 245, 249);
+  doc.rect(14, y, 182, 7, 'F');
+  doc.setTextColor(primaryColor[0], primaryColor[1], primaryColor[2]);
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(11);
+  doc.text('1. DADOS IDENTIFICADORES DO VEÍCULO', 18, y + 5);
+
+  y += 12;
+  doc.setFontSize(10);
+  doc.setTextColor(textColor[0], textColor[1], textColor[2]);
+
+  const payments = (vehicle.weeklyPayments || []).filter(isWeeklyPaymentPaid);
+  const totalPaid = payments.reduce((acc, p) => acc + p.amount, 0);
+
+  const vehicleFields = [
+    [`Marca / Modelo:`, `${vehicle.brand} ${vehicle.model}`],
+    [`Placa:`, `${vehicle.plate}`],
+    [`Ano / Cor:`, `${vehicle.year} / ${vehicle.color}`],
+    [`Odômetro Final:`, `${(vehicle.currentKm || 0).toLocaleString('pt-BR')} km`],
+    [`Locadora / Empresa:`, vehicle.rentalCompany || 'Não informada'],
+    [`Total Recebido (Pago):`, formatMoneyBr(totalPaid > 0 ? totalPaid : (vehicle.valorRecebido || 0))],
+    [`Nível Combustível:`, `${vehicle.fuelLevel || 8}/8 (${((vehicle.fuelLevel || 8) / 8 * 100).toFixed(0)}%)`],
+    [`Seguro / IPVA:`, `${formatMoneyBr(vehicle.seguro || 0)} / ${formatMoneyBr(vehicle.ipva || 0)}`]
+  ];
+
+  vehicleFields.forEach((field, i) => {
+    const col = i % 2;
+    const row = Math.floor(i / 2);
+    const xPos = col === 0 ? 18 : 110;
+    const yPos = y + (row * 6);
+    doc.setFont('helvetica', 'bold');
+    doc.text(field[0], xPos, yPos);
+    doc.setFont('helvetica', 'normal');
+    doc.text(field[1], xPos + doc.getTextWidth(field[0]) + 2, yPos);
+  });
+
+  y += (Math.ceil(vehicleFields.length / 2) * 6) + 6;
+
+  // Section 2: Dados do Locatário / Motorista + CNH & Comprovante de Endereço
+  doc.setFillColor(241, 245, 249);
+  doc.rect(14, y, 182, 7, 'F');
+  doc.setTextColor(primaryColor[0], primaryColor[1], primaryColor[2]);
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(11);
+  doc.text('2. DADOS E ANEXOS DO LOCATÁRIO / MOTORISTA', 18, y + 5);
+
+  y += 12;
+  doc.setFontSize(9.5);
+  doc.setTextColor(textColor[0], textColor[1], textColor[2]);
+
+  const driverFields: [string, string][] = [
+    [`Nome do Motorista:`, vehicle.driver || 'Não cadastrado'],
+    [`Telefone:`, vehicle.driverPhone || 'Não informado'],
+    [`CPF / CNPJ:`, vehicle.tenantCpfCnpj || 'Não informado'],
+    [`RG:`, vehicle.tenantRg || 'Não informado'],
+    [`CNH:`, `${vehicle.tenantCnh || 'Não informada'}${vehicle.driverCnhExpiration ? ` (Val: ${formatDateBrSafe(vehicle.driverCnhExpiration)})` : ''}`],
+    [`Data Início Locação:`, formatDateBrSafe(vehicle.startDate)],
+  ];
+
+  driverFields.forEach((field, i) => {
+    const col = i % 2;
+    const row = Math.floor(i / 2);
+    const xPos = col === 0 ? 18 : 110;
+    const yPos = y + (row * 6);
+    doc.setFont('helvetica', 'bold');
+    doc.text(field[0], xPos, yPos);
+    doc.setFont('helvetica', 'normal');
+    doc.text(field[1], xPos + doc.getTextWidth(field[0]) + 2, yPos);
+  });
+
+  y += (Math.ceil(driverFields.length / 2) * 6) + 2;
+
+  if (vehicle.tenantAddress) {
+    doc.setFont('helvetica', 'bold');
+    doc.text('Endereço:', 18, y);
+    doc.setFont('helvetica', 'normal');
+    const addrLines = doc.splitTextToSize(vehicle.tenantAddress, 155);
+    doc.text(addrLines, 38, y);
+    y += addrLines.length * 5 + 2;
+  }
+
+  if (vehicle.driverCnhPhotoUrl) {
+    y = await renderAttachmentIntoPdf(doc, vehicle.driverCnhPhotoUrl, 'Anexo do Motorista: CNH Digitalizada / Foto', y);
+  }
+  if (vehicle.driverAddressProofUrl) {
+    y = await renderAttachmentIntoPdf(doc, vehicle.driverAddressProofUrl, 'Anexo do Motorista: Comprovante de Endereço', y);
+  }
+
+  y += 4;
+  if (y > 235) { doc.addPage(); y = 15; }
+
+  // Section 3: Histórico Financeiro e Pagamentos
+  doc.setFillColor(241, 245, 249);
+  doc.rect(14, y, 182, 7, 'F');
+  doc.setTextColor(primaryColor[0], primaryColor[1], primaryColor[2]);
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(11);
+  doc.text('3. HISTÓRICO DE PAGAMENTOS SEMANAIS', 18, y + 5);
+
+  y += 12;
+  doc.setFontSize(9.5);
+  doc.setTextColor(textColor[0], textColor[1], textColor[2]);
+  doc.setFont('helvetica', 'normal');
+
+  const totalPaidPromises = (vehicle.promisePayments || []).filter(p => p.isPaid).reduce((acc, p) => acc + (p.amount || 0), 0);
+  const totalPromises = (vehicle.promisePayments || []).reduce((acc, p) => acc + (p.amount || 0), 0);
+
+  doc.text(`Caução Inicial: ${formatMoneyBr(vehicle.caucaoValor || 0)} | Promessas de Caução: ${formatMoneyBr(totalPromises)} (Pagas: ${formatMoneyBr(totalPaidPromises)})`, 18, y);
+  y += 5.5;
+  doc.text(`Total de parcelas semanais pagas registradas: ${formatMoneyBr(totalPaid)} (${payments.length} parcela(s))`, 18, y);
+  y += 6;
+
+  doc.setFillColor(primaryColor[0], primaryColor[1], primaryColor[2]);
+  doc.setTextColor(255, 255, 255);
+  doc.setFont('helvetica', 'bold');
+  doc.rect(14, y, 182, 6, 'F');
+  doc.text('Data Pagamento', 18, y + 4.5);
+  doc.text('Valor Pago (R$)', 80, y + 4.5);
+
+  y += 6;
+  doc.setTextColor(textColor[0], textColor[1], textColor[2]);
+  doc.setFont('helvetica', 'normal');
+
+  if (payments.length === 0) {
+    doc.text('Nenhum pagamento confirmado registrado.', 18, y + 5);
+    y += 8;
+  } else {
+    payments.forEach((p, idx) => {
+      if (y > 268) { doc.addPage(); y = 15; }
+      if (idx % 2 === 1) {
+        doc.setFillColor(248, 250, 252);
+        doc.rect(14, y, 182, 5.5, 'F');
+      }
+      const dateStr = formatDateBrSafe(p.paidDate || p.date);
+      doc.text(dateStr, 18, y + 4);
+      doc.text(formatMoneyBr(p.amount), 80, y + 4);
+      y += 5.5;
+    });
+  }
+
+  y += 4;
+  if (y > 235) { doc.addPage(); y = 15; }
+
+  // Section 4: Manutenções e Despesas
+  const vehMaint = maintenanceLogs.filter((m) => m.vehicleId === vehicle.id);
+  const vehExp = expenseLogs.filter((e) => e.vehicleId === vehicle.id);
+  const cleanPlate = vehicle.plate.replace(/[^A-Z0-9]/gi, '').toUpperCase();
+  const vehVistorias = vistorias.filter(
+    (v) =>
+      v.vehicleId === vehicle.id ||
+      (v.vehiclePlate && v.vehiclePlate.replace(/[^A-Z0-9]/gi, '').toUpperCase() === cleanPlate)
+  );
+  const vehSinistros = (options?.sinistroLogs || []).filter((s) => s.vehicleId === vehicle.id);
+
+  doc.setFillColor(241, 245, 249);
+  doc.rect(14, y, 182, 7, 'F');
+  doc.setTextColor(primaryColor[0], primaryColor[1], primaryColor[2]);
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(11);
+  doc.text('4. MANUTENÇÕES E DESPESAS', 18, y + 5);
+
+  y += 12;
+  doc.setFontSize(9);
+  doc.setFont('helvetica', 'normal');
+  doc.setTextColor(textColor[0], textColor[1], textColor[2]);
+
+  const totalMaintCost = vehMaint.reduce((acc, m) => acc + m.cost, 0);
+  const totalExpCost = vehExp.reduce((acc, e) => acc + e.cost, 0);
+
+  doc.text(`Total em Manutenções (${vehMaint.length} registro(s)): ${formatMoneyBr(totalMaintCost)}`, 18, y);
+  y += 5;
+  doc.text(`Total em Despesas Eventuais (${vehExp.length} registro(s)): ${formatMoneyBr(totalExpCost)}`, 18, y);
+  y += 8;
+
+  if (vehMaint.length > 0) {
+    doc.setFont('helvetica', 'bold');
+    doc.text('Registros de Manutenção:', 18, y);
+    y += 5;
+    doc.setFont('helvetica', 'normal');
+    vehMaint.forEach((m) => {
+      if (y > 270) { doc.addPage(); y = 15; }
+      let extraInfo = '';
+      if (m.boNumber) extraInfo += ` [B.O.: ${m.boNumber}]`;
+      if (m.partsReplaced) extraInfo += ` [Peças: ${m.partsReplaced}]`;
+      doc.text(`• ${m.date ? formatDateBrSafe(m.date) : 'S/D'} - [${m.type}] ${m.description}${extraInfo} (${formatMoneyBr(m.cost || 0)})`, 22, y);
+      y += 5.5;
+    });
+    y += 3;
+  }
+
+  if (vehExp.length > 0) {
+    if (y > 265) { doc.addPage(); y = 15; }
+    doc.setFont('helvetica', 'bold');
+    doc.text('Despesas Eventuais / Pedágios / Taxas:', 18, y);
+    y += 5;
+    doc.setFont('helvetica', 'normal');
+    vehExp.forEach((e) => {
+      if (y > 270) { doc.addPage(); y = 15; }
+      doc.text(`• ${e.date ? formatDateBrSafe(e.date) : 'S/D'} - [${e.category}] ${e.description || '-'} (${formatMoneyBr(e.cost || 0)})`, 22, y);
+      y += 5.5;
+    });
+    y += 3;
+  }
+
+  // Section 5: Multas e Sinistros
+  const vehFines = vehicle.fines || [];
+  if (vehFines.length > 0 || vehSinistros.length > 0) {
+    if (y > 240) { doc.addPage(); y = 15; }
+    doc.setFillColor(241, 245, 249);
+    doc.rect(14, y, 182, 7, 'F');
+    doc.setTextColor(primaryColor[0], primaryColor[1], primaryColor[2]);
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(11);
+    doc.text(`5. MULTAS E SINISTROS (${vehFines.length} multa(s), ${vehSinistros.length} sinistro(s))`, 18, y + 5);
+    y += 12;
+    doc.setFontSize(9);
+    doc.setTextColor(textColor[0], textColor[1], textColor[2]);
+
+    for (const f of vehFines) {
+      if (y > 265) { doc.addPage(); y = 15; }
+      const adminFee = getFineAdminFee(f);
+      const totalF = getFineTotal(f);
+      doc.setFont('helvetica', 'bold');
+      doc.text(`• ${f.dataHora} - ${f.descricao} | Total: ${formatMoneyBr(totalF)} [${f.status}]`, 20, y);
+      y += 5;
+      if (adminFee > 0 || (f.extraAdminFineAmount || 0) > 0) {
+        doc.setFont('helvetica', 'normal');
+        doc.text(`  (Nominal: ${formatMoneyBr(f.valor || 0)}${adminFee > 0 ? ` + Taxa Adm ${f.adminFeePct ?? 20}%: ${formatMoneyBr(adminFee)}` : ''}${(f.extraAdminFineAmount || 0) > 0 ? ` + Multa Adm: ${formatMoneyBr(f.extraAdminFineAmount || 0)}` : ''})`, 22, y);
+        y += 5;
+      }
+      if (f.notificationUrl) {
+        y = await renderAttachmentIntoPdf(doc, f.notificationUrl, `Notificação da Multa (${f.dataHora})`, y, { maxW: 140, maxH: 100 });
+      }
+    }
+
+    for (const sin of vehSinistros) {
+      if (y > 265) { doc.addPage(); y = 15; }
+      doc.setFont('helvetica', 'bold');
+      doc.text(`• Sinistro ${sin.date ? formatDateBrSafe(sin.date) : ''} - ${sin.description} (Custo: ${formatMoneyBr(sin.repairCost || 0)})`, 20, y);
+      y += 5;
+      if (sin.boUrl) {
+        y = await renderAttachmentIntoPdf(doc, sin.boUrl, 'Anexo B.O. do Sinistro', y, { maxW: 150, maxH: 110 });
+      }
+      for (let idx = 0; idx < (sin.photos || []).length; idx++) {
+        y = await renderAttachmentIntoPdf(doc, sin.photos[idx], `Foto Sinistro #${idx + 1}`, y, { maxW: 130, maxH: 90 });
+      }
+    }
+  }
+
+  // Section 6: Vistorias
+  if (y > 240) { doc.addPage(); y = 15; }
+  doc.setFillColor(241, 245, 249);
+  doc.rect(14, y, 182, 7, 'F');
+  doc.setTextColor(primaryColor[0], primaryColor[1], primaryColor[2]);
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(11);
+  doc.text(`6. HISTÓRICO E LAUDOS DE VISTORIAS (${vehVistorias.length})`, 18, y + 5);
+
+  y += 12;
+  doc.setFontSize(9);
+  doc.setTextColor(textColor[0], textColor[1], textColor[2]);
+
+  if (vehVistorias.length === 0) {
+    doc.setFont('helvetica', 'italic');
+    doc.text('Nenhuma vistoria registrada para este veículo.', 18, y);
+    y += 8;
+  } else {
+    for (let index = 0; index < vehVistorias.length; index++) {
+      const v = vehVistorias[index];
+      if (y > 230) { doc.addPage(); y = 15; }
+      const vDate = v.date ? formatDateBrSafe(v.date) : 'Data não informada';
+      const vType = v.type || 'Semanal';
+
+      doc.setFillColor(248, 250, 252);
+      doc.rect(18, y, 174, 6, 'F');
+      doc.setFont('helvetica', 'bold');
+      doc.text(`Vistoria #${index + 1} - ${vType} (${vDate})`, 22, y + 4.5);
+      y += 8;
+
+      if (v.checklist) {
+        doc.setFont('helvetica', 'normal');
+        const items = Object.entries(v.checklist);
+        const approvedCount = items.filter(([_, val]) => val).length;
+        doc.text(`Status do Checklist: ${approvedCount}/${items.length} itens aprovados`, 22, y);
+        y += 5;
+
+        items.forEach(([itemKey, isOk], idx) => {
+          if (y > 270) { doc.addPage(); y = 15; }
+          const col = idx % 2;
+          const xPos = col === 0 ? 22 : 110;
+          const isTracker = itemKey.toLowerCase().includes('rastreador');
+          const statusText = isTracker ? (isOk ? '[SIM]' : '[NÃO]') : (isOk ? '[OK]' : '[PENDENTE]');
+          doc.setFont('helvetica', isOk ? 'normal' : 'bold');
+          if (!isOk) doc.setTextColor(225, 29, 72);
+          doc.text(`${statusText} ${itemKey}`, xPos, y);
+          doc.setTextColor(textColor[0], textColor[1], textColor[2]);
+          if (col === 1 || idx === items.length - 1) y += 4.5;
+        });
+        y += 2;
+      }
+
+      if (v.notes) {
+        if (y > 270) { doc.addPage(); y = 15; }
+        doc.setFont('helvetica', 'bold');
+        doc.text('Observações:', 22, y);
+        doc.setFont('helvetica', 'italic');
+        doc.text(v.notes, 48, y);
+        y += 5;
+      }
+
+      if (v.photos && v.photos.length > 0) {
+        if (y > 220) { doc.addPage(); y = 15; }
+        doc.setFont('helvetica', 'bold');
+        doc.text(`Fotos Anexadas à Vistoria (${v.photos.length}):`, 22, y);
+        y += 6;
+
+        let imgX = 22;
+        for (const photoUrl of v.photos) {
+          if (!photoUrl) continue;
+          const imgData = await urlToDataUrlWithDimensions(photoUrl);
+          if (imgData) {
+            try {
+              if (imgX + 45 > 190) {
+                imgX = 22;
+                y += 35;
+                if (y > 240) { doc.addPage(); y = 15; }
+              }
+              doc.addImage(imgData.dataUrl, imgData.format, imgX, y, 42, 30);
+              imgX += 46;
+            } catch (err) {
+              console.warn('Não foi possível renderizar imagem da vistoria no PDF:', err);
+            }
+          }
+        }
+        if (imgX > 22) y += 34;
+      } else if (v.pdfDataUrl) {
+        y = await renderAttachmentIntoPdf(doc, v.pdfDataUrl, `Laudo PDF Vistoria #${index + 1}`, y, { fileType: 'pdf' });
+      }
+      y += 4;
+    }
+  }
+
+  // Section 7: Documentos e Anexos
+  if (y > 240) { doc.addPage(); y = 15; }
+  const docs = vehicle.documents || [];
+  doc.setFillColor(241, 245, 249);
+  doc.rect(14, y, 182, 7, 'F');
+  doc.setTextColor(primaryColor[0], primaryColor[1], primaryColor[2]);
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(11);
+  doc.text(`7. DOCUMENTOS E ANEXOS DO CONTRATO E VEÍCULO (${docs.length})`, 18, y + 5);
+
+  y += 12;
+  doc.setFontSize(9);
+  doc.setTextColor(textColor[0], textColor[1], textColor[2]);
+
+  if (docs.length === 0) {
+    doc.setFont('helvetica', 'italic');
+    doc.text('Nenhum documento anexado ao contrato/veículo.', 18, y);
+    y += 8;
+  } else {
+    for (const d of docs) {
+      if (y > 255) { doc.addPage(); y = 15; }
+      doc.setFont('helvetica', 'bold');
+      doc.text(`• [${d.category || 'Geral'}] ${d.name}`, 18, y);
+      y += 4.5;
+      doc.setFont('helvetica', 'normal');
+      doc.setFontSize(8);
+      doc.setTextColor(100, 116, 139);
+      doc.text(`Enviado em: ${d.uploadDate || 'S/D'}${d.fileSize ? ` • ${d.fileSize}` : ''}`, 22, y);
+      doc.setFontSize(9);
+      doc.setTextColor(textColor[0], textColor[1], textColor[2]);
+      y += 5;
+
+      if (d.contentUrl) {
+        y = await renderAttachmentIntoPdf(
+          doc,
+          d.contentUrl,
+          `Anexo: [${d.category || 'Geral'}] ${d.name}`,
+          y,
+          { fileType: d.fileType, fileName: d.name }
+        );
+      }
+    }
+  }
+}
+
+/**
+ * 1º MOMENTO: Termo de Encerramento de Contrato (Devolução / Pré-Finalização — Aguardando 30 Dias)
+ */
+export async function generateTermoEncerramentoPDF(
+  vehicle: Vehicle,
+  settlement: CaucaoSettlementData,
+  options?: {
+    returnDate?: string;
+    dueDate30Days?: string;
+  }
+): Promise<{ doc: jsPDF; fileName: string; pdfDataUrl: string }> {
+  const doc = new jsPDF({ orientation: 'p', unit: 'mm', format: 'a4' });
+  const now = new Date();
+  const formattedNow = `${now.toLocaleDateString('pt-BR')} às ${now.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}`;
+  const cleanPlate = (vehicle.plate || 'VEICULO').replace(/[^a-zA-Z0-9]/g, '');
+  const returnIso = options?.returnDate || settlement.returnDate || now.toISOString().split('T')[0];
+  const fileName = `Termo_Encerramento_${cleanPlate}_${returnIso}.pdf`;
+
+  const dueIso =
+    options?.dueDate30Days ||
+    (() => {
+      const d = new Date(`${returnIso}T12:00:00`);
+      d.setDate(d.getDate() + 30);
+      return d.toISOString().split('T')[0];
+    })();
+
+  const primaryColor = [30, 41, 59];
+  const amberAccent = [180, 83, 9];
+  const textColor = [51, 65, 85];
+
+  // Top Header Banner
+  doc.setFillColor(primaryColor[0], primaryColor[1], primaryColor[2]);
+  doc.rect(0, 0, 210, 31, 'F');
+  doc.setFillColor(245, 158, 11);
+  doc.rect(0, 31, 210, 2, 'F');
+
+  doc.setTextColor(255, 255, 255);
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(14);
+  doc.text('TERMO DE ENCERRAMENTO DE CONTRATO DE LOCAÇÃO', 14, 12);
+
+  doc.setFontSize(9.5);
+  doc.setTextColor(253, 230, 138);
+  doc.text('1ª ETAPA: DEVOLUÇÃO DO VEÍCULO & PRÉVIA DETALHADA A PAGAR / RECEBER (PRAZO 30 DIAS)', 14, 19);
+
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(8.5);
+  doc.setTextColor(226, 232, 240);
+  doc.text(`Emitido em: ${formattedNow} | Contrato nº: ${vehicle.contractNumber || 'LOC-' + cleanPlate}`, 14, 26);
+
+  let y = 40;
+
+  // Section 1: Partes & Veículo
+  doc.setFillColor(241, 245, 249);
+  doc.rect(14, y, 182, 7, 'F');
+  doc.setTextColor(primaryColor[0], primaryColor[1], primaryColor[2]);
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(10);
+  doc.text('1. IDENTIFICAÇÃO DO VEÍCULO, LOCATÁRIO E DEVOLUÇÃO', 17, y + 4.8);
+  y += 11;
+
+  doc.setFontSize(9);
+  doc.setTextColor(textColor[0], textColor[1], textColor[2]);
+  const infoRows: [string, string][] = [
+    ['Locatário / Motorista:', vehicle.driver || 'Não informado'],
+    ['CPF / CNPJ:', vehicle.tenantCpfCnpj || 'Não informado'],
+    ['CNH:', vehicle.tenantCnh || 'Não informada'],
+    ['Telefone:', vehicle.driverPhone || 'Não informado'],
+    ['Veículo:', `${vehicle.brand} ${vehicle.model} (${vehicle.color || 'Padrão'})`],
+    ['Placa:', vehicle.plate || '---'],
+    ['Data Início Locação:', formatDateBrSafe(vehicle.startDate)],
+    ['Data Real da Devolução:', formatDateBrSafe(returnIso)],
+    ['KM na Devolução:', `${(vehicle.currentKm || 0).toLocaleString('pt-BR')} km`],
+    ['Prazo de Quitação (30d):', formatDateBrSafe(dueIso)]
+  ];
+
+  infoRows.forEach(([lbl, val], idx) => {
+    const col = idx % 2;
+    const xPos = col === 0 ? 16 : 108;
+    doc.setFont('helvetica', 'bold');
+    doc.text(lbl, xPos, y);
+    doc.setFont('helvetica', 'normal');
+    doc.text(String(val).slice(0, 38), xPos + doc.getTextWidth(lbl) + 2, y);
+    if (col === 1 || idx === infoRows.length - 1) y += 5.5;
+  });
+
+  if (vehicle.tenantAddress) {
+    doc.setFont('helvetica', 'bold');
+    doc.text('Endereço do Locatário:', 16, y);
+    doc.setFont('helvetica', 'normal');
+    const addr = doc.splitTextToSize(vehicle.tenantAddress, 138);
+    doc.text(addr, 55, y);
+    y += addr.length * 4.5 + 2;
+  }
+
+  y += 3;
+
+  // Section 2: Memória dos Aluguéis (se disponível)
+  if (vehicle.startDate || settlement.expectedTotal !== undefined) {
+    doc.setFillColor(239, 246, 255);
+    doc.rect(14, y, 182, 7, 'F');
+    doc.setTextColor(30, 64, 175);
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(10);
+    doc.text('2. MEMÓRIA DE CÁLCULO DA LOCAÇÃO (DIÁRIAS E SEMANAIS)', 17, y + 4.8);
+    y += 11;
+
+    doc.setFontSize(9);
+    doc.setTextColor(textColor[0], textColor[1], textColor[2]);
+    const daysTxt = `${settlement.daysUsed ?? 0} dia(s) rodado(s)${settlement.missingDays && settlement.missingDays > 0 ? ` + ${settlement.missingDays}d p/ mínimo 30d (multa ${settlement.earlyFineRatePct ?? 20}%)` : ''}`;
+    doc.setFont('helvetica', 'bold');
+    doc.text('Período Apurado:', 16, y);
+    doc.setFont('helvetica', 'normal');
+    doc.text(daysTxt, 48, y);
+    y += 5;
+
+    doc.setFont('helvetica', 'bold');
+    doc.text('Valor Semanal / Diária:', 16, y);
+    doc.setFont('helvetica', 'normal');
+    doc.text(`${formatMoneyBr(settlement.weeklyRate || 0)}/sem (${formatMoneyBr(settlement.dailyRate || 0)}/dia)`, 56, y);
+    y += 5;
+
+    doc.setFont('helvetica', 'bold');
+    doc.text('Total Devido do Período:', 16, y);
+    doc.setFont('helvetica', 'normal');
+    doc.text(formatMoneyBr(settlement.expectedTotal || 0), 58, y);
+
+    doc.setFont('helvetica', 'bold');
+    doc.text('Total Já Pago:', 110, y);
+    doc.setFont('helvetica', 'normal');
+    doc.text(formatMoneyBr(settlement.totalPaid || 0), 135, y);
+    y += 8;
+  }
+
+  // Section 3: Prévia Detalhada — A Pagar e a Receber
+  doc.setFillColor(241, 245, 249);
+  doc.rect(14, y, 182, 7, 'F');
+  doc.setTextColor(primaryColor[0], primaryColor[1], primaryColor[2]);
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(10);
+  doc.text('3. PRÉVIA DETALHADA DE VALORES A RECEBER E A PAGAR (ACERTO DA CAUÇÃO)', 17, y + 4.8);
+  y += 10;
+
+  // Table Header
+  doc.setFillColor(primaryColor[0], primaryColor[1], primaryColor[2]);
+  doc.rect(14, y, 182, 6.5, 'F');
+  doc.setTextColor(255, 255, 255);
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(8.5);
+  doc.text('DESCRIÇÃO DO LANÇAMENTO', 17, y + 4.5);
+  doc.text('NATUREZA', 122, y + 4.5);
+  doc.text('VALOR (R$)', 192, y + 4.5, { align: 'right' });
+  y += 6.5;
+
+  const totalDescontos =
+    (settlement.descontoAluguelPendente || 0) +
+    (settlement.descontoAvarias || 0) +
+    (settlement.descontoLavagem || 0) +
+    (settlement.descontoCombustivel || 0) +
+    (settlement.descontoMultas || 0) +
+    (settlement.descontoPedagios || 0);
+
+  const tableRows: Array<{ desc: string; nature: string; val: string; isCredit?: boolean; isZero?: boolean }> = [
+    { desc: '(+) Caução Depositada em Garantia', nature: 'Crédito Locatário', val: `+ ${formatMoneyBr(settlement.caucaoOriginal)}`, isCredit: true },
+    { desc: '(-) Aluguéis / Dias Proporcionais / Rescisão em Aberto', nature: 'Débito / A Receber', val: `- ${formatMoneyBr(settlement.descontoAluguelPendente)}`, isZero: settlement.descontoAluguelPendente <= 0 },
+    { desc: '(-) Avarias, Peças e Orçamentos de Oficina Apurados', nature: 'Débito / A Receber', val: `- ${formatMoneyBr(settlement.descontoAvarias)}`, isZero: settlement.descontoAvarias <= 0 },
+    { desc: '(-) Lavagem e Higienização do Veículo', nature: 'Débito / A Receber', val: `- ${formatMoneyBr(settlement.descontoLavagem || 0)}`, isZero: (settlement.descontoLavagem || 0) <= 0 },
+    { desc: '(-) Diferença de Nível de Combustível na Devolução', nature: 'Débito / A Receber', val: `- ${formatMoneyBr(settlement.descontoCombustivel)}`, isZero: settlement.descontoCombustivel <= 0 },
+    { desc: '(-) Multas de Trânsito Apuradas até a Data (+ Taxa Adm.)', nature: 'Débito / A Receber', val: `- ${formatMoneyBr(settlement.descontoMultas)}`, isZero: settlement.descontoMultas <= 0 },
+    { desc: '(-) Pedágios / Tag / Estacionamentos', nature: 'Débito / A Receber', val: `- ${formatMoneyBr(settlement.descontoPedagios || 0)}`, isZero: (settlement.descontoPedagios || 0) <= 0 },
+  ];
+
+  tableRows.forEach((row, idx) => {
+    if (y > 265) { doc.addPage(); y = 15; }
+    if (idx % 2 === 1) {
+      doc.setFillColor(248, 250, 252);
+      doc.rect(14, y, 182, 6, 'F');
+    }
+    doc.setDrawColor(226, 232, 240);
+    doc.line(14, y + 6, 196, y + 6);
+
+    doc.setFontSize(8.5);
+    doc.setFont('helvetica', row.isCredit ? 'bold' : 'normal');
+    doc.setTextColor(row.isCredit ? 5 : row.isZero ? 148 : 51, row.isCredit ? 150 : row.isZero ? 163 : 65, row.isCredit ? 105 : row.isZero ? 184 : 85);
+    doc.text(row.desc, 17, y + 4.2);
+    doc.text(row.nature, 122, y + 4.2);
+    doc.setFont('helvetica', 'bold');
+    doc.text(row.val, 192, y + 4.2, { align: 'right' });
+    y += 6;
+  });
+
+  // Subtotal discounts row
+  doc.setFillColor(241, 245, 249);
+  doc.rect(14, y, 182, 6.5, 'F');
+  doc.setTextColor(51, 65, 85);
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(8.5);
+  doc.text('TOTAL DE DÉBITOS APURADOS NA DEVOLUÇÃO:', 17, y + 4.5);
+  doc.text(`- ${formatMoneyBr(totalDescontos)}`, 192, y + 4.5, { align: 'right' });
+  y += 9;
+
+  // Highlighted Prev Saldo Box
+  const isRefund = settlement.saldoFinal >= 0;
+  doc.setFillColor(isRefund ? 236 : 255, isRefund ? 253 : 241, isRefund ? 245 : 242);
+  doc.setDrawColor(isRefund ? 16 : 225, isRefund ? 185 : 29, isRefund ? 129 : 72);
+  doc.roundedRect(14, y, 182, 16, 2, 2, 'FD');
+
+  doc.setTextColor(isRefund ? 6 : 159, isRefund ? 95 : 18, isRefund ? 70 : 57);
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(9.5);
+  doc.text(
+    isRefund
+      ? 'PRÉVIA: SALDO PREVISTO A DEVOLVER AO LOCATÁRIO (APÓS PRAZO DE 30 DIAS):'
+      : 'PRÉVIA: SALDO DEVEDOR A PAGAR PELO LOCATÁRIO:',
+    18,
+    y + 6.5
+  );
+  doc.setFontSize(12);
+  doc.text(formatMoneyBr(Math.abs(settlement.saldoFinal)), 18, y + 13);
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(8);
+  doc.text('Sujeito a confirmação/abatimento de novas multas e avarias nos próximos 30 dias.', 192, y + 13, { align: 'right' });
+  y += 20;
+
+  if (settlement.observacoesAcerto?.trim()) {
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(8.5);
+    doc.setTextColor(51, 65, 85);
+    doc.text('Observações Registradas na Devolução:', 14, y);
+    y += 4.5;
+    doc.setFont('helvetica', 'normal');
+    const obsLines = doc.splitTextToSize(settlement.observacoesAcerto.trim(), 182);
+    doc.text(obsLines, 14, y);
+    y += obsLines.length * 4.5 + 3;
+  }
+
+  // Pending fines listed on vehicle if any
+  const pendingFines = (vehicle.fines || []).filter(
+    (f) => f.status !== 'Paga pelo Locatário' && f.status !== 'Paga pela Locadora'
+  );
+  if (pendingFines.length > 0) {
+    if (y > 240) { doc.addPage(); y = 15; }
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(8.5);
+    doc.setTextColor(amberAccent[0], amberAccent[1], amberAccent[2]);
+    doc.text(`Multas Constantes até a Data (${pendingFines.length}):`, 14, y);
+    y += 4.5;
+    doc.setFont('helvetica', 'normal');
+    doc.setTextColor(51, 65, 85);
+    pendingFines.forEach((f) => {
+      if (y > 268) { doc.addPage(); y = 15; }
+      doc.text(`• ${f.dataHora} - ${f.descricao} (${formatMoneyBr(getFineTotal(f))})`, 16, y);
+      y += 4.2;
+    });
+    y += 3;
+  }
+
+  // Section 4: Cláusula 30 dias
+  if (y > 215) { doc.addPage(); y = 15; }
+  doc.setFillColor(255, 251, 235);
+  doc.setDrawColor(245, 158, 11);
+  const clauseText = `As partes declaram que o veículo acima identificado foi devidamente devolvido ao LOCADOR em ${formatDateBrSafe(returnIso)}, cessando a partir desta data a cobrança de novas diárias de locação e liberando o veículo para operação pela frota. Conforme previsto contratualmente, fica estabelecido o prazo de 30 (trinta) dias corridos a contar da devolução (com previsão de encerramento definitivo em ${formatDateBrSafe(dueIso)}) para apuração de eventuais autos de infração de trânsito (DETRAN/RENAINF), passagens em pedágios eletrônicos e conclusão de orçamentos de reparo referentes ao período em que o veículo esteve sob posse do LOCATÁRIO. Decorrido o prazo de 30 dias e deduzidos eventuais novos débitos comprovados, será emitido o Termo de Encerramento e Quitação de Débitos com a liquidação definitiva do saldo da caução.`;
+  const clauseLines = doc.splitTextToSize(clauseText, 174);
+  const boxH = 12 + clauseLines.length * 4.2;
+  doc.roundedRect(14, y, 182, boxH, 2, 2, 'FD');
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(9.5);
+  doc.setTextColor(146, 64, 14);
+  doc.text('4. CLÁUSULA DE PRAZO DE 30 DIAS PARA QUITAÇÃO E DEVOLUÇÃO DA CAUÇÃO', 18, y + 6);
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(8.2);
+  doc.setTextColor(51, 65, 85);
+  doc.text(clauseLines, 18, y + 11.5);
+  y += boxH + 10;
+
+  if (y > 245) { doc.addPage(); y = 20; }
+  doc.setFontSize(8.5);
+  doc.setTextColor(51, 65, 85);
+  doc.text(`São Paulo, ${formatDateBrSafe(returnIso)}.`, 14, y);
+  y += 16;
+
+  doc.setDrawColor(148, 163, 184);
+  doc.line(18, y, 92, y);
+  doc.line(118, y, 192, y);
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(8);
+  doc.text('LOCADOR / GESTOR DA FROTA', 55, y + 4.5, { align: 'center' });
+  doc.text(`LOCATÁRIO: ${(vehicle.driver || 'MOTORISTA').toUpperCase().slice(0, 30)}`, 155, y + 4.5, { align: 'center' });
+
+  const pdfDataUrl = doc.output('datauristring');
+  return { doc, fileName, pdfDataUrl };
+}
+
+/**
+ * 2º MOMENTO: Termo de Encerramento e Quitação de Débitos (Após 30 Dias ou Finalização Definitiva)
+ */
+export async function generateTermoQuitacaoPDF(
+  vehicle: Vehicle,
+  maintenanceLogs: MaintenanceLog[],
+  expenseLogs: ExpenseLog[],
+  vistorias: Vistoria[],
+  fuelLogs: FuelLog[],
+  options?: {
+    settlement?: CaucaoSettlementData;
+    initialSettlement?: CaucaoSettlementData;
+    lateDebits?: LateContractDebit[];
+    sinistroLogs?: SinistroLog[];
+    returnDate?: string;
+    dueDate30Days?: string;
+    quitationDate?: string;
+  }
+): Promise<{ doc: jsPDF; fileName: string; pdfDataUrl: string }> {
+  const doc = new jsPDF({ orientation: 'p', unit: 'mm', format: 'a4' });
+  const now = new Date();
+  const formattedNow = `${now.toLocaleDateString('pt-BR')} às ${now.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}`;
+  const quitationIso = options?.quitationDate || now.toISOString().split('T')[0];
+  const cleanPlate = (vehicle.plate || 'VEICULO').replace(/[^a-zA-Z0-9]/g, '');
+  const fileName = `Termo_Quitacao_Debitos_${cleanPlate}_${quitationIso}.pdf`;
+
+  const primaryColor = [15, 23, 42];
+  const emeraldDark = [6, 95, 70];
+  const textColor = [51, 65, 85];
+
+  // Header Banner
+  doc.setFillColor(primaryColor[0], primaryColor[1], primaryColor[2]);
+  doc.rect(0, 0, 210, 31, 'F');
+  doc.setFillColor(16, 185, 129);
+  doc.rect(0, 31, 210, 2, 'F');
+
+  doc.setTextColor(255, 255, 255);
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(14);
+  doc.text('TERMO DE ENCERRAMENTO E QUITAÇÃO DE DÉBITOS', 14, 12);
+
+  doc.setFontSize(9.5);
+  doc.setTextColor(167, 243, 208);
+  doc.text('2ª ETAPA: CONSOLIDAÇÃO DEFINITIVA PÓS-DEVOLUÇÃO (MULTAS, AVARIAS E CAUÇÃO)', 14, 19);
+
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(8.5);
+  doc.setTextColor(226, 232, 240);
+  doc.text(`Emitido em: ${formattedNow} | Veículo: ${vehicle.brand} ${vehicle.model} (${vehicle.plate})`, 14, 26);
+
+  let y = 40;
+
+  // Section 1: Partes & Prazos
+  doc.setFillColor(241, 245, 249);
+  doc.rect(14, y, 182, 7, 'F');
+  doc.setTextColor(primaryColor[0], primaryColor[1], primaryColor[2]);
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(10);
+  doc.text('1. DADOS DAS PARTES, CONTRATO E PRAZO DE APURAÇÃO', 17, y + 4.8);
+  y += 11;
+
+  doc.setFontSize(9);
+  doc.setTextColor(textColor[0], textColor[1], textColor[2]);
+  const returnIso = options?.returnDate || options?.settlement?.returnDate || quitationIso;
+  const headerRows: [string, string][] = [
+    ['Locatário / Motorista:', vehicle.driver || 'Não informado'],
+    ['CPF / CNPJ:', vehicle.tenantCpfCnpj || 'Não informado'],
+    ['CNH:', vehicle.tenantCnh || 'Não informada'],
+    ['Telefone:', vehicle.driverPhone || 'Não informado'],
+    ['Veículo / Placa:', `${vehicle.brand} ${vehicle.model} — ${vehicle.plate}`],
+    ['Contrato nº:', vehicle.contractNumber || `LOC-${cleanPlate}`],
+    ['Início da Locação:', formatDateBrSafe(vehicle.startDate)],
+    ['Data da Devolução:', formatDateBrSafe(returnIso)],
+    ['Previsão 30 Dias:', formatDateBrSafe(options?.dueDate30Days)],
+    ['Data da Quitação Final:', formatDateBrSafe(quitationIso)]
+  ];
+
+  headerRows.forEach(([lbl, val], idx) => {
+    const col = idx % 2;
+    const xPos = col === 0 ? 16 : 108;
+    doc.setFont('helvetica', 'bold');
+    doc.text(lbl, xPos, y);
+    doc.setFont('helvetica', 'normal');
+    doc.text(String(val).slice(0, 38), xPos + doc.getTextWidth(lbl) + 2, y);
+    if (col === 1 || idx === headerRows.length - 1) y += 5.5;
+  });
+
+  y += 4;
+
+  // Consolidated settlement math
+  const finalSet = options?.settlement;
+  const initSet = options?.initialSettlement || finalSet;
+  const lateDebits = options?.lateDebits || [];
+  const lateDebitsTotal = lateDebits.reduce((sum, d) => sum + (d.amount || 0), 0);
+
+  if (finalSet) {
+    // Quadro 2: Valores Iniciais na Devolução
+    doc.setFillColor(241, 245, 249);
+    doc.rect(14, y, 182, 7, 'F');
+    doc.setTextColor(primaryColor[0], primaryColor[1], primaryColor[2]);
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(10);
+    doc.text('2. APURAÇÃO NA DEVOLUÇÃO + NOVOS LANÇAMENTOS DOS 30 DIAS', 17, y + 4.8);
+    y += 10;
+
+    const initDiscounts = initSet
+      ? (initSet.descontoAluguelPendente || 0) +
+        (initSet.descontoAvarias || 0) +
+        (initSet.descontoLavagem || 0) +
+        (initSet.descontoCombustivel || 0) +
+        (initSet.descontoMultas || 0) +
+        (initSet.descontoPedagios || 0)
+      : 0;
+
+    const consolidatedRows: Array<[string, string, boolean?]> = [
+      ['(+) Caução Depositada pelo Locatário:', `+ ${formatMoneyBr(finalSet.caucaoOriginal)}`, true],
+      ['(-) Aluguéis / Dias Proporcionais / Rescisão:', `- ${formatMoneyBr(finalSet.descontoAluguelPendente)}`],
+      ['(-) Avarias e Reparos (Total Consolidado):', `- ${formatMoneyBr(finalSet.descontoAvarias)}`],
+      ['(-) Lavagem / Higienização:', `- ${formatMoneyBr(finalSet.descontoLavagem || 0)}`],
+      ['(-) Diferença de Combustível:', `- ${formatMoneyBr(finalSet.descontoCombustivel)}`],
+      ['(-) Multas de Trânsito + Taxas Adm. (Total Consolidado):', `- ${formatMoneyBr(finalSet.descontoMultas)}`],
+      ['(-) Pedágios / Tag / Outros Débitos:', `- ${formatMoneyBr(finalSet.descontoPedagios || 0)}`],
+    ];
+
+    consolidatedRows.forEach(([lbl, val, isCredit], idx) => {
+      if (y > 265) { doc.addPage(); y = 15; }
+      if (idx % 2 === 1) {
+        doc.setFillColor(248, 250, 252);
+        doc.rect(14, y, 182, 5.8, 'F');
+      }
+      doc.setFontSize(8.5);
+      doc.setFont('helvetica', isCredit ? 'bold' : 'normal');
+      doc.setTextColor(isCredit ? 5 : 51, isCredit ? 150 : 65, isCredit ? 105 : 85);
+      doc.text(lbl, 17, y + 4.1);
+      doc.setFont('helvetica', 'bold');
+      doc.text(val, 192, y + 4.1, { align: 'right' });
+      y += 5.8;
+    });
+
+    y += 4;
+
+    // Quadro específico de lançamentos recebidos durante os 30 dias
+    doc.setFillColor(254, 243, 199);
+    doc.rect(14, y, 182, 6.5, 'F');
+    doc.setTextColor(146, 64, 14);
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(9);
+    doc.text(`LANÇAMENTOS APURADOS DURANTE O PRAZO DE 30 DIAS (${lateDebits.length} registro(s))`, 17, y + 4.5);
+    y += 8.5;
+
+    if (lateDebits.length === 0) {
+      doc.setFont('helvetica', 'italic');
+      doc.setFontSize(8.5);
+      doc.setTextColor(71, 85, 105);
+      doc.text('• Nenhum novo débito de multa, avaria ou pedágio foi registrado no período de 30 dias após a devolução.', 17, y);
+      y += 7;
+    } else {
+      for (const item of lateDebits) {
+        if (y > 260) { doc.addPage(); y = 15; }
+        doc.setFont('helvetica', 'bold');
+        doc.setFontSize(8.5);
+        doc.setTextColor(185, 28, 28);
+        doc.text(
+          `• ${formatDateBrSafe(item.date)} [${item.category}] ${item.description}`,
+          17,
+          y
+        );
+        doc.text(`- ${formatMoneyBr(item.amount)}`, 192, y, { align: 'right' });
+        y += 4.5;
+        if (item.notes || item.adminFeeAmount) {
+          doc.setFont('helvetica', 'normal');
+          doc.setFontSize(7.8);
+          doc.setTextColor(100, 116, 139);
+          const extra = [
+            item.adminFeeAmount ? `Inclui taxa adm (${item.adminFeePct ?? 20}%): ${formatMoneyBr(item.adminFeeAmount)}` : '',
+            item.notes || ''
+          ].filter(Boolean).join(' • ');
+          doc.text(`  ${extra}`, 19, y);
+          y += 4.2;
+        }
+      }
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(8.5);
+      doc.setTextColor(51, 65, 85);
+      doc.text(
+        `Subtotal de Lançamentos dos 30 Dias: - ${formatMoneyBr(lateDebitsTotal)} (Débitos iniciais na devolução: - ${formatMoneyBr(initDiscounts)})`,
+        17,
+        y + 1
+      );
+      y += 7;
+    }
+
+    // Final Balance Highlight Box
+    if (y > 240) { doc.addPage(); y = 15; }
+    const isFinalRefund = finalSet.saldoFinal >= 0;
+    doc.setFillColor(isFinalRefund ? 236 : 255, isFinalRefund ? 253 : 241, isFinalRefund ? 245 : 242);
+    doc.setDrawColor(isFinalRefund ? 5 : 225, isFinalRefund ? 150 : 29, isFinalRefund ? 105 : 72);
+    doc.roundedRect(14, y, 182, 16, 2, 2, 'FD');
+
+    doc.setTextColor(isFinalRefund ? emeraldDark[0] : 159, isFinalRefund ? emeraldDark[1] : 18, isFinalRefund ? emeraldDark[2] : 57);
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(9.5);
+    doc.text(
+      isFinalRefund
+        ? 'VALOR DEFINITIVO A DEVOLVER AO LOCATÁRIO (QUITAÇÃO DE CAUÇÃO):'
+        : 'SALDO DEVEDOR DEFINITIVO A QUITAR PELO LOCATÁRIO:',
+      18,
+      y + 6.5
+    );
+    doc.setFontSize(12.5);
+    doc.text(formatMoneyBr(Math.abs(finalSet.saldoFinal)), 18, y + 13.2);
+    y += 20;
+
+    if (finalSet.observacoesAcerto?.trim()) {
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(8.5);
+      doc.setTextColor(51, 65, 85);
+      doc.text('Observações Finais do Acerto:', 14, y);
+      y += 4.5;
+      doc.setFont('helvetica', 'normal');
+      const obsLines = doc.splitTextToSize(finalSet.observacoesAcerto.trim(), 182);
+      doc.text(obsLines, 14, y);
+      y += obsLines.length * 4.5 + 4;
+    }
+  }
+
+  // Declaração de Quitação de Débitos
+  if (y > 220) { doc.addPage(); y = 15; }
+  const quitationText = finalSet
+    ? finalSet.saldoFinal >= 0
+      ? `Pelo presente TERMO DE ENCERRAMENTO E QUITAÇÃO DE DÉBITOS, o LOCADOR e o LOCATÁRIO dão por encerrado em definitivo o contrato de locação do veículo ${vehicle.brand} ${vehicle.model} (placa ${vehicle.plate}). Apurados todos os aluguéis, eventuais avarias, multas de trânsito e pedágios no prazo regulamentar, resta consolidado o saldo final de ${formatMoneyBr(finalSet.saldoFinal)} a ser restituído ao LOCATÁRIO, dando ambas as partes mútua, plena e irrevogável quitação dos valores acima discriminados com a efetivação do respectivo pagamento.`
+      : `Pelo presente TERMO DE ENCERRAMENTO E QUITAÇÃO DE DÉBITOS, o LOCADOR e o LOCATÁRIO dão por encerrado o contrato de locação do veículo ${vehicle.brand} ${vehicle.model} (placa ${vehicle.plate}). Após compensação integral da caução inicialmente depositada frente aos débitos apurados na devolução e no prazo de 30 dias, permanece apurado o saldo devedor remanescente de ${formatMoneyBr(Math.abs(finalSet.saldoFinal))} em favor do LOCADOR, obrigando-se o LOCATÁRIO à sua liquidação integral.`
+    : `Pelo presente TERMO DE ENCERRAMENTO E QUITAÇÃO DE DÉBITOS, as partes formalizam o encerramento definitivo do contrato de locação do veículo ${vehicle.brand} ${vehicle.model} (placa ${vehicle.plate}) e o arquivamento integral do histórico e anexos da locação.`;
+
+  const qLines = doc.splitTextToSize(quitationText, 174);
+  const qBoxH = 12 + qLines.length * 4.2;
+  doc.setFillColor(248, 250, 252);
+  doc.setDrawColor(148, 163, 184);
+  doc.roundedRect(14, y, 182, qBoxH, 2, 2, 'FD');
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(9.5);
+  doc.setTextColor(primaryColor[0], primaryColor[1], primaryColor[2]);
+  doc.text('3. DECLARAÇÃO DE ENCERRAMENTO E QUITAÇÃO DE DÉBITOS', 18, y + 6);
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(8.2);
+  doc.setTextColor(51, 65, 85);
+  doc.text(qLines, 18, y + 11.5);
+  y += qBoxH + 10;
+
+  if (y > 245) { doc.addPage(); y = 20; }
+  doc.setFontSize(8.5);
+  doc.text(`São Paulo, ${formatDateBrSafe(quitationIso)}.`, 14, y);
+  y += 16;
+  doc.setDrawColor(148, 163, 184);
+  doc.line(18, y, 92, y);
+  doc.line(118, y, 192, y);
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(8);
+  doc.text('LOCADOR / GESTOR DA FROTA', 55, y + 4.5, { align: 'center' });
+  doc.text(`LOCATÁRIO: ${(vehicle.driver || 'MOTORISTA').toUpperCase().slice(0, 30)}`, 155, y + 4.5, { align: 'center' });
+
+  // Render attachments from lateDebits (multas / orçamentos chegados nos 30 dias)
+  const lateWithAttachments = lateDebits.filter((d) => Boolean(d.attachmentUrl));
+  if (lateWithAttachments.length > 0) {
+    doc.addPage();
+    y = 16;
+    doc.setFillColor(241, 245, 249);
+    doc.rect(14, y, 182, 7, 'F');
+    doc.setTextColor(primaryColor[0], primaryColor[1], primaryColor[2]);
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(10.5);
+    doc.text(`COMPROVANTES E NOTIFICAÇÕES APURADOS NOS 30 DIAS (${lateWithAttachments.length})`, 17, y + 4.8);
+    y += 12;
+
+    for (const item of lateWithAttachments) {
+      if (item.attachmentUrl) {
+        y = await renderAttachmentIntoPdf(
+          doc,
+          item.attachmentUrl,
+          `${formatDateBrSafe(item.date)} • [${item.category}] ${item.description} (${formatMoneyBr(item.amount)})`,
+          y,
+          { fileType: item.attachmentType, fileName: item.attachmentName }
+        );
+      }
+    }
+  }
+
+  // Append Full Historical Dossier (veículo, motorista, pagamentos, manutenções, multas, vistorias e documentos)
+  doc.addPage();
+  await appendVehicleDossierSections(doc, vehicle, maintenanceLogs, expenseLogs, vistorias, options);
+
+  const pdfDataUrl = doc.output('datauristring');
   return { doc, fileName, pdfDataUrl };
 }
 export async function generateVistoriaPDF(

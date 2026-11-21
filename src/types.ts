@@ -402,6 +402,41 @@ export interface Vistoria {
   reqId?: string; // Token único de utilização única por vistoria
 }
 
+export interface CaucaoSettlementData {
+  caucaoOriginal: number;
+  descontoAluguelPendente: number;
+  descontoAvarias: number;
+  descontoLavagem: number;
+  descontoCombustivel: number;
+  descontoMultas: number;
+  descontoPedagios: number;
+  observacoesAcerto: string;
+  saldoFinal: number;
+  returnDate?: string;
+  daysUsed?: number;
+  missingDays?: number;
+  dailyRate?: number;
+  weeklyRate?: number;
+  expectedTotal?: number;
+  totalPaid?: number;
+  earlyFineRatePct?: number;
+  earlyFineAmount?: number;
+}
+
+export interface LateContractDebit {
+  id: string;
+  date: string;
+  category: 'Multa' | 'Avaria' | 'Pedágio' | 'Lavagem' | 'Combustível' | 'Outros';
+  description: string;
+  amount: number;
+  adminFeePct?: number;
+  adminFeeAmount?: number;
+  notes?: string;
+  attachmentUrl?: string;
+  attachmentName?: string;
+  attachmentType?: 'image' | 'pdf';
+}
+
 export interface FinalizedContract {
   id: string;
   vehicleId: string;
@@ -419,6 +454,15 @@ export interface FinalizedContract {
   documentsCount: number;
   maintenanceCount: number;
   viewed?: boolean;
+  status?: 'pre_finalized' | 'finalized';
+  returnDate?: string;
+  dueDate30Days?: string;
+  preFinalizePdfFileName?: string;
+  preFinalizePdfDataUrl?: string;
+  settlement?: CaucaoSettlementData;
+  initialSettlement?: CaucaoSettlementData;
+  lateDebits?: LateContractDebit[];
+  vehicleSnapshot?: Partial<Vehicle>;
 }
 
 export interface PromisePayment {
@@ -432,4 +476,16 @@ export interface PromisePayment {
   notes?: string;
 }
 
+export interface CustomReminder {
+  id: string;
+  title: string;
+  notes?: string;
+  dueDate: string; // YYYY-MM-DD
+  dueTime?: string; // HH:mm
+  pushEnabled: boolean;
+  completed: boolean;
+  completedAt?: string;
+  notifiedAt?: string;
+  createdAt: string;
+}
 

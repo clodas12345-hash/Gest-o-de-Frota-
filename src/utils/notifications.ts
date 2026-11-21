@@ -20,6 +20,8 @@ export type NotificationEventKey =
   | 'receipt_approved'
   | 'contract_generated'
   | 'contract_expiring'
+  | 'contract_pre_finalized'
+  | 'contract_30d_quitation'
   | 'contract_finalized'
   | 'cnh_expiring'
   | 'insurance_expiring'
@@ -30,7 +32,8 @@ export type NotificationEventKey =
   | 'caucao_updated'
   | 'backup_completed'
   | 'fipe_updated'
-  | 'fipe_monthly_sync';
+  | 'fipe_monthly_sync'
+  | 'custom_reminder';
 
 export interface NotificationOptionDefinition {
   key: NotificationEventKey;
@@ -240,6 +243,33 @@ export const NOTIFICATION_OPTIONS: NotificationOptionDefinition[] = [
     category: 'Operação e Sistema',
     sampleTitle: '💾 Backup Completo da Frota Concluído',
     sampleBody: 'Todos os dados, fotos e documentos da frota foram salvos com sucesso.'
+  },
+  {
+    key: 'contract_pre_finalized',
+    number: 22,
+    title: 'Termo de Encerramento Gerado (Pré-Finalização 30 Dias)',
+    description: 'Notificação push ao pré-finalizar o contrato na devolução do carro, gerando a prévia financeira e iniciando o prazo de 30 dias para quitação.',
+    category: 'Contratos e CNH',
+    sampleTitle: '📋 Termo de Encerramento Gerado (Prazo 30d)',
+    sampleBody: 'O carro foi liberado para novo motorista e o contrato aguarda 30 dias para quitação definitiva da caução.'
+  },
+  {
+    key: 'contract_30d_quitation',
+    number: 23,
+    title: 'Lembrete Push de 30 Dias — Quitação e Devolução de Caução',
+    description: 'Notificação push agendada e lembrete automático próximo ao vencimento e ao completar 30 dias da devolução para gerar o Termo de Quitação de Débitos.',
+    category: 'Contratos e CNH',
+    sampleTitle: '⏳ Prazo de 30 Dias Concluído: Gerar Quitação',
+    sampleBody: 'Já se passaram 30 dias da devolução! Verifique multas/avarias e gere o Termo de Encerramento e Quitação de Débitos.'
+  },
+  {
+    key: 'custom_reminder',
+    number: 24,
+    title: 'Lembretes Personalizados (Algo a Fazer)',
+    description: 'Notificações push agendadas para os lembretes e tarefas criadas manualmente em Configurações.',
+    category: 'Operação e Sistema',
+    sampleTitle: '📌 Lembrete: Tarefa Agendada',
+    sampleBody: 'Você tem um lembrete pendente na sua lista da frota.'
   }
 ];
 
@@ -258,6 +288,8 @@ export const DEFAULT_NOTIFICATION_PREFERENCES: Record<NotificationEventKey, bool
   receipt_approved: true,
   contract_generated: true,
   contract_expiring: true,
+  contract_pre_finalized: true,
+  contract_30d_quitation: true,
   contract_finalized: true,
   cnh_expiring: true,
   insurance_expiring: true,
@@ -268,7 +300,8 @@ export const DEFAULT_NOTIFICATION_PREFERENCES: Record<NotificationEventKey, bool
   caucao_updated: true,
   backup_completed: true,
   fipe_updated: true,
-  fipe_monthly_sync: true
+  fipe_monthly_sync: true,
+  custom_reminder: true
 };
 
 export function getNotificationPreferences(): Record<NotificationEventKey, boolean> {
@@ -391,6 +424,8 @@ export async function requestNotificationPermission(): Promise<boolean> {
   return false;
 }
 
+const activeWebScheduledTimers = new Map<number, number>();
+
 export async function scheduleAppNotification(
   title: string,
   options?: {
@@ -461,6 +496,12 @@ export async function scheduleAppNotification(
     }
   } else if (typeof window !== 'undefined' && 'Notification' in window && Notification.permission === 'granted') {
     try {
+      const existingTimer = activeWebScheduledTimers.get(notificationId);
+      if (existingTimer) {
+        window.clearTimeout(existingTimer);
+        activeWebScheduledTimers.delete(notificationId);
+      }
+
       const delay = Math.max(0, targetDate.getTime() - Date.now());
       if (delay <= 1000) {
         new Notification(title, {
@@ -468,12 +509,14 @@ export async function scheduleAppNotification(
           icon: '/logo.png'
         });
       } else if (delay <= 2147483647) {
-        setTimeout(() => {
+        const tId = window.setTimeout(() => {
+          activeWebScheduledTimers.delete(notificationId);
           new Notification(title, {
             body: options?.body,
             icon: '/logo.png'
           });
         }, delay);
+        activeWebScheduledTimers.set(notificationId, tId);
       }
     } catch (err) {
       console.warn('Web Notification falhou:', err);
@@ -728,3 +771,136 @@ export function scheduleVistoriaReminders(): Promise<void> {
 export async function scheduleFridayInspectionNotification() {
   await scheduleVistoriaReminders();
 }
+
+function getDeterministicContractNotificationIds(contractId: string): { preAlertId: number; dueAlertId: number } {
+  let hash = 0;
+  for (let i = 0; i < contractId.length; i++) {
+    hash = (hash * 31 + contractId.charCodeAt(i)) % 400000;
+  }
+  const base = 700000 + Math.abs(hash) * 2;
+  return { preAlertId: base, dueAlertId: base + 1 };
+}
+
+export async function schedule30DayQuitationReminder(params: {
+  contractId: string;
+  vehicleLabel: string;
+  driverName: string;
+  dueDate30DaysIso: string;
+  saldoFinal?: number;
+}): Promise<void> {
+  if (!isNotificationEventEnabled('contract_30d_quitation')) return;
+
+  const { contractId, vehicleLabel, driverName, dueDate30DaysIso, saldoFinal } = params;
+  const { preAlertId, dueAlertId } = getDeterministicContractNotificationIds(contractId);
+
+  const dueDate = new Date(`${dueDate30DaysIso}T09:00:00`);
+  if (Number.isNaN(dueDate.getTime())) return;
+
+  const preAlertDate = new Date(dueDate.getTime() - 5 * 24 * 60 * 60 * 1000);
+  const dueDateBR = new Date(`${dueDate30DaysIso}T12:00:00`).toLocaleDateString('pt-BR');
+  const balanceText =
+    typeof saldoFinal === 'number'
+      ? saldoFinal >= 0
+        ? ` Saldo previsto a devolver: R$ ${saldoFinal.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}.`
+        : ` Saldo devedor previsto: R$ ${Math.abs(saldoFinal).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}.`
+      : '';
+
+  const now = Date.now();
+
+  if (preAlertDate.getTime() > now + 60000) {
+    await scheduleAppNotification(
+      `⏳ Faltam 5 dias p/ Quitação: ${vehicleLabel}`,
+      {
+        id: preAlertId,
+        at: preAlertDate,
+        body: `O prazo de 30 dias do motorista ${driverName || 'locatário'} encerra em ${dueDateBR}. Verifique se há multas ou avarias pendentes.${balanceText}`,
+        eventKey: 'contract_30d_quitation',
+        extra: { contractId, stage: '25d_heads_up' }
+      }
+    );
+  }
+
+  const targetDue = dueDate.getTime() > now + 5000 ? dueDate : new Date(now + 10000);
+  await scheduleAppNotification(
+    `✅ 30 Dias Concluídos — Gerar Quitação: ${vehicleLabel}`,
+    {
+      id: dueAlertId,
+      at: targetDue,
+      body: `Completou 30 dias da devolução de ${driverName || 'locatário'}. Abra Contratos Finalizados para emitir o Termo de Encerramento e Quitação de Débitos.${balanceText}`,
+      eventKey: 'contract_30d_quitation',
+      extra: { contractId, stage: '30d_due' }
+    }
+  );
+}
+
+export async function cancel30DayQuitationReminder(contractId: string): Promise<void> {
+  if (!Capacitor.isNativePlatform()) return;
+  try {
+    const { preAlertId, dueAlertId } = getDeterministicContractNotificationIds(contractId);
+    await LocalNotifications.cancel({
+      notifications: [{ id: preAlertId }, { id: dueAlertId }]
+    });
+  } catch (err) {
+    console.warn('Erro ao cancelar lembrete de 30 dias:', err);
+  }
+}
+
+export function getCustomReminderNotificationId(reminderId: string): number {
+  let hash = 0;
+  for (let i = 0; i < reminderId.length; i++) {
+    hash = (hash * 31 + reminderId.charCodeAt(i)) % 95000;
+  }
+  return 900000 + Math.abs(hash);
+}
+
+export async function cancelCustomReminderNotification(reminderId: string): Promise<void> {
+  const notifId = getCustomReminderNotificationId(reminderId);
+  const existingTimer = activeWebScheduledTimers.get(notifId);
+  if (existingTimer) {
+    window.clearTimeout(existingTimer);
+    activeWebScheduledTimers.delete(notifId);
+  }
+  if (Capacitor.isNativePlatform()) {
+    try {
+      await LocalNotifications.cancel({ notifications: [{ id: notifId }] });
+    } catch (err) {
+      console.warn('Erro ao cancelar notificação do lembrete personalizado:', err);
+    }
+  }
+}
+
+export async function scheduleCustomReminderNotification(reminder: {
+  id: string;
+  title: string;
+  notes?: string;
+  dueDate: string;
+  dueTime?: string;
+  pushEnabled: boolean;
+  completed: boolean;
+}): Promise<void> {
+  await cancelCustomReminderNotification(reminder.id);
+  if (reminder.completed || !reminder.pushEnabled || !reminder.dueDate) return;
+  if (!isNotificationEventEnabled('custom_reminder')) return;
+
+  const timePart = reminder.dueTime && /^\d{2}:\d{2}$/.test(reminder.dueTime) ? reminder.dueTime : '09:00';
+  const targetDate = new Date(`${reminder.dueDate}T${timePart}:00`);
+  if (Number.isNaN(targetDate.getTime())) return;
+
+  const now = Date.now();
+  // Agenda push para o horário escolhido se ainda estiver no futuro
+  if (targetDate.getTime() > now + 2000) {
+    const notifId = getCustomReminderNotificationId(reminder.id);
+    const dateBR = new Date(`${reminder.dueDate}T12:00:00`).toLocaleDateString('pt-BR');
+    await scheduleAppNotification(`📌 Lembrete: ${reminder.title}`, {
+      id: notifId,
+      at: targetDate,
+      body: reminder.notes?.trim()
+        ? `${reminder.notes.trim()} (${dateBR} às ${timePart})`
+        : `Agendado para ${dateBR} às ${timePart}.`,
+      eventKey: 'custom_reminder',
+      extra: { reminderId: reminder.id }
+    });
+  }
+}
+
+

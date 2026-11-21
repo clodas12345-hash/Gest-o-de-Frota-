@@ -18,6 +18,14 @@ import { encodeVistoriaParams } from '../utils/vistoriaUrl';
 import { db, isPreview } from '../firebase';
 import { doc, setDoc } from 'firebase/firestore';
 import { formatWhatsAppPhone, openWhatsAppUrl } from '../utils/whatsapp';
+import {
+  DEFAULT_WHATSAPP_TEMPLATES,
+  WhatsAppTemplateKey,
+  formatWhatsAppTemplateText,
+  getWhatsAppTemplate,
+  saveWhatsAppTemplate,
+  getPublicWebBaseUrlForTemplates
+} from '../utils/whatsappTemplates';
 import { 
   Calendar, 
   User, 
@@ -412,69 +420,11 @@ Por favor, realize a vistoria (*{tipo}*) do veículo *{veiculo}* (Placa: *{placa
 Por favor, clique no link abaixo para preencher a vistoria e enviar as fotos:
 🔗 {link_retorno}`;
 
-const DEFAULT_PAYMENT_TEMPLATES = {
-  lembrete: `Olá, *{driver}*! Tudo bem? 😊\n\nPassando para lembrar do pagamento semanal referente ao veículo *{brand} {model}* ({plate}).\n\n💵 *Valor:* R$ {valor}\n📅 *Vencimento:* {data_vencimento}\n\n(👉 *Caso a mensagem esteja cortada, clique em "LER MAIS" para que o link esteja todo disponível*)\nEnvie o comprovante de pagamento pelo link:\n🔗 {link_comprovante}\n\nAbraços!`,
-  hoje: `Olá, *{driver}*! Tudo bem?\n\nLembrete: *Hoje* é o dia do pagamento semanal referente ao veículo *{brand} {model}* ({plate}).\n\n💵 *Valor:* R$ {valor}\n🗓️ *Vencimento:* Hoje ({data_vencimento})\n\n(👉 *Caso a mensagem esteja cortada, clique em "LER MAIS" para que o link esteja todo disponível*)\nEnvie o comprovante pelo link:\n🔗 {link_comprovante}\n\nAgradeço a parceria! 👍`,
-  atrasado: `Olá, *{driver}*.\n\nIdentificamos que o pagamento semanal referente ao veículo *{brand} {model}* ({plate}) com vencimento em *{data_vencimento}* consta em **atraso**.\n\n⚠️ *Valor em aberto:* R$ {valor}\n\n(👉 *Caso a mensagem esteja cortada, clique em "LER MAIS" para que o link esteja todo disponível*)\nRegularize e envie o comprovante pelo link:\n🔗 {link_comprovante}\n\nFicamos no aguardo. Obrigado!`,
-  atrasado_com_juros: `Olá, *{driver}*.\n\nIdentificamos que o pagamento semanal do veículo *{brand} {model}* ({plate}) está em **atraso**.\n\n⚠️ *Valor original:* R$ {valor}\n➕ *Juros/Multa:* R$ {juros}\n💰 *Total com Juros:* R$ {total_com_juros}\n\n(👉 *Caso a mensagem esteja cortada, clique em "LER MAIS" para que o link esteja todo disponível*)\nRegularize e envie o comprovante pelo link:\n🔗 {link_comprovante}\n\nFicamos no aguardo. Obrigado!`,
-  bloqueado: `🚨 *AVISO DE BLOQUEIO DO VEÍCULO* 🚨\n\nOlá, *{driver}*!\n\nInformamos que devido à inadimplência e falta de pagamento do aluguel semanal referente ao veículo *{brand} {model}* ({plate}), o sistema realizou o **bloqueio remoto** do veículo por falta de pagamento.\n\n⚠️ *Valor em aberto:* R$ {valor}\n🗓️ *Vencimento original:* {data_vencimento}\n\n(👉 *Caso a mensagem esteja cortada, clique em "LER MAIS" para que o link esteja todo disponível*)\nPara efetuar a regularização e solicitar o desbloqueio, envie o comprovante de pagamento pelo link:\n🔗 {link_comprovante}\n\nAssim que o pagamento for confirmado, o acesso será liberado. Evite medidas contratuais adicionais.`
-};
+const DEFAULT_PAYMENT_TEMPLATES = DEFAULT_WHATSAPP_TEMPLATES;
 
-const PUBLIC_WEB_ORIGIN = 'https://ais-dev-nxg4lixniko7ymx3t5cstw-473118395752.us-west2.run.app';
+export const getPublicWebBaseUrl = getPublicWebBaseUrlForTemplates;
 
-export const getPublicWebBaseUrl = (): string => {
-  if (typeof window !== 'undefined' && window.location?.origin) {
-    const orig = window.location.origin;
-    if (!orig.includes('localhost') && !orig.includes('127.0.0.1') && !orig.includes('capacitor://')) {
-      return orig.replace(/\/+$/, '');
-    }
-  }
-  return PUBLIC_WEB_ORIGIN.replace(/\/+$/, '');
-};
-
-const formatPaymentTemplateText = (
-  template: string,
-  driverName: string,
-  brand: string,
-  model: string,
-  plate: string,
-  amount: number,
-  dueDateStr: string,
-  returnLink?: string,
-  vehicleId?: string,
-  juros?: number
-) => {
-  const formattedAmount = amount ? amount.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : '0,00';
-  const jurosVal = juros || 0;
-  const totalComJurosVal = amount + jurosVal;
-  const formattedJuros = jurosVal.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-  const formattedTotal = totalComJurosVal.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-  
-  let formattedDate = 'Hoje';
-  if (dueDateStr) {
-    const parts = dueDateStr.split('-');
-    if (parts.length === 3) {
-      formattedDate = `${parts[2]}/${parts[1]}/${parts[0]}`;
-    }
-  }
-
-  const baseLink = (returnLink && !returnLink.includes('localhost'))
-    ? returnLink
-    : getPublicWebBaseUrl();
-  const sep = baseLink.includes('?') ? '&' : '?';
-  const vehParam = vehicleId ? `&vehicleId=${encodeURIComponent(vehicleId)}` : '';
-
-  return template
-    .replace(/\{driver\}/g, driverName || 'Locatário')
-    .replace(/\{brand\}/g, brand || 'Veículo')
-    .replace(/\{model\}/g, model || '')
-    .replace(/\{plate\}/g, plate || '')
-    .replace(/\{valor\}/g, formattedAmount)
-    .replace(/\{juros\}/g, formattedJuros)
-    .replace(/\{total_com_juros\}/g, formattedTotal)
-    .replace(/\{data_vencimento\}/g, formattedDate)
-    .replace(/\{link_comprovante\}/g, `${baseLink}${sep}mode=pagamento${vehParam}&placa=${encodeURIComponent(plate)}&reqId=${Date.now().toString(36)}`);
-};
+const formatPaymentTemplateText = formatWhatsAppTemplateText;
 
 interface VehicleCardProps {
   vehicle: Vehicle;
@@ -665,7 +615,7 @@ export const VehicleCard: React.FC<VehicleCardProps> = ({
 
   // Payment WhatsApp Reminder State
   const [showPaymentWhatsApp, setShowPaymentWhatsApp] = useState(false);
-  const [paymentWhatsAppType, setPaymentWhatsAppType] = useState<'lembrete' | 'hoje' | 'atrasado' | 'atrasado_com_juros' | 'bloqueado'>('lembrete');
+  const [paymentWhatsAppType, setPaymentWhatsAppType] = useState<WhatsAppTemplateKey>('lembrete');
   const [paymentWhatsAppPhone, setPaymentWhatsAppPhone] = useState(() => vehicle.driverPhone || '');
   const [paymentWhatsAppAmount, setPaymentWhatsAppAmount] = useState<number>(() => vehicle.valorSemanal || vehicle.valorRecebido || 0);
   const [paymentWhatsAppDueDate, setPaymentWhatsAppDueDate] = useState<string>(() => {
@@ -4726,12 +4676,12 @@ _Enviado via sistema de gestão de frota._`;
                     <label className="text-[10px] text-emerald-300 block mb-1 font-bold uppercase tracking-wider">
                       Selecione o Tipo de Mensagem *
                     </label>
-                    <div className="grid grid-cols-5 gap-1">
+                    <div className="grid grid-cols-3 sm:grid-cols-6 gap-1">
                       <button
                         type="button"
                         onClick={() => {
                           setPaymentWhatsAppType('lembrete');
-                          const rawTpl = localStorage.getItem('fleet_payment_msg_lembrete') || DEFAULT_PAYMENT_TEMPLATES.lembrete;
+                          const rawTpl = getWhatsAppTemplate('lembrete');
                           const text = formatPaymentTemplateText(
                             rawTpl,
                             vehicle.driver || '',
@@ -4751,15 +4701,15 @@ _Enviado via sistema de gestão de frota._`;
                             : 'bg-black/40 text-gray-400 border-white/10 hover:border-white/20 hover:text-white'
                         }`}
                       >
-                        <span>📅 Lembrete Prévio</span>
-                        <span className="text-[8px] opacity-70 font-normal">Aviso de Vencimento</span>
+                        <span>📅 Lembrete</span>
+                        <span className="text-[8px] opacity-70 font-normal">Pagamento</span>
                       </button>
 
                       <button
                         type="button"
                         onClick={() => {
                           setPaymentWhatsAppType('hoje');
-                          const rawTpl = localStorage.getItem('fleet_payment_msg_hoje') || DEFAULT_PAYMENT_TEMPLATES.hoje;
+                          const rawTpl = getWhatsAppTemplate('hoje');
                           const text = formatPaymentTemplateText(
                             rawTpl,
                             vehicle.driver || '',
@@ -4779,7 +4729,7 @@ _Enviado via sistema de gestão de frota._`;
                             : 'bg-black/40 text-gray-400 border-white/10 hover:border-white/20 hover:text-white'
                         }`}
                       >
-                        <span>🔔 Dia do Pagamento</span>
+                        <span>🔔 Hoje</span>
                         <span className="text-[8px] opacity-70 font-normal">Vence Hoje</span>
                       </button>
 
@@ -4787,7 +4737,7 @@ _Enviado via sistema de gestão de frota._`;
                         type="button"
                         onClick={() => {
                           setPaymentWhatsAppType('atrasado');
-                          const rawTpl = localStorage.getItem('fleet_payment_msg_atrasado') || DEFAULT_PAYMENT_TEMPLATES.atrasado;
+                          const rawTpl = getWhatsAppTemplate('atrasado');
                           const text = formatPaymentTemplateText(
                             rawTpl,
                             vehicle.driver || '',
@@ -4815,7 +4765,7 @@ _Enviado via sistema de gestão de frota._`;
                         type="button"
                         onClick={() => {
                           setPaymentWhatsAppType('atrasado_com_juros');
-                          const rawTpl = localStorage.getItem('fleet_payment_msg_atrasado_com_juros') || DEFAULT_PAYMENT_TEMPLATES.atrasado_com_juros;
+                          const rawTpl = getWhatsAppTemplate('atrasado_com_juros');
                           const targetDateForMonth = paymentWhatsAppDueDate ? new Date(paymentWhatsAppDueDate + 'T12:00:00') : new Date();
                           const daysInMonth = new Date(targetDateForMonth.getFullYear(), targetDateForMonth.getMonth() + 1, 0).getDate();
                           const amt = paymentWhatsAppAmount || vehicle.valorRecebido || 0;
@@ -4850,7 +4800,7 @@ _Enviado via sistema de gestão de frota._`;
                         type="button"
                         onClick={() => {
                           setPaymentWhatsAppType('bloqueado');
-                          const rawTpl = localStorage.getItem('fleet_payment_msg_bloqueado') || DEFAULT_PAYMENT_TEMPLATES.bloqueado;
+                          const rawTpl = getWhatsAppTemplate('bloqueado');
                           const text = formatPaymentTemplateText(
                             rawTpl,
                             vehicle.driver || '',
@@ -4872,6 +4822,35 @@ _Enviado via sistema de gestão de frota._`;
                       >
                         <span>🔒 Bloqueio</span>
                         <span className="text-[7.5px] opacity-70 font-normal">Falta Pagamento</span>
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setPaymentWhatsAppType('renovacao');
+                          const rawTpl = getWhatsAppTemplate('renovacao');
+                          const renewalDate = vehicle.endDate || paymentWhatsAppDueDate;
+                          const text = formatPaymentTemplateText(
+                            rawTpl,
+                            vehicle.driver || '',
+                            vehicle.brand || '',
+                            vehicle.model || '',
+                            vehicle.plate || '',
+                            paymentWhatsAppAmount || vehicle.valorSemanal || vehicle.valorRecebido || 0,
+                            renewalDate,
+                            undefined,
+                            vehicle.id
+                          );
+                          setCustomPaymentMsgText(text);
+                        }}
+                        className={`py-1.5 px-1.5 rounded-lg border text-[10px] font-bold transition-all flex flex-col items-center justify-center gap-0.5 cursor-pointer ${
+                          paymentWhatsAppType === 'renovacao'
+                            ? 'bg-indigo-500/20 text-indigo-300 border-indigo-500/40 shadow-xs'
+                            : 'bg-black/40 text-gray-400 border-white/10 hover:border-white/20 hover:text-white'
+                        }`}
+                      >
+                        <span>🔄 Renovação</span>
+                        <span className="text-[7.5px] opacity-70 font-normal">Contrato</span>
                       </button>
                     </div>
                   </div>
@@ -5084,7 +5063,7 @@ _Enviado via sistema de gestão de frota._`;
                       <button
                         type="button"
                         onClick={() => {
-                          localStorage.setItem(`fleet_payment_msg_${paymentWhatsAppType}`, customPaymentMsgText);
+                          saveWhatsAppTemplate(paymentWhatsAppType, customPaymentMsgText);
                           setPaymentTemplateSavedStatus('✅ Modelo salvo como padrão para este tipo!');
                           setTimeout(() => setPaymentTemplateSavedStatus(null), 2000);
                         }}
