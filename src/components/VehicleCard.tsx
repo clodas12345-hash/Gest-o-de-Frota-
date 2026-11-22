@@ -705,7 +705,7 @@ export const VehicleCard: React.FC<VehicleCardProps> = ({
       const updatedWeeklyPayments = targetPaymentId
         ? existingList.map((p) =>
             p.id === targetPaymentId
-              ? { ...p, isPaid: true, paidDate: selectedDate, paidAt: paidAtStr, amount: quickAmt || p.amount }
+              ? { ...p, isPaid: true, date: selectedDate, paidDate: selectedDate, paidAt: paidAtStr, amount: quickAmt || p.amount }
               : p
           )
         : [
@@ -1586,6 +1586,15 @@ export const VehicleCard: React.FC<VehicleCardProps> = ({
     onUpdateVehicle({
       ...vehicle,
       weeklyPayments: currentPayments.map((p) => p.id === paymentId ? { ...p, amount: newAmount, isManualAmount: true } : p),
+    });
+  };
+
+  const handleEditPaymentDate = (paymentId: string, newDate: string) => {
+    if (!newDate) return;
+    const currentPayments = vehicle.weeklyPayments || [];
+    onUpdateVehicle({
+      ...vehicle,
+      weeklyPayments: currentPayments.map((p) => p.id === paymentId ? { ...p, date: newDate, paidDate: p.isPaid ? newDate : p.paidDate } : p),
     });
   };
 
@@ -5254,9 +5263,13 @@ _Enviado via sistema de gestão de frota._`;
                               }`}
                             >
                               <div className="flex items-center gap-1.5 flex-wrap min-w-0">
-                                <span className="text-gray-300 font-mono font-medium">
-                                  {dateObj.toLocaleDateString('pt-BR')}
-                                </span>
+                                <input
+                                  type="date"
+                                  value={p.date}
+                                  onChange={(e) => handleEditPaymentDate(p.id, e.target.value)}
+                                  className="bg-black/40 border border-white/10 rounded px-1.5 py-0.5 text-[10px] text-gray-200 font-mono focus:outline-hidden focus:border-blue-500 scheme-dark cursor-pointer"
+                                  title="Editar data do pagamento"
+                                />
                                 {isPaid ? (
                                   <span className="text-[9px] bg-emerald-500/15 text-emerald-300 border border-emerald-500/25 px-1.5 py-0.2 rounded font-bold">
                                     ✓ Pago{p.paidDate && p.paidDate !== p.date ? ` em ${new Date(p.paidDate + 'T12:00:00').toLocaleDateString('pt-BR')}` : ''}
