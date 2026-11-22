@@ -1,7 +1,8 @@
 import { jsPDF } from 'jspdf';
 import * as pdfjsLib from 'pdfjs-dist';
-import { Vehicle, MaintenanceLog, ExpenseLog, Vistoria, FuelLog, SinistroLog, CaucaoSettlementData, LateContractDebit, getFineAdminFee, getFineTotal, isWeeklyPaymentPaid } from '../types';
+import { Vehicle, MaintenanceLog, ExpenseLog, Vistoria, FuelLog, SinistroLog, CaucaoSettlementData, LateContractDebit, FinalizedContract, getFineAdminFee, getFineTotal, isWeeklyPaymentPaid } from '../types';
 import { getSavedContractClauses, replaceClauseVariables, getFullContractTextTemplate, groupClausesByTopic } from './contractClauses';
+import { getVehicleRevenueForMonth } from './driverHistory';
 
 try {
   pdfjsLib.GlobalWorkerOptions.workerSrc = `https://unpkg.com/pdfjs-dist@${pdfjsLib.version || '4.0.379'}/build/pdf.worker.min.mjs`;
@@ -2503,7 +2504,8 @@ export async function generateExecutiveMonthlyPDF(
   maintenanceLogs: MaintenanceLog[],
   expenseLogs: ExpenseLog[],
   selectedMonth: number,
-  selectedYear: number
+  selectedYear: number,
+  finalizedContracts: FinalizedContract[] = []
 ): Promise<{ doc: jsPDF; fileName: string; pdfDataUrl: string }> {
   const doc = new jsPDF({
     orientation: 'p',
@@ -2548,11 +2550,7 @@ export async function generateExecutiveMonthlyPDF(
   let totalFrotaExtras = 0;
 
   const rows = vehicles.map((v) => {
-    const weeklyInMonth = (v.weeklyPayments || [])
-      .filter((wp) => isWeeklyPaymentPaid(wp) && isSelectedPeriod(wp.date))
-      .reduce((acc, p) => acc + (p.amount || 0), 0);
-
-    const receita = (v.weeklyPayments && v.weeklyPayments.length > 0) ? weeklyInMonth : (v.valorRecebido || 0);
+    const receita = getVehicleRevenueForMonth(v, selectedMonth, selectedYear, finalizedContracts);
     const fixas = (v.financiamento || 0) + (v.seguro || 0) + (v.ipva || 0) + (v.manutencaoPreventiva || 0) + (v.custoExtra || 0);
     const manutMes = maintenanceLogs
       .filter((m) => m.vehicleId === v.id && isSelectedPeriod(m.date))

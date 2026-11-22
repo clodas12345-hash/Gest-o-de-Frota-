@@ -12,6 +12,9 @@ import {
   buildDisplayVehicleForPeriod,
   applyScopedVehicleUpdate,
   getVehicleRevenueForMonth,
+  getVehicleArchivedRevenueForMonth,
+  getVehicleTotalLifetimeRevenue,
+  getVehicleEarliestStartDate,
 } from '../utils/driverHistory';
 import { PdfViewer } from './PdfViewer';
 import { encodeVistoriaParams } from '../utils/vistoriaUrl';
@@ -1360,18 +1363,14 @@ export const VehicleCard: React.FC<VehicleCardProps> = ({
   const paidWeeklyPaymentsInCurrentMonth = (vehicle.weeklyPayments || [])
     .filter((wp) => isCurrentMonth(wp.date) && isWeeklyPaymentPaid(wp));
 
-  const totalWeeklyReceivedInCurrentMonth = paidWeeklyPaymentsInCurrentMonth
-    .reduce((sum, wp) => sum + wp.amount, 0);
-
   // Financial fields
-  // In previous months (or when multiple drivers shared a month), sum revenue accurately across recorded periods for that month
+  // Always sum revenue accurately across active AND closed contracts in the selected month (for profit & expense calculations)
   const hasWeeklyPaymentsInCurrentMonth = paidWeeklyPaymentsInCurrentMonth.length > 0;
+  const archivedRevenueInCurrentMonth = !monthResolution.isPastMonth
+    ? getVehicleArchivedRevenueForMonth(liveVehicle, currentMonth, currentYear, finalizedContracts)
+    : 0;
 
-  const valorRecebido = monthResolution.isPastMonth || monthResolution.periods.length > 1
-    ? getVehicleRevenueForMonth(liveVehicle, currentMonth, currentYear, finalizedContracts)
-    : hasWeeklyPaymentsInCurrentMonth
-    ? totalWeeklyReceivedInCurrentMonth
-    : ((vehicle.weeklyPayments || []).length > 0 ? 0 : (vehicle.valorRecebido || 0));
+  const valorRecebido = getVehicleRevenueForMonth(liveVehicle, currentMonth, currentYear, finalizedContracts);
 
   const financiamento = vehicle.financiamento || 0;
   const seguro = vehicle.seguro || 0;
@@ -3075,26 +3074,50 @@ _Enviado via sistema de gestão de frota._`;
                 </div>
 
                 {/* Valor Recebido */}
-                <div className="flex justify-between items-center text-xs p-1 px-2">
-                  <span className="text-gray-400 flex items-center gap-1.5">
-                    <TrendingUp className="w-3.5 h-3.5 text-emerald-400" /> Valor Recebido (+)
-                    {hasWeeklyPaymentsInCurrentMonth && (
-                      <span className="text-[9px] bg-emerald-500/10 text-emerald-400 px-1.5 py-0.5 rounded-sm font-medium border border-emerald-500/10" title="Calculado automaticamente a partir dos pagamentos semanais deste mês">
-                        Auto (Semanas)
-                      </span>
-                    )}
-                  </span>
-                  <div className="text-emerald-400 font-mono text-sm font-black">
-                    {hasWeeklyPaymentsInCurrentMonth ? (
-                      <span title="Calculado a partir de pagamentos semanais deste mês" className="cursor-help">{formatBRL(valorRecebido)}</span>
-                    ) : (
-                      <InlineEdit
-                        value={valorRecebido}
-                        label="Valor Recebido"
-                        onSave={(val) => handleUpdateField('valorRecebido', val)}
-                      />
-                    )}
+                <div className="space-y-1 p-1 px-2">
+                  <div className="flex justify-between items-center text-xs">
+                    <span className="text-gray-400 flex items-center gap-1.5 flex-wrap">
+                      <TrendingUp className="w-3.5 h-3.5 text-emerald-400" /> Valor Recebido (+)
+                      {hasWeeklyPaymentsInCurrentMonth && (
+                        <span className="text-[9px] bg-emerald-500/10 text-emerald-400 px-1.5 py-0.5 rounded-sm font-medium border border-emerald-500/10" title="Calculado automaticamente a partir dos pagamentos semanais deste mês">
+                          Auto (Semanas)
+                        </span>
+                      )}
+                      {archivedRevenueInCurrentMonth > 0 && (
+                        <span
+                          className="text-[9px] bg-blue-500/10 text-blue-300 px-1.5 py-0.5 rounded-sm font-medium border border-blue-500/20"
+                          title={`Inclui ${formatBRL(archivedRevenueInCurrentMonth)} de contrato(s) encerrado(s) neste mês apenas para cálculo de lucros e despesas`}
+                        >
+                          + Encerrado(s)
+                        </span>
+                      )}
+                    </span>
+                    <div className="text-emerald-400 font-mono text-sm font-black">
+                      {hasWeeklyPaymentsInCurrentMonth || archivedRevenueInCurrentMonth > 0 ? (
+                        <span
+                          title={
+                            archivedRevenueInCurrentMonth > 0
+                              ? `Inclui ${formatBRL(archivedRevenueInCurrentMonth)} de contrato(s) encerrado(s) neste mês (não entra no novo contrato)`
+                              : 'Calculado a partir de pagamentos semanais deste mês'
+                          }
+                          className="cursor-help"
+                        >
+                          {formatBRL(valorRecebido)}
+                        </span>
+                      ) : (
+                        <InlineEdit
+                          value={valorRecebido}
+                          label="Valor Recebido"
+                          onSave={(val) => handleUpdateField('valorRecebido', val)}
+                        />
+                      )}
+                    </div>
                   </div>
+                  {archivedRevenueInCurrentMonth > 0 && (
+                    <p className="text-[10px] text-blue-300/80 pl-5">
+                      Inclui {formatBRL(archivedRevenueInCurrentMonth)} de contrato(s) encerrado(s) no mês (apenas p/ lucros e despesas)
+                    </p>
+                  )}
                 </div>
               </div>
 
@@ -3751,33 +3774,14 @@ _Enviado via sistema de gestão de frota._`;
                 </div>
                 
                 {(() => {
-                  const seenRoiPayIds = new Set<string>();
-                  const allRoiPayments: WeeklyPayment[] = [];
-                  for (const wp of liveVehicle.weeklyPayments || []) {
-                    const key = wp.id || `${wp.date}_${wp.amount}`;
-                    if (!seenRoiPayIds.has(key)) {
-                      seenRoiPayIds.add(key);
-                      allRoiPayments.push(wp);
-                    }
-                  }
-                  for (const h of liveVehicle.driverHistory || []) {
-                    for (const wp of h.weeklyPayments || []) {
-                      const key = wp.id || `${wp.date}_${wp.amount}`;
-                      if (!seenRoiPayIds.has(key)) {
-                        seenRoiPayIds.add(key);
-                        allRoiPayments.push(wp);
-                      }
-                    }
-                  }
-                  const lifetimeRevenue = allRoiPayments
-                    .filter((p) => isWeeklyPaymentPaid(p))
-                    .reduce((sum, p) => sum + (p.amount || 0), 0);
+                  const lifetimeRevenue = getVehicleTotalLifetimeRevenue(liveVehicle, finalizedContracts);
                   const lifetimeMaint = maintenanceLogs.reduce((sum, log) => sum + (log.cost || 0), 0);
                   const lifetimeExp = vehicleExpenses.reduce((sum, exp) => sum + (exp.cost || 0), 0);
                   const lifetimeSinistro = sinistroLogs.reduce((sum, s) => sum + (s.repairCost || 0), 0);
                   
                   // Simple monthly cost projection for ROI (Fixed costs * months active)
-                  const start = new Date(vehicle.startDate || liveVehicle.startDate || '2026-01-01');
+                  const earliestStartIso = getVehicleEarliestStartDate(liveVehicle, finalizedContracts);
+                  const start = new Date(earliestStartIso + 'T00:00:00');
                   const now = new Date();
                   const monthsDiff = Math.max(1, (now.getFullYear() - start.getFullYear()) * 12 + (now.getMonth() - start.getMonth()));
                   
@@ -8301,7 +8305,8 @@ _Enviado via sistema de gestão de frota._`;
       <VehicleProfitabilityModal
         isOpen={isProfitabilityOpen}
         onClose={() => setIsProfitabilityOpen(false)}
-        vehicle={vehicle}
+        vehicle={liveVehicle}
+        finalizedContracts={finalizedContracts}
         maintenanceLogs={maintenanceLogs}
         expenseLogs={vehicleExpenses}
         selectedMonth={selectedMonth}

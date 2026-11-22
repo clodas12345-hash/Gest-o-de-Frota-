@@ -1,5 +1,10 @@
 import React, { useState, useMemo } from 'react';
-import { Vehicle, MaintenanceLog, ExpenseLog, FuelLog, Fine, isWeeklyPaymentPaid } from '../types';
+import { Vehicle, MaintenanceLog, ExpenseLog, FuelLog, Fine, FinalizedContract, isWeeklyPaymentPaid } from '../types';
+import {
+  getVehicleRevenueForMonth,
+  getVehicleTotalLifetimeRevenue,
+  getVehicleMonthlyPaymentsAllDrivers,
+} from '../utils/driverHistory';
 import { 
   X, 
   DollarSign, 
@@ -25,6 +30,7 @@ interface VehicleProfitabilityModalProps {
   isOpen: boolean;
   onClose: () => void;
   vehicle: Vehicle;
+  finalizedContracts?: FinalizedContract[];
   maintenanceLogs?: MaintenanceLog[];
   expenseLogs?: ExpenseLog[];
   fuelLogs?: FuelLog[];
@@ -36,6 +42,7 @@ export const VehicleProfitabilityModal: React.FC<VehicleProfitabilityModalProps>
   isOpen,
   onClose,
   vehicle,
+  finalizedContracts = [],
   maintenanceLogs = [],
   expenseLogs = [],
   fuelLogs = [],
@@ -92,32 +99,36 @@ export const VehicleProfitabilityModal: React.FC<VehicleProfitabilityModalProps>
     });
   }, [expenseLogs, vehicle.id, viewMode, currentMonth, currentYear]);
 
-  // Revenues: Paid weekly payments or monthly rental
+  // Revenues: Paid weekly payments or manual fallback across active + closed contracts
   const revenueTotal = useMemo(() => {
     if (viewMode === 'month') {
-      // Filter PAID weekly payments of this month
-      if (vehicle.weeklyPayments && vehicle.weeklyPayments.length > 0) {
-        const sum = vehicle.weeklyPayments.reduce((acc, p) => {
-          if (!p.date || !isWeeklyPaymentPaid(p)) return acc;
-          const d = new Date(p.date + 'T00:00:00');
-          if (d.getMonth() === currentMonth && d.getFullYear() === currentYear) {
-            return acc + (p.amount || 0);
-          }
-          return acc;
-        }, 0);
-        return sum;
-      }
-      return vehicle.valorRecebido || 0;
-    } else {
-      // Historical Total
-      const paymentsSum = (vehicle.weeklyPayments || [])
-        .filter(isWeeklyPaymentPaid)
-        .reduce((acc, p) => acc + (p.amount || 0), 0);
-      return (vehicle.weeklyPayments && vehicle.weeklyPayments.length > 0)
-        ? paymentsSum
-        : (vehicle.valorRecebido || 0);
+      return getVehicleRevenueForMonth(vehicle, currentMonth, currentYear, finalizedContracts);
     }
-  }, [vehicle, viewMode, currentMonth, currentYear]);
+    return getVehicleTotalLifetimeRevenue(vehicle, finalizedContracts);
+  }, [vehicle, finalizedContracts, viewMode, currentMonth, currentYear]);
+
+  const paidPaymentsCount = useMemo(() => {
+    if (viewMode === 'month') {
+      return getVehicleMonthlyPaymentsAllDrivers(vehicle, currentMonth, currentYear, finalizedContracts)
+        .filter(isWeeklyPaymentPaid).length;
+    }
+    const seen = new Set<string>();
+    const addPaid = (list?: { id?: string; date?: string; amount?: number; isPaid?: boolean; status?: string }[]) => {
+      for (const wp of list || []) {
+        const key = wp.id || `${wp.date}_${wp.amount}`;
+        if (seen.has(key)) continue;
+        if (isWeeklyPaymentPaid(wp as any)) seen.add(key);
+      }
+    };
+    addPaid(vehicle.weeklyPayments);
+    for (const h of vehicle.driverHistory || []) addPaid(h.weeklyPayments);
+    for (const fc of finalizedContracts) {
+      if (fc.vehicleId === vehicle.id || (fc.plate && vehicle.plate && fc.plate.toUpperCase() === vehicle.plate.toUpperCase())) {
+        addPaid(fc.vehicleSnapshot?.weeklyPayments);
+      }
+    }
+    return seen.size;
+  }, [vehicle, finalizedContracts, viewMode, currentMonth, currentYear]);
 
   // Fixed Monthly Expenses
   const fixedFinanciamento = vehicle.financiamento || 0;
@@ -417,7 +428,7 @@ export const VehicleProfitabilityModal: React.FC<VehicleProfitabilityModalProps>
                 R$ {revenueTotal.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
               </p>
               <p className="text-[10px] text-gray-400 mt-1">
-                {vehicle.weeklyPayments?.length || 0} parcelas registradas
+                {paidPaymentsCount} parcela(s) paga(s) {((vehicle.driverHistory?.length || 0) > 0 || finalizedContracts.some(fc => fc.vehicleId === vehicle.id)) ? '(inclui encerrados)' : 'no período'}
               </p>
             </div>
 
@@ -472,7 +483,9 @@ export const VehicleProfitabilityModal: React.FC<VehicleProfitabilityModalProps>
                   <div className="w-2.5 h-2.5 rounded-full bg-emerald-500" />
                   <div>
                     <p className="text-xs font-bold text-white">Aluguéis Recebidos (Semanalidades)</p>
-                    <p className="text-[10px] text-gray-400">Locatário: {vehicle.driver || 'Não atribuído'}</p>
+                    <p className="text-[10px] text-gray-400">
+                      Locatário: {vehicle.driver || ((vehicle.driverHistory && vehicle.driverHistory.length > 0) ? 'Contrato(s) encerrado(s)' : 'Não atribuído')}
+                    </p>
                   </div>
                 </div>
                 <span className="text-xs font-mono font-bold text-emerald-400">
