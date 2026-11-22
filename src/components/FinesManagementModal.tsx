@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Vehicle, Fine, getFineAdminFee, getFineTotal } from '../types';
 import { CurrencyInput } from './CurrencyInput';
 import { 
@@ -50,6 +50,12 @@ export const FinesManagementModal: React.FC<FinesManagementModalProps> = ({
   const [adminFeePct, setAdminFeePct] = useState<number>(20);
   const [extraAdminFineAmount, setExtraAdminFineAmount] = useState<number | ''>('');
   const [extraAdminFineReason, setExtraAdminFineReason] = useState('');
+
+  useEffect(() => {
+    setFines(vehicle.fines || []);
+    setDriverName(vehicle.driver || '');
+    setDriverPhone(vehicle.driverPhone || '');
+  }, [vehicle.fines, vehicle.driver, vehicle.driverPhone, isOpen]);
 
   if (!isOpen) return null;
 

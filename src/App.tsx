@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
-import { Vehicle, FuelLog, MaintenanceLog, ExpenseLog, AgendaContact, Vistoria, VehicleDocument, FinalizedContract, SinistroLog, LateContractDebit, CustomReminder, getFineTotal, isWeeklyPaymentPaid } from './types';
+import { Vehicle, FuelLog, MaintenanceLog, ExpenseLog, AgendaContact, Vistoria, VehicleDocument, FinalizedContract, SinistroLog, LateContractDebit, CustomReminder, isWeeklyPaymentPaid } from './types';
 import { decodeVistoriaParams } from './utils/vistoriaUrl';
 import { 
   INITIAL_VEHICLES, 
@@ -2542,6 +2542,7 @@ export default function App() {
         ipva: targetVehicle.ipva,
       };
 
+      const vehicleSinistrosSnapshot = sinistroLogs.filter((s) => s.vehicleId === id);
       const newContractId = `contract-final-${Date.now()}`;
 
       if (isPreFinalize) {
@@ -2584,6 +2585,7 @@ export default function App() {
           initialSettlement: effectiveSettlement,
           lateDebits: [],
           vehicleSnapshot,
+          sinistroLogsSnapshot: vehicleSinistrosSnapshot,
         };
 
         setFinalizedContracts((prev) => [preFinalizedContract, ...prev]);
@@ -2644,6 +2646,7 @@ export default function App() {
           initialSettlement: effectiveSettlement,
           lateDebits: [],
           vehicleSnapshot,
+          sinistroLogsSnapshot: vehicleSinistrosSnapshot,
         };
 
         setFinalizedContracts((prev) => [newContract, ...prev]);
@@ -2712,24 +2715,10 @@ export default function App() {
         ? [historySnapshot, ...(targetVehicle.driverHistory || [])]
         : targetVehicle.driverHistory;
 
-      const pendingFinesSum = (targetVehicle.fines || [])
-        .filter((f) => f.status !== 'Paga pelo Locatário' && f.status !== 'Paga pela Locadora')
-        .reduce((sum, f) => sum + getFineTotal(f), 0);
-      const shouldMarkFinesPaid = Boolean(
-        settlement && settlement.descontoMultas > 0 && pendingFinesSum > 0 && settlement.descontoMultas >= pendingFinesSum - 0.01
-      );
-      const updatedFines = shouldMarkFinesPaid
-        ? (targetVehicle.fines || []).map((f) =>
-            f.status !== 'Paga pelo Locatário' && f.status !== 'Paga pela Locadora'
-              ? { ...f, status: 'Paga pelo Locatário' as const }
-              : f
-          )
-        : targetVehicle.fines;
-
-      // Libera o veículo para novo motorista mantendo histórico e CRLV
+      // Libera o veículo para novo motorista: zera multas e valores de avarias, preservando histórico, CRLV, manutenção e pneus
       const updatedVehicle: Vehicle = {
         ...targetVehicle,
-        fines: updatedFines,
+        fines: [],
         driver: '',
         driverPhone: '',
         contractNumber: '',
@@ -2757,6 +2746,28 @@ export default function App() {
       };
 
       setVehicles((prev) => prev.map((v) => (v.id === id ? updatedVehicle : v)));
+
+      // Zera registros/valores de avarias (sinistros) e lançamentos de multas/avarias do veículo ao finalizar contrato;
+      // manutenção preventiva/corretiva e pneus permanecem intactos a caráter informativo para os próximos motoristas.
+      setSinistroLogs((prev) => prev.filter((s) => s.vehicleId !== id));
+      setExpenseLogs((prev) =>
+        prev.filter(
+          (e) =>
+            !(
+              e.vehicleId === id &&
+              (e.category === 'Multa' ||
+                e.category === 'Avaria' ||
+                /\b(multa|avaria)\b/i.test(e.description || ''))
+            )
+        )
+      );
+      setMaintenanceLogs((prev) =>
+        prev.map((m) =>
+          m.vehicleId === id && (m.type === 'Batida/Acidente' || m.category?.includes('Batida'))
+            ? { ...m, cost: 0 }
+            : m
+        )
+      );
 
       if (isPreFinalize) {
         const dueBR = new Date(`${dueDate30Days}T12:00:00`).toLocaleDateString('pt-BR');
@@ -2911,7 +2922,7 @@ export default function App() {
           settlement: targetContract.settlement,
           initialSettlement: targetContract.initialSettlement || targetContract.settlement,
           lateDebits: targetContract.lateDebits || [],
-          sinistroLogs,
+          sinistroLogs: targetContract.sinistroLogsSnapshot ?? sinistroLogs,
           returnDate: targetContract.returnDate,
           dueDate30Days: targetContract.dueDate30Days,
           quitationDate: quitationIso,

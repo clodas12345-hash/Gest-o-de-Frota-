@@ -477,6 +477,7 @@ export interface FinalizedContract {
   initialSettlement?: CaucaoSettlementData;
   lateDebits?: LateContractDebit[];
   vehicleSnapshot?: Partial<Vehicle>;
+  sinistroLogsSnapshot?: SinistroLog[];
 }
 
 export interface PromisePayment {
