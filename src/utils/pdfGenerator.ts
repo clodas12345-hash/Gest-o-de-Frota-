@@ -1516,19 +1516,26 @@ export async function generateTermoEncerramentoPDF(
   doc.text(clauseLines, 18, y + 11.5);
   y += boxH + 10;
 
+  const nowPrint = new Date();
+  const printDownloadIso = `${nowPrint.getFullYear()}-${String(nowPrint.getMonth() + 1).padStart(2, '0')}-${String(nowPrint.getDate()).padStart(2, '0')}`;
+
   if (y > 245) { doc.addPage(); y = 20; }
+  doc.setFont('helvetica', 'normal');
   doc.setFontSize(8.5);
   doc.setTextColor(51, 65, 85);
-  doc.text(`São Paulo, ${formatDateBrSafe(returnIso)}.`, 14, y);
+  doc.text(`São Paulo, ${formatDateBrSafe(printDownloadIso)}.`, 105, y, { align: 'center' });
   y += 16;
 
   doc.setDrawColor(148, 163, 184);
-  doc.line(18, y, 92, y);
-  doc.line(118, y, 192, y);
+  doc.line(58, y, 152, y);
   doc.setFont('helvetica', 'bold');
   doc.setFontSize(8);
-  doc.text('LOCADOR / GESTOR DA FROTA', 55, y + 4.5, { align: 'center' });
-  doc.text(`LOCATÁRIO: ${(vehicle.driver || 'MOTORISTA').toUpperCase().slice(0, 30)}`, 155, y + 4.5, { align: 'center' });
+  doc.setTextColor(primaryColor[0], primaryColor[1], primaryColor[2]);
+  doc.text('LOCADOR / GESTOR DA FROTA', 105, y + 4.5, { align: 'center' });
+  doc.setFont('helvetica', 'italic');
+  doc.setFontSize(7.5);
+  doc.setTextColor(100, 116, 139);
+  doc.text('Dispensada a assinatura do locatário.', 105, y + 9, { align: 'center' });
 
   const pdfDataUrl = doc.output('datauristring');
   return { doc, fileName, pdfDataUrl };
