@@ -1556,9 +1556,12 @@ export async function generateTermoQuitacaoPDF(
   const doc = new jsPDF({ orientation: 'p', unit: 'mm', format: 'a4' });
   const now = new Date();
   const formattedNow = `${now.toLocaleDateString('pt-BR')} às ${now.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}`;
-  const quitationIso = options?.quitationDate || now.toISOString().split('T')[0];
+  const todayIsoLocal = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+  const printDownloadIso = todayIsoLocal;
+  const quitationIso = options?.quitationDate || todayIsoLocal;
+  const contractFinalizationIso = options?.returnDate || options?.settlement?.returnDate || vehicle.endDate || quitationIso;
   const cleanPlate = (vehicle.plate || 'VEICULO').replace(/[^a-zA-Z0-9]/g, '');
-  const fileName = `Termo_Quitacao_Debitos_${cleanPlate}_${quitationIso}.pdf`;
+  const fileName = `Termo_Quitacao_Debitos_${cleanPlate}_${printDownloadIso}.pdf`;
 
   const primaryColor = [15, 23, 42];
   const emeraldDark = [6, 95, 70];
@@ -1597,7 +1600,6 @@ export async function generateTermoQuitacaoPDF(
 
   doc.setFontSize(9);
   doc.setTextColor(textColor[0], textColor[1], textColor[2]);
-  const returnIso = options?.returnDate || options?.settlement?.returnDate || quitationIso;
   const headerRows: [string, string][] = [
     ['Locatário / Motorista:', vehicle.driver || 'Não informado'],
     ['CPF / CNPJ:', vehicle.tenantCpfCnpj || 'Não informado'],
@@ -1606,7 +1608,7 @@ export async function generateTermoQuitacaoPDF(
     ['Veículo / Placa:', `${vehicle.brand} ${vehicle.model} — ${vehicle.plate}`],
     ['Contrato nº:', vehicle.contractNumber || `LOC-${cleanPlate}`],
     ['Início da Locação:', formatDateBrSafe(vehicle.startDate)],
-    ['Data da Devolução:', formatDateBrSafe(returnIso)],
+    ['Finalização do Contrato:', formatDateBrSafe(contractFinalizationIso)],
     ['Previsão 30 Dias:', formatDateBrSafe(options?.dueDate30Days)],
     ['Data da Quitação Final:', formatDateBrSafe(quitationIso)]
   ];
@@ -1764,9 +1766,9 @@ export async function generateTermoQuitacaoPDF(
   if (y > 220) { doc.addPage(); y = 15; }
   const quitationText = finalSet
     ? finalSet.saldoFinal >= 0
-      ? `Pelo presente TERMO DE ENCERRAMENTO E QUITAÇÃO DE DÉBITOS, o LOCADOR e o LOCATÁRIO dão por encerrado em definitivo o contrato de locação do veículo ${vehicle.brand} ${vehicle.model} (placa ${vehicle.plate}). Apurados todos os aluguéis, eventuais avarias, multas de trânsito e pedágios no prazo regulamentar, resta consolidado o saldo final de ${formatMoneyBr(finalSet.saldoFinal)} a ser restituído ao LOCATÁRIO, dando ambas as partes mútua, plena e irrevogável quitação dos valores acima discriminados com a efetivação do respectivo pagamento.`
-      : `Pelo presente TERMO DE ENCERRAMENTO E QUITAÇÃO DE DÉBITOS, o LOCADOR e o LOCATÁRIO dão por encerrado o contrato de locação do veículo ${vehicle.brand} ${vehicle.model} (placa ${vehicle.plate}). Após compensação integral da caução inicialmente depositada frente aos débitos apurados na devolução e no prazo de 30 dias, permanece apurado o saldo devedor remanescente de ${formatMoneyBr(Math.abs(finalSet.saldoFinal))} em favor do LOCADOR, obrigando-se o LOCATÁRIO à sua liquidação integral.`
-    : `Pelo presente TERMO DE ENCERRAMENTO E QUITAÇÃO DE DÉBITOS, as partes formalizam o encerramento definitivo do contrato de locação do veículo ${vehicle.brand} ${vehicle.model} (placa ${vehicle.plate}) e o arquivamento integral do histórico e anexos da locação.`;
+      ? `Pelo presente TERMO DE ENCERRAMENTO E QUITAÇÃO DE DÉBITOS, declara-se encerrado em definitivo o contrato de locação do veículo ${vehicle.brand} ${vehicle.model} (placa ${vehicle.plate}), com finalização do contrato em ${formatDateBrSafe(contractFinalizationIso)}. Apurados todos os aluguéis, eventuais avarias, multas de trânsito e pedágios no prazo regulamentar, resta consolidado o saldo final de ${formatMoneyBr(finalSet.saldoFinal)} a ser restituído ao LOCATÁRIO, conferindo plena e irrevogável quitação dos valores acima discriminados com a efetivação do respectivo pagamento, dispensada a necessidade de assinatura do LOCATÁRIO neste termo.`
+      : `Pelo presente TERMO DE ENCERRAMENTO E QUITAÇÃO DE DÉBITOS, declara-se encerrado o contrato de locação do veículo ${vehicle.brand} ${vehicle.model} (placa ${vehicle.plate}), com finalização do contrato em ${formatDateBrSafe(contractFinalizationIso)}. Após compensação integral da caução inicialmente depositada frente aos débitos apurados na devolução e no prazo de 30 dias, permanece apurado o saldo devedor remanescente de ${formatMoneyBr(Math.abs(finalSet.saldoFinal))} em favor do LOCADOR, obrigando-se o LOCATÁRIO à sua liquidação integral, dispensada a necessidade de assinatura do LOCATÁRIO neste termo.`
+    : `Pelo presente TERMO DE ENCERRAMENTO E QUITAÇÃO DE DÉBITOS, formaliza-se o encerramento definitivo do contrato de locação do veículo ${vehicle.brand} ${vehicle.model} (placa ${vehicle.plate}), com finalização do contrato em ${formatDateBrSafe(contractFinalizationIso)}, e o arquivamento integral do histórico e anexos da locação, dispensada a necessidade de assinatura do LOCATÁRIO neste termo.`;
 
   const qLines = doc.splitTextToSize(quitationText, 174);
   const qBoxH = 12 + qLines.length * 4.2;
@@ -1784,16 +1786,21 @@ export async function generateTermoQuitacaoPDF(
   y += qBoxH + 10;
 
   if (y > 245) { doc.addPage(); y = 20; }
+  doc.setFont('helvetica', 'normal');
   doc.setFontSize(8.5);
-  doc.text(`São Paulo, ${formatDateBrSafe(quitationIso)}.`, 14, y);
+  doc.setTextColor(51, 65, 85);
+  doc.text(`São Paulo, ${formatDateBrSafe(printDownloadIso)}.`, 105, y, { align: 'center' });
   y += 16;
   doc.setDrawColor(148, 163, 184);
-  doc.line(18, y, 92, y);
-  doc.line(118, y, 192, y);
+  doc.line(58, y, 152, y);
   doc.setFont('helvetica', 'bold');
   doc.setFontSize(8);
-  doc.text('LOCADOR / GESTOR DA FROTA', 55, y + 4.5, { align: 'center' });
-  doc.text(`LOCATÁRIO: ${(vehicle.driver || 'MOTORISTA').toUpperCase().slice(0, 30)}`, 155, y + 4.5, { align: 'center' });
+  doc.setTextColor(primaryColor[0], primaryColor[1], primaryColor[2]);
+  doc.text('LOCADOR / GESTOR DA FROTA', 105, y + 4.5, { align: 'center' });
+  doc.setFont('helvetica', 'italic');
+  doc.setFontSize(7.5);
+  doc.setTextColor(100, 116, 139);
+  doc.text('Dispensada a assinatura do locatário.', 105, y + 9, { align: 'center' });
 
   // Render attachments from lateDebits (multas / orçamentos chegados nos 30 dias)
   const lateWithAttachments = lateDebits.filter((d) => Boolean(d.attachmentUrl));

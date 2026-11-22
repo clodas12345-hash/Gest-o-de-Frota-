@@ -5,6 +5,7 @@ export interface WeeklyPayment {
   isPaid?: boolean;
   paidDate?: string;
   paidAt?: string;
+  isManualAmount?: boolean;
 }
 
 export function isWeeklyPaymentPaid(payment: Pick<WeeklyPayment, 'id' | 'isPaid'>): boolean {

@@ -91,7 +91,7 @@ import {
   getWeekdayLabel,
   getDueDayTextFromWeekday,
   resolveVehiclePaymentDayOfWeek,
-  generateMonthlyPaymentsForVehicle,
+  syncVehiclePaymentsOnCadastroChange,
 } from '../utils/paymentSchedule';
 
 interface InlineEditProps {
@@ -545,7 +545,9 @@ export const VehicleCard: React.FC<VehicleCardProps> = ({
     const d = new Date(checkDateStr + 'T12:00:00');
     return !isNaN(d.getTime()) && d.getFullYear() === thisYear && getWeekNumber(d) === currentWeek;
   });
-  const nextPendingPromise = (vehicle.promisePayments || []).find(p => !p.isPaid);
+  const nextPendingPromise = (vehicle.promisePayments || [])
+    .filter((p) => !p.isPaid)
+    .sort((a, b) => (a.date || '').localeCompare(b.date || ''))[0];
   const [activeTab, setActiveTab] = useState<'financeiro' | 'pagamentos' | 'manutencao' | 'vistorias' | 'documentos' | 'pneus' | 'sinistros' | 'multas'>('financeiro');
   const [isCaucaoExpanded, setIsCaucaoExpanded] = useState(true);
   const [isContractExpanded, setIsContractExpanded] = useState(true);
@@ -934,6 +936,14 @@ export const VehicleCard: React.FC<VehicleCardProps> = ({
     }
     const payments = vehicle.weeklyPayments || [];
     const todayIso = new Date().toISOString().split('T')[0];
+    const earliestPending = payments
+      .filter((p) => !isWeeklyPaymentPaid(p))
+      .sort((a, b) => a.date.localeCompare(b.date))[0];
+    if (earliestPending) {
+      setPaymentWhatsAppDueDate(earliestPending.date);
+      setNewPaymentDate(earliestPending.date);
+      return;
+    }
     const pastOrToday = payments.filter((p) => p.date <= todayIso).sort((a, b) => b.date.localeCompare(a.date));
     if (pastOrToday.length > 0) {
       const nextDue = getNextWeekDate(pastOrToday[0].date);
@@ -951,7 +961,7 @@ export const VehicleCard: React.FC<VehicleCardProps> = ({
       setPaymentWhatsAppDueDate(todayIso);
       setNewPaymentDate(todayIso);
     }
-  }, [vehicle.driver, vehicle.driverPhone, vehicle.valorSemanal, vehicle.valorRecebido, vehicle.startDate, currentMonth, currentYear]);
+  }, [vehicle.driver, vehicle.driverPhone, vehicle.valorSemanal, vehicle.valorRecebido, vehicle.startDate, vehicle.weeklyPayments, currentMonth, currentYear]);
 
   // Expense form state
   const [showAddExpense, setShowAddExpense] = useState(false);
@@ -1471,6 +1481,24 @@ export const VehicleCard: React.FC<VehicleCardProps> = ({
       });
       return;
     }
+    if (
+      field === 'valorSemanal' ||
+      field === 'paymentDayOfWeek' ||
+      field === 'dueDay' ||
+      field === 'startDate' ||
+      field === 'endDate'
+    ) {
+      const updated = syncVehiclePaymentsOnCadastroChange(
+        {
+          ...vehicle,
+          [field]: val,
+        },
+        currentMonth,
+        currentYear
+      );
+      onUpdateVehicle(updated);
+      return;
+    }
     onUpdateVehicle({
       ...vehicle,
       [field]: val,
@@ -1557,7 +1585,7 @@ export const VehicleCard: React.FC<VehicleCardProps> = ({
     const currentPayments = vehicle.weeklyPayments || [];
     onUpdateVehicle({
       ...vehicle,
-      weeklyPayments: currentPayments.map((p) => p.id === paymentId ? { ...p, amount: newAmount } : p),
+      weeklyPayments: currentPayments.map((p) => p.id === paymentId ? { ...p, amount: newAmount, isManualAmount: true } : p),
     });
   };
 
@@ -2603,7 +2631,7 @@ _Enviado via sistema de gestão de frota._`;
                       vehicle.brand || '',
                       vehicle.model || '',
                       vehicle.plate || '',
-                      paymentWhatsAppAmount || vehicle.valorRecebido || 0,
+                      vehicle.valorSemanal || paymentWhatsAppAmount || vehicle.valorRecebido || 0,
                       paymentWhatsAppDueDate,
                       undefined,
                       vehicle.id
@@ -4532,38 +4560,6 @@ _Enviado via sistema de gestão de frota._`;
                     </button>
                   )}
                   <button
-                    type="button"
-                    onClick={() => {
-                      const amt = Number(vehicle.valorSemanal) || Number(vehicle.valorRecebido) || 0;
-                      const dayOfWeek = resolveVehiclePaymentDayOfWeek(vehicle);
-                      if (amt <= 0) {
-                        alert('Defina o Valor Semanal no cadastro do carro antes de gerar os pagamentos do mês.');
-                        return;
-                      }
-                      if (dayOfWeek === null) {
-                        alert('Escolha o Dia da Semana do Pagamento no cadastro do carro (ou informe a Data Início) antes de gerar os pagamentos.');
-                        return;
-                      }
-                      const { vehicle: updatedVehicle, addedCount } = generateMonthlyPaymentsForVehicle(
-                        { ...vehicle, autoMonthlyPayments: true },
-                        currentMonth,
-                        currentYear
-                      );
-                      onUpdateVehicle(updatedVehicle);
-                      if (addedCount > 0) {
-                        sendAppNotification(`📅 Pagamentos do Mês Gerados: ${vehicle.brand} (${vehicle.plate})`, {
-                          body: `${addedCount} pagamento(s) de R$ ${amt.toLocaleString('pt-BR', { minimumFractionDigits: 2 })} (${getWeekdayLabel(dayOfWeek)}) criados para o mês!`,
-                          eventKey: 'payment_registered',
-                        });
-                      }
-                    }}
-                    className="text-[11px] text-purple-300 hover:text-purple-200 font-bold flex items-center gap-1 px-2 py-0.5 bg-purple-500/15 hover:bg-purple-500/25 border border-purple-500/25 rounded-md transition-all cursor-pointer"
-                    title="Gerar automaticamente todos os pagamentos do mês usando o valor semanal e o dia da semana cadastrados no veículo"
-                  >
-                    <Sparkles className="w-3.5 h-3.5 text-purple-400" />
-                    <span>Gerar Mês</span>
-                  </button>
-                  <button
                     onClick={() => {
                       const nextState = !showAddPayment;
                       setShowAddPayment(nextState);
@@ -4610,11 +4606,16 @@ _Enviado via sistema de gestão de frota._`;
                           const val = e.target.value;
                           if (val === '') return;
                           const dayNum = Number(val);
-                          onUpdateVehicle({
-                            ...vehicle,
-                            paymentDayOfWeek: dayNum,
-                            dueDay: getDueDayTextFromWeekday(dayNum),
-                          });
+                          const syncedVehicle = syncVehiclePaymentsOnCadastroChange(
+                            {
+                              ...vehicle,
+                              paymentDayOfWeek: dayNum,
+                              dueDay: getDueDayTextFromWeekday(dayNum),
+                            },
+                            currentMonth,
+                            currentYear
+                          );
+                          onUpdateVehicle(syncedVehicle);
                         }}
                         className="bg-neutral-900 border border-white/10 text-gray-200 rounded px-2 py-0.5 text-[10px] font-semibold cursor-pointer focus:outline-hidden focus:border-blue-500"
                         title="Alterar dia da semana do pagamento"
@@ -4626,27 +4627,9 @@ _Enviado via sistema de gestão de frota._`;
                           </option>
                         ))}
                       </select>
-                      <label className="flex items-center gap-1 cursor-pointer text-gray-300" title="Gerar automaticamente ao virar ou selecionar mês">
-                        <input
-                          type="checkbox"
-                          checked={Boolean(vehicle.autoMonthlyPayments)}
-                          onChange={(e) => {
-                            const enabled = e.target.checked;
-                            if (enabled) {
-                              const { vehicle: genVeh } = generateMonthlyPaymentsForVehicle(
-                                { ...vehicle, autoMonthlyPayments: true },
-                                currentMonth,
-                                currentYear
-                              );
-                              onUpdateVehicle(genVeh);
-                            } else {
-                              onUpdateVehicle({ ...vehicle, autoMonthlyPayments: false });
-                            }
-                          }}
-                          className="w-3 h-3 accent-emerald-500 cursor-pointer"
-                        />
-                        <span className="text-[10px]">Auto Mês</span>
-                      </label>
+                      <span className="text-[9px] text-emerald-400/90 font-semibold whitespace-nowrap">
+                        Automático todo mês
+                      </span>
                     </div>
                   </div>
                 );

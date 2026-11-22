@@ -7,6 +7,7 @@ import { DriverVistoriaForm } from './DriverVistoriaForm';
 import { getPublicWebBaseUrl } from './VehicleCard';
 import { encodeVistoriaParams } from '../utils/vistoriaUrl';
 import { buildContactFromVehicle, syncDriverToDevicePhonebook } from '../utils/agendaSync';
+import { parseWeekdayFromDueDay, syncVehiclePaymentsOnCadastroChange } from '../utils/paymentSchedule';
 import { Capacitor } from '@capacitor/core';
 import CurrencyInput from './CurrencyInput';
 import { 
@@ -349,10 +350,13 @@ export const RentalContractModal: React.FC<RentalContractModalProps> = ({
       return;
     }
 
-    const updatedVehicle: Vehicle = {
+    const resolvedWeekday = parseWeekdayFromDueDay(dueDay.trim()) ?? currentVeh.paymentDayOfWeek;
+    const newKm = Number(odometerKm) > 0 ? Number(odometerKm) : (currentVeh.currentKm || 0);
+    const rawUpdatedVehicle: Vehicle = {
       ...currentVeh,
-      initialKm: Number(odometerKm) > 0 ? Number(odometerKm) : currentVeh.initialKm,
-      currentKm: Number(odometerKm) > 0 ? Number(odometerKm) : currentVeh.currentKm,
+      initialKm: currentVeh.initialKm && currentVeh.initialKm > 0 ? currentVeh.initialKm : newKm,
+      currentKm: newKm,
+      preventiveMaintCurrentKm: newKm,
       driver: tenantName.trim(),
       tenantCpfCnpj: tenantCpfCnpj.trim(),
       tenantRg: tenantRg.trim(),
@@ -367,10 +371,17 @@ export const RentalContractModal: React.FC<RentalContractModalProps> = ({
       promisePayments: promisePayments,
       contractNumber: contractNumber.trim() !== '' ? contractNumber.trim() : currentVeh.contractNumber,
       dueDay: dueDay.trim(),
+      paymentDayOfWeek: resolvedWeekday,
+      autoMonthlyPayments: true,
       rentalCompany: landlordName.trim() !== '' ? landlordName.trim() : currentVeh.rentalCompany,
       fineRate: Number(contractFineRate),
       dailyInterestRate: Number(contractInterestRate),
     };
+    const updatedVehicle = syncVehiclePaymentsOnCadastroChange(
+      rawUpdatedVehicle,
+      new Date().getMonth(),
+      new Date().getFullYear()
+    );
 
     onUpdateVehicle(updatedVehicle);
     const syncedContact = buildContactFromVehicle(updatedVehicle);
@@ -691,16 +702,25 @@ Isso é fundamental para a vinculação correta do veículo. Qualquer dúvida es
     setCopiedReminderNotification(null);
   };
 
-  // Sempre iniciar em branco ao abrir o modal, sem carregar dados anteriores
+  // Sempre iniciar com o KM atual do carro ao abrir o modal
   useEffect(() => {
     if (isOpen) {
-      setSelectedVehicleId(initialVehicle ? initialVehicle.id : '');
+      const vId = initialVehicle ? initialVehicle.id : '';
+      setSelectedVehicleId(vId);
       resetContractFields();
+      const veh = vehicles.find(v => v.id === vId) || initialVehicle;
+      if (veh && veh.currentKm) {
+        setOdometerKm(veh.currentKm);
+      }
     }
   }, [isOpen, initialVehicle]);
 
   const handleVehicleChange = (vehId: string) => {
     setSelectedVehicleId(vehId);
+    const veh = vehicles.find(v => v.id === vehId);
+    if (veh && veh.currentKm) {
+      setOdometerKm(veh.currentKm);
+    }
   };
 
   if (!isOpen) return null;
@@ -761,10 +781,13 @@ Isso é fundamental para a vinculação correta do veículo. Qualquer dúvida es
       };
 
       // Prepare vehicle with updated odometer and driver info
+      const resolvedWeekday = parseWeekdayFromDueDay(dueDay.trim()) ?? currentVehicle.paymentDayOfWeek;
+      const newKm = Number(odometerKm) > 0 ? Number(odometerKm) : (currentVehicle.currentKm || 0);
       const vehicleToUse: Vehicle = {
         ...currentVehicle,
-        initialKm: Number(odometerKm) > 0 ? Number(odometerKm) : currentVehicle.initialKm,
-        currentKm: Number(odometerKm) > 0 ? Number(odometerKm) : currentVehicle.currentKm,
+        initialKm: currentVehicle.initialKm && currentVehicle.initialKm > 0 ? currentVehicle.initialKm : newKm,
+        currentKm: newKm,
+        preventiveMaintCurrentKm: newKm,
         driver: contractData.tenantName,
         tenantCpfCnpj: contractData.tenantCpfCnpj,
         tenantRg: contractData.tenantRg,
@@ -779,6 +802,8 @@ Isso é fundamental para a vinculação correta do veículo. Qualquer dúvida es
         promisePayments: promisePayments,
         contractNumber: contractData.contractNumber,
         dueDay: dueDay.trim(),
+        paymentDayOfWeek: resolvedWeekday,
+        autoMonthlyPayments: true,
         rentalCompany: contractData.landlordName || currentVehicle.rentalCompany,
         fineRate: Number(contractFineRate),
         dailyInterestRate: Number(contractInterestRate),
@@ -798,12 +823,16 @@ Isso é fundamental para a vinculação correta do veículo. Qualquer dúvida es
         contentUrl: pdfDataUrl
       };
 
-      // Update vehicle with document & updated tenant info
+      // Update vehicle with document & updated tenant info and sync monthly payment schedule
       const existingDocs = vehicleToUse.documents || [];
-      const updatedVehicle: Vehicle = {
-        ...vehicleToUse,
-        documents: [newDoc, ...existingDocs]
-      };
+      const updatedVehicle = syncVehiclePaymentsOnCadastroChange(
+        {
+          ...vehicleToUse,
+          documents: [newDoc, ...existingDocs]
+        },
+        new Date().getMonth(),
+        new Date().getFullYear()
+      );
 
       onUpdateVehicle(updatedVehicle);
 
