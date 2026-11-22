@@ -20,6 +20,7 @@ import {
   resolveVehiclePaymentDayOfWeek,
   syncVehiclePaymentsOnCadastroChange,
 } from '../utils/paymentSchedule';
+import { isVehicleRented } from '../utils/driverHistory';
 
 const getTodayStr = (): string => {
   const d = new Date();
@@ -214,11 +215,18 @@ export function LogForms({
   const [manutencaoPreventiva, setManutencaoPreventiva] = useState(0);
   const [currentKm, setCurrentKm] = useState(0);
   const [preventiveMaintNextKm, setPreventiveMaintNextKm] = useState<number | undefined>(undefined);
-  const [preventiveMaintIntervalKm, setPreventiveMaintIntervalKm] = useState<number>(10000);
-  const [fuelLevel, setFuelLevel] = useState(8);
+  const [preventiveMaintIntervalKm, setPreventiveMaintIntervalKm] = useState<number | ''>('');
+  const [preventiveMaintDate, setPreventiveMaintDate] = useState('');
+  const [fuelLevel, setFuelLevel] = useState<number | ''>('');
   const [driver, setDriver] = useState('');
   const [driverPhone, setDriverPhone] = useState('');
   const [tenantEmail, setTenantEmail] = useState('');
+  const [tenantCpfCnpj, setTenantCpfCnpj] = useState('');
+  const [tenantRg, setTenantRg] = useState('');
+  const [tenantCnh, setTenantCnh] = useState('');
+  const [tenantAddress, setTenantAddress] = useState('');
+  const [fineRate, setFineRate] = useState<number | ''>('');
+  const [dailyInterestRate, setDailyInterestRate] = useState<number | ''>('');
   const [tireSize, setTireSize] = useState('');
   const [driverCnhExpiration, setDriverCnhExpiration] = useState('');
   const [driverCnhPhotoUrl, setDriverCnhPhotoUrl] = useState('');
@@ -442,14 +450,25 @@ export function LogForms({
   const [quickManualPhone, setQuickManualPhone] = useState('');
 
   const handleSelectContactForTenant = (contact: AgendaContact) => {
-    setDriver(toTitleCase(contact.name));
-    let cleanPhone = contact.phone.replace(/\D/g, '');
+    setDriver(contact.name || '');
+    let cleanPhone = (contact.phone || '').replace(/\D/g, '');
     if (cleanPhone.length > 0 && !cleanPhone.startsWith('55')) {
       cleanPhone = '55' + cleanPhone;
     }
-    setDriverPhone(cleanPhone || contact.phone);
-    if (contact.email) {
-      setTenantEmail(contact.email);
+    setDriverPhone(cleanPhone || contact.phone || '');
+    if (contact.email) setTenantEmail(contact.email);
+    if (contact.cpfCnpj) setTenantCpfCnpj(contact.cpfCnpj);
+    if (contact.rg) setTenantRg(contact.rg);
+    if (contact.cnh) setTenantCnh(contact.cnh);
+    if (contact.address) setTenantAddress(contact.address);
+    if (contact.cnhExpiration) setDriverCnhExpiration(contact.cnhExpiration);
+    if (contact.cnhPhotoUrl) {
+      setDriverCnhPhotoUrl(contact.cnhPhotoUrl);
+      setDriverCnhFileName('CNH Cadastrada');
+    }
+    if (contact.addressProofUrl) {
+      setDriverAddressProofUrl(contact.addressProofUrl);
+      setDriverAddressFileName('Comprovante Cadastrado');
     }
     setShowContactPicker(false);
   };
@@ -592,22 +611,31 @@ export function LogForms({
     setYearFab('');
     setYearModel('');
     setRentalCompany('');
-    setStartDate(new Date().toISOString().split('T')[0]);
+    setStartDate('');
     setEndDate('');
-    setInitialKm(0);
+    setInitialKm(undefined);
     setContractNumber('');
     setValorRecebido(0);
-    setValorSemanal(1000);
-    setFinanciamento(1200);
-    setSeguro(250);
-    setIpva(150);
-    setManutencaoPreventiva(200);
+    setValorSemanal(0);
+    setPaymentDayOfWeek(undefined);
+    setFinanciamento(0);
+    setSeguro(0);
+    setIpva(0);
+    setManutencaoPreventiva(0);
     setCurrentKm(0);
     setPreventiveMaintNextKm(undefined);
-    setFuelLevel(8);
+    setPreventiveMaintIntervalKm('');
+    setPreventiveMaintDate('');
+    setFuelLevel('');
     setDriver('');
     setDriverPhone('');
     setTenantEmail('');
+    setTenantCpfCnpj('');
+    setTenantRg('');
+    setTenantCnh('');
+    setTenantAddress('');
+    setFineRate('');
+    setDailyInterestRate('');
     setTireSize('');
     setFipeCode('');
     setFipeValue(undefined);
@@ -615,10 +643,19 @@ export function LogForms({
     setFipeRefMonth('');
     setFipeError('');
     setAttachedDocs([]);
-    setCaucaoValor(1500);
-    setCaucaoData(new Date().toISOString().split('T')[0]);
+    setTires([]);
+    setExtraExpenses([]);
+    setPromisePayments([]);
+    setCaucaoValor(0);
+    setCaucaoData('');
     setCaucaoObservacoes('');
     setNextVistoriaDate('');
+    setInsuranceExpirationDate('');
+    setDriverCnhExpiration('');
+    setDriverCnhPhotoUrl('');
+    setDriverCnhFileName('');
+    setDriverAddressProofUrl('');
+    setDriverAddressFileName('');
   };
 
   const handleAiFill = async () => {
@@ -715,6 +752,10 @@ export function LogForms({
         if (extracted.model) setModel(extracted.model);
         if (extracted.plate) setPlate(extracted.plate);
         if (extracted.color) setColor(extracted.color);
+        if (extracted.yearFab !== undefined) setYearFab(extracted.yearFab);
+        else if (extracted.year !== undefined) setYearFab(extracted.year);
+        if (extracted.yearModel !== undefined) setYearModel(extracted.yearModel);
+        else if (extracted.year !== undefined) setYearModel(extracted.year);
         if (extracted.rentalCompany) setRentalCompany(extracted.rentalCompany);
         if (extracted.startDate) setStartDate(extracted.startDate);
         if (extracted.endDate) setEndDate(extracted.endDate);
@@ -732,6 +773,10 @@ export function LogForms({
         if (extracted.driver) setDriver(extracted.driver);
         if (extracted.driverPhone) setDriverPhone(extracted.driverPhone);
         if (extracted.tenantEmail) setTenantEmail(extracted.tenantEmail);
+        if (extracted.tenantCpfCnpj) setTenantCpfCnpj(extracted.tenantCpfCnpj);
+        if (extracted.tenantRg) setTenantRg(extracted.tenantRg);
+        if (extracted.tenantCnh) setTenantCnh(extracted.tenantCnh);
+        if (extracted.tenantAddress) setTenantAddress(extracted.tenantAddress);
         if (extracted.caucaoValor !== undefined) setCaucaoValor(extracted.caucaoValor);
         if (extracted.caucaoData) setCaucaoData(extracted.caucaoData);
         if (extracted.caucaoObservacoes) setCaucaoObservacoes(extracted.caucaoObservacoes);
@@ -773,35 +818,50 @@ export function LogForms({
 
     if (formType === 'vehicle') {
       if (vehicleToEdit) {
-        setBrand(vehicleToEdit.brand);
-        setModel(vehicleToEdit.model);
-        setPlate(vehicleToEdit.plate);
-        setColor(vehicleToEdit.color);
-        setYearFab(vehicleToEdit.yearFab !== undefined ? vehicleToEdit.yearFab : (vehicleToEdit.year || ''));
-        setYearModel(vehicleToEdit.yearModel !== undefined ? vehicleToEdit.yearModel : (vehicleToEdit.year || ''));
-        setRentalCompany(vehicleToEdit.rentalCompany);
-        setStartDate(vehicleToEdit.startDate);
-        setEndDate(vehicleToEdit.endDate);
+        setBrand(vehicleToEdit.brand || '');
+        setModel(vehicleToEdit.model || '');
+        setPlate(vehicleToEdit.plate || '');
+        setColor(vehicleToEdit.color || '');
+        setYearFab(
+          vehicleToEdit.yearFab !== undefined && vehicleToEdit.yearFab > 0
+            ? vehicleToEdit.yearFab
+            : (vehicleToEdit.year > 0 ? vehicleToEdit.year : '')
+        );
+        setYearModel(
+          vehicleToEdit.yearModel !== undefined && vehicleToEdit.yearModel > 0
+            ? vehicleToEdit.yearModel
+            : (vehicleToEdit.year > 0 ? vehicleToEdit.year : '')
+        );
+        setRentalCompany(vehicleToEdit.rentalCompany || '');
+        setStartDate(vehicleToEdit.startDate || '');
+        setEndDate(vehicleToEdit.endDate || '');
         setInitialKm(vehicleToEdit.initialKm);
         setContractNumber(vehicleToEdit.contractNumber || '');
         setValorRecebido(vehicleToEdit.valorRecebido || 0);
         setValorSemanal(vehicleToEdit.valorSemanal || 0);
         setPaymentDayOfWeek(resolveVehiclePaymentDayOfWeek(vehicleToEdit) ?? undefined);
-        setAutoMonthlyPayments(true);
+        setAutoMonthlyPayments(vehicleToEdit.autoMonthlyPayments ?? true);
         setFinanciamento(vehicleToEdit.financiamento || 0);
         setSeguro(vehicleToEdit.seguro || 0);
         setIpva(vehicleToEdit.ipva || 0);
         setManutencaoPreventiva(vehicleToEdit.manutencaoPreventiva || 0);
-        setCurrentKm(vehicleToEdit.currentKm);
+        setCurrentKm(vehicleToEdit.currentKm || 0);
         setPreventiveMaintNextKm(vehicleToEdit.preventiveMaintNextKm);
-        setPreventiveMaintIntervalKm(vehicleToEdit.preventiveMaintIntervalKm || 10000);
-        setFuelLevel(vehicleToEdit.fuelLevel);
-        setDriver(vehicleToEdit.driver);
+        setPreventiveMaintIntervalKm(vehicleToEdit.preventiveMaintIntervalKm !== undefined ? vehicleToEdit.preventiveMaintIntervalKm : '');
+        setPreventiveMaintDate(vehicleToEdit.preventiveMaintDate || '');
+        setFuelLevel(vehicleToEdit.fuelLevel !== undefined ? vehicleToEdit.fuelLevel : '');
+        setDriver(vehicleToEdit.driver || '');
         setDriverPhone(vehicleToEdit.driverPhone || '');
         setTenantEmail(vehicleToEdit.tenantEmail || '');
+        setTenantCpfCnpj(vehicleToEdit.tenantCpfCnpj || '');
+        setTenantRg(vehicleToEdit.tenantRg || '');
+        setTenantCnh(vehicleToEdit.tenantCnh || '');
+        setTenantAddress(vehicleToEdit.tenantAddress || '');
+        setFineRate(vehicleToEdit.fineRate !== undefined ? vehicleToEdit.fineRate : '');
+        setDailyInterestRate(vehicleToEdit.dailyInterestRate !== undefined ? vehicleToEdit.dailyInterestRate : '');
         setTireSize(vehicleToEdit.tireSize || '');
         setCaucaoValor(vehicleToEdit.caucaoValor || 0);
-        setCaucaoData(vehicleToEdit.caucaoData || '2026-08-01');
+        setCaucaoData(vehicleToEdit.caucaoData || '');
         setCaucaoObservacoes(vehicleToEdit.caucaoObservacoes || '');
         setPromisePayments(vehicleToEdit.promisePayments || []);
         setNextVistoriaDate(vehicleToEdit.nextVistoriaDate || '');
@@ -814,15 +874,13 @@ export function LogForms({
         setAttachedDocs(vehicleToEdit.documents || []);
         setTires(vehicleToEdit.tires || []);
         setCustoExtra(vehicleToEdit.custoExtra || 0);
-        setCustoExtraLabel(vehicleToEdit.custoExtraLabel || 'Outras Despesas');
-        setExtraExpenses(vehicleToEdit.extraExpenses || (vehicleToEdit.custoExtra ? [{ id: 'default', label: vehicleToEdit.custoExtraLabel || 'Outras Despesas', value: vehicleToEdit.custoExtra, parcelasPagas: vehicleToEdit.custoExtraParcelasPagas, parcelasTotais: vehicleToEdit.custoExtraParcelasTotais }] : []));
+        setCustoExtraLabel(vehicleToEdit.custoExtraLabel || '');
+        setExtraExpenses(vehicleToEdit.extraExpenses || (vehicleToEdit.custoExtra ? [{ id: 'default', label: vehicleToEdit.custoExtraLabel || '', value: vehicleToEdit.custoExtra, parcelasPagas: vehicleToEdit.custoExtraParcelasPagas, parcelasTotais: vehicleToEdit.custoExtraParcelasTotais }] : []));
         setFipeCode(vehicleToEdit.fipeCode || '');
         setFipeValue(vehicleToEdit.fipeValue);
         setFipeDebtValue(vehicleToEdit.fipeDebtValue);
         setFipeRefMonth(vehicleToEdit.fipeRefMonth || '');
-        if (vehicleToEdit.custoExtra && vehicleToEdit.custoExtra > 0) {
-          setShowAddExpense(true);
-        }
+        setShowAddExpense(Boolean(vehicleToEdit.custoExtra && vehicleToEdit.custoExtra > 0));
       } else {
         // Adding new vehicle: check if draft exists in localStorage
         const savedDraft = localStorage.getItem(VEHICLE_DRAFT_KEY);
@@ -836,24 +894,32 @@ export function LogForms({
             setYearFab(draft.yearFab ?? '');
             setYearModel(draft.yearModel ?? '');
             setRentalCompany(draft.rentalCompany ?? '');
-            setStartDate(draft.startDate ?? new Date().toISOString().split('T')[0]);
+            setStartDate(draft.startDate ?? '');
             setEndDate(draft.endDate ?? '');
-            setInitialKm(draft.initialKm !== undefined ? draft.initialKm : 0);
+            setInitialKm(draft.initialKm);
             setContractNumber(draft.contractNumber ?? '');
             setValorRecebido(draft.valorRecebido ?? 0);
-            setValorSemanal(draft.valorSemanal ?? 1000);
+            setValorSemanal(draft.valorSemanal ?? 0);
             setPaymentDayOfWeek(draft.paymentDayOfWeek);
-            setAutoMonthlyPayments(true);
-            setFinanciamento(draft.financiamento ?? 1200);
-            setSeguro(draft.seguro ?? 250);
-            setIpva(draft.ipva ?? 150);
-            setManutencaoPreventiva(draft.manutencaoPreventiva ?? 200);
+            setAutoMonthlyPayments(draft.autoMonthlyPayments ?? true);
+            setFinanciamento(draft.financiamento ?? 0);
+            setSeguro(draft.seguro ?? 0);
+            setIpva(draft.ipva ?? 0);
+            setManutencaoPreventiva(draft.manutencaoPreventiva ?? 0);
             setCurrentKm(draft.currentKm ?? 0);
             setPreventiveMaintNextKm(draft.preventiveMaintNextKm);
-            setFuelLevel(draft.fuelLevel ?? 8);
+            setPreventiveMaintIntervalKm(draft.preventiveMaintIntervalKm ?? '');
+            setPreventiveMaintDate(draft.preventiveMaintDate ?? '');
+            setFuelLevel(draft.fuelLevel ?? '');
             setDriver(draft.driver ?? '');
             setDriverPhone(draft.driverPhone ?? '');
             setTenantEmail(draft.tenantEmail ?? '');
+            setTenantCpfCnpj(draft.tenantCpfCnpj ?? '');
+            setTenantRg(draft.tenantRg ?? '');
+            setTenantCnh(draft.tenantCnh ?? '');
+            setTenantAddress(draft.tenantAddress ?? '');
+            setFineRate(draft.fineRate ?? '');
+            setDailyInterestRate(draft.dailyInterestRate ?? '');
             setTireSize(draft.tireSize ?? '');
             setFipeCode(draft.fipeCode ?? '');
             setFipeValue(draft.fipeValue);
@@ -866,9 +932,10 @@ export function LogForms({
             setDriverAddressFileName(draft.driverAddressProofUrl ? 'Comprovante de Endereço Anexado' : '');
             setAttachedDocs([]);
             setTires(draft.tires ?? []);
-            setCaucaoValor(draft.caucaoValor ?? 1500);
-            setCaucaoData(draft.caucaoData ?? new Date().toISOString().split('T')[0]);
+            setCaucaoValor(draft.caucaoValor ?? 0);
+            setCaucaoData(draft.caucaoData ?? '');
             setCaucaoObservacoes(draft.caucaoObservacoes ?? '');
+            setPromisePayments(draft.promisePayments ?? []);
             setNextVistoriaDate(draft.nextVistoriaDate ?? '');
             setInsuranceExpirationDate(draft.insuranceExpirationDate ?? draft.seguroVencimento ?? '');
             setExtraExpenses(draft.extraExpenses ?? []);
@@ -883,27 +950,40 @@ export function LogForms({
           setYearFab('');
           setYearModel('');
           setRentalCompany('');
-          setStartDate(new Date().toISOString().split('T')[0]);
+          setStartDate('');
           setEndDate('');
           setInitialKm(undefined);
           setContractNumber('');
           setValorRecebido(0);
           setValorSemanal(0);
+          setPaymentDayOfWeek(undefined);
+          setAutoMonthlyPayments(true);
           setFinanciamento(0);
           setSeguro(0);
           setIpva(0);
           setManutencaoPreventiva(0);
           setCurrentKm(0);
           setPreventiveMaintNextKm(undefined);
-          setFuelLevel(8);
+          setPreventiveMaintIntervalKm('');
+          setPreventiveMaintDate('');
+          setFuelLevel('');
           setDriver('');
           setDriverPhone('');
           setTenantEmail('');
+          setTenantCpfCnpj('');
+          setTenantRg('');
+          setTenantCnh('');
+          setTenantAddress('');
+          setFineRate('');
+          setDailyInterestRate('');
           setTireSize('');
           setCaucaoValor(0);
-          setCaucaoData(new Date().toISOString().split('T')[0]);
+          setCaucaoData('');
           setCaucaoObservacoes('');
           setPromisePayments([]);
+          setAttachedDocs([]);
+          setTires([]);
+          setExtraExpenses([]);
           setNextVistoriaDate('');
           setInsuranceExpirationDate('');
           setDriverCnhExpiration('');
@@ -996,10 +1076,18 @@ export function LogForms({
         ipva,
         manutencaoPreventiva,
         currentKm,
+        preventiveMaintIntervalKm,
+        preventiveMaintDate,
         fuelLevel,
         driver,
         driverPhone,
         tenantEmail,
+        tenantCpfCnpj,
+        tenantRg,
+        tenantCnh,
+        tenantAddress,
+        fineRate,
+        dailyInterestRate,
         tireSize,
         fipeCode,
         fipeValue,
@@ -1018,8 +1106,9 @@ export function LogForms({
   }, [
     isOpen, formType, vehicleToEdit, brand, model, plate, color, yearFab, yearModel, rentalCompany,
     startDate, endDate, initialKm, contractNumber, valorRecebido, valorSemanal, paymentDayOfWeek, autoMonthlyPayments,
-    financiamento, seguro, ipva, manutencaoPreventiva, currentKm, preventiveMaintNextKm, fuelLevel,
-    driver, driverPhone, tenantEmail, tireSize, fipeCode, fipeValue, fipeDebtValue, fipeRefMonth,
+    financiamento, seguro, ipva, manutencaoPreventiva, currentKm, preventiveMaintNextKm, preventiveMaintIntervalKm,
+    preventiveMaintDate, fuelLevel, driver, driverPhone, tenantEmail, tenantCpfCnpj, tenantRg, tenantCnh,
+    tenantAddress, fineRate, dailyInterestRate, tireSize, fipeCode, fipeValue, fipeDebtValue, fipeRefMonth,
     caucaoValor, caucaoData, caucaoObservacoes, nextVistoriaDate, insuranceExpirationDate, extraExpenses
   ]);
 
@@ -1179,8 +1268,10 @@ export function LogForms({
       if (detail.vehicleName) setModel(detail.vehicleName);
       if (detail.modelYear) {
         const yearNum = Number(detail.modelYear);
-        setYearModel(isNaN(yearNum) ? "" : yearNum);
-        setYearFab(isNaN(yearNum) ? "" : yearNum - 1);
+        if (!isNaN(yearNum) && yearNum > 1900 && yearNum < 2100) {
+          setYearModel(yearNum);
+          setYearFab(yearNum - 1);
+        }
       }
     } catch (err) {
       console.error('Error fetching FIPE final price:', err);
@@ -1221,56 +1312,103 @@ export function LogForms({
     const activeVehicle = vehicles.find(v => v.id === vehicleId);
 
     if (formType === 'vehicle') {
-      if (!brand || !model || !plate) {
+      if (!brand.trim() || !model.trim() || !plate.trim()) {
         setError('Preencha os campos obrigatórios (Marca, Modelo e Placa)');
         return;
       }
-      const parsedYearFab = yearFab !== '' ? Number(yearFab) : undefined;
-      const parsedYearModel = yearModel !== '' ? Number(yearModel) : undefined;
-      const computedYear = parsedYearModel || parsedYearFab || 2026;
+      const parsedYearFab =
+        yearFab !== '' && !isNaN(Number(yearFab)) && Number(yearFab) > 0
+          ? Number(yearFab)
+          : undefined;
+      const parsedYearModel =
+        yearModel !== '' && !isNaN(Number(yearModel)) && Number(yearModel) > 0
+          ? Number(yearModel)
+          : undefined;
+      const computedYear = parsedYearModel ?? parsedYearFab ?? 0;
+
+      const resolvedPaymentWeekday =
+        paymentDayOfWeek !== undefined
+          ? paymentDayOfWeek
+          : (startDate ? new Date(startDate + 'T12:00:00').getDay() : undefined);
+
+      const parsedInitialKm =
+        initialKm !== undefined && initialKm !== null && String(initialKm) !== '' && !isNaN(Number(initialKm))
+          ? Number(initialKm)
+          : undefined;
+
+      const parsedPrevMaintInterval =
+        preventiveMaintIntervalKm !== '' && !isNaN(Number(preventiveMaintIntervalKm))
+          ? Number(preventiveMaintIntervalKm)
+          : undefined;
+
+      const parsedPrevMaintNext =
+        preventiveMaintNextKm !== undefined && preventiveMaintNextKm !== null && String(preventiveMaintNextKm) !== '' && !isNaN(Number(preventiveMaintNextKm))
+          ? Number(preventiveMaintNextKm)
+          : undefined;
+
+      const parsedFuelLevel =
+        fuelLevel !== '' && !isNaN(Number(fuelLevel))
+          ? Number(fuelLevel)
+          : 0;
+
+      const parsedFineRate =
+        fineRate !== '' && !isNaN(Number(fineRate))
+          ? Number(fineRate)
+          : undefined;
+
+      const parsedDailyInterestRate =
+        dailyInterestRate !== '' && !isNaN(Number(dailyInterestRate))
+          ? Number(dailyInterestRate)
+          : undefined;
 
       const vehicleData: Vehicle = {
         ...(vehicleToEdit || {}),
         id: vehicleToEdit ? vehicleToEdit.id : `car-${Date.now()}`,
-        brand,
-        model,
-        plate: plate.toUpperCase(),
+        brand: brand.trim(),
+        model: model.trim(),
+        plate: plate.trim().toUpperCase(),
         year: computedYear,
-        yearFab: parsedYearFab || undefined,
-        yearModel: parsedYearModel || undefined,
-        color: color || 'Branco',
-        rentalCompany: rentalCompany || 'Indefinido',
-        startDate: startDate || new Date().toISOString().split('T')[0],
+        yearFab: parsedYearFab,
+        yearModel: parsedYearModel,
+        color: color.trim(),
+        rentalCompany: rentalCompany.trim(),
+        startDate: startDate || '',
         endDate: endDate || '',
-        initialKm: (initialKm !== undefined && !isNaN(Number(initialKm))) ? Number(initialKm) : (Number(currentKm) || 0),
-        contractNumber: contractNumber || generateNextContractNumber(plate, vehicles, `${brand} ${model}`),
+        initialKm: parsedInitialKm,
+        contractNumber: contractNumber.trim(),
         valorRecebido: Number(valorRecebido) || 0,
         valorSemanal: Number(valorSemanal) || 0,
-        paymentDayOfWeek: paymentDayOfWeek !== undefined ? paymentDayOfWeek : (startDate ? new Date(startDate + 'T12:00:00').getDay() : undefined),
-        dueDay: paymentDayOfWeek !== undefined ? getDueDayTextFromWeekday(paymentDayOfWeek) : vehicleToEdit?.dueDay,
-        autoMonthlyPayments: true,
+        paymentDayOfWeek: resolvedPaymentWeekday,
+        dueDay: resolvedPaymentWeekday !== undefined ? getDueDayTextFromWeekday(resolvedPaymentWeekday) : undefined,
+        autoMonthlyPayments: Boolean(autoMonthlyPayments),
         autoGeneratedPaymentMonths: vehicleToEdit?.autoGeneratedPaymentMonths || [],
         financiamento: Number(financiamento) || 0,
         seguro: Number(seguro) || 0,
         ipva: Number(ipva) || 0,
         manutencaoPreventiva: Number(manutencaoPreventiva) || 0,
         currentKm: Number(currentKm) || 0,
-        fuelLevel: Number(fuelLevel) || 100,
-        driver: driver || '',
-        driverPhone: driverPhone || '',
-        tenantEmail: tenantEmail || '',
+        fuelLevel: parsedFuelLevel,
+        driver: driver.trim(),
+        driverPhone: driverPhone.trim(),
+        tenantEmail: tenantEmail.trim(),
+        tenantCpfCnpj: tenantCpfCnpj.trim(),
+        tenantRg: tenantRg.trim(),
+        tenantCnh: tenantCnh.trim(),
+        tenantAddress: tenantAddress.trim(),
+        fineRate: parsedFineRate,
+        dailyInterestRate: parsedDailyInterestRate,
         tireSize: tireSize.trim() || undefined,
         caucaoValor: Number(caucaoValor) || 0,
-        caucaoData: caucaoData || getTodayStr(),
+        caucaoData: caucaoData || '',
         caucaoObservacoes: caucaoObservacoes || '',
         promisePayments,
         weeklyPayments: vehicleToEdit ? (vehicleToEdit.weeklyPayments || []) : [],
         custoExtra: extraExpenses.reduce((sum, exp) => sum + (exp.value || 0), 0),
-        custoExtraLabel: extraExpenses.length > 0 ? extraExpenses[0].label : 'Outras Despesas',
-        preventiveMaintCurrentKm: vehicleToEdit ? (vehicleToEdit.preventiveMaintCurrentKm ?? (Number(currentKm) || 0)) : (Number(currentKm) || 0),
-        preventiveMaintIntervalKm: Number(preventiveMaintIntervalKm) || 10000,
-        preventiveMaintNextKm: preventiveMaintNextKm !== undefined ? Number(preventiveMaintNextKm) : (vehicleToEdit ? (vehicleToEdit.preventiveMaintNextKm ?? ((Number(currentKm) || 0) + (Number(preventiveMaintIntervalKm) || 10000))) : ((Number(currentKm) || 0) + (Number(preventiveMaintIntervalKm) || 10000))),
-        preventiveMaintDate: vehicleToEdit ? (vehicleToEdit.preventiveMaintDate || getTodayStr()) : getTodayStr(),
+        custoExtraLabel: extraExpenses.length > 0 ? extraExpenses[0].label : '',
+        preventiveMaintCurrentKm: Number(currentKm) || 0,
+        preventiveMaintIntervalKm: parsedPrevMaintInterval,
+        preventiveMaintNextKm: parsedPrevMaintNext,
+        preventiveMaintDate: preventiveMaintDate || '',
         nextVistoriaDate: nextVistoriaDate || '',
         insuranceExpirationDate: insuranceExpirationDate || '',
         seguroVencimento: insuranceExpirationDate || '',
@@ -1309,7 +1447,7 @@ export function LogForms({
         fipeCode: fipeCode.trim() || undefined,
         fipeValue: fipeValue ? Number(fipeValue) : undefined,
         fipeDebtValue: fipeDebtValue ? Number(fipeDebtValue) : undefined,
-        fipeRefMonth: fipeRefMonth || undefined,
+        fipeRefMonth: fipeRefMonth.trim() || undefined,
         fipeLastUpdate: fipeValue ? `${new Date().getFullYear()}-${String(new Date().getMonth() + 1).padStart(2, '0')}` : vehicleToEdit?.fipeLastUpdate,
         fipeHistory: fipeValue ? (
           vehicleToEdit?.fipeHistory ? [
@@ -1320,11 +1458,13 @@ export function LogForms({
         themeColor: vehicleToEdit?.themeColor || `hsl(${Math.floor(Math.random() * 360)}, 70%, 50%)`
       };
 
-      const finalVehicleData = syncVehiclePaymentsOnCadastroChange(
-        vehicleData,
-        new Date().getMonth(),
-        new Date().getFullYear()
-      );
+      const finalVehicleData = isVehicleRented(vehicleData)
+        ? syncVehiclePaymentsOnCadastroChange(
+            vehicleData,
+            new Date().getMonth(),
+            new Date().getFullYear()
+          )
+        : vehicleData;
 
       onSaveVehicle(finalVehicleData);
 
@@ -1334,25 +1474,33 @@ export function LogForms({
         if (existingContact) {
           onSaveContact({
             ...existingContact,
-            name: driver,
-            phone: driverPhone || existingContact.phone,
-            email: tenantEmail || existingContact.email,
+            name: driver.trim(),
+            phone: driverPhone.trim() || existingContact.phone,
+            email: tenantEmail.trim() || existingContact.email,
+            cpfCnpj: tenantCpfCnpj.trim() || existingContact.cpfCnpj,
+            rg: tenantRg.trim() || existingContact.rg,
+            cnh: tenantCnh.trim() || existingContact.cnh,
+            address: tenantAddress.trim() || existingContact.address,
             cnhExpiration: driverCnhExpiration || existingContact.cnhExpiration,
             cnhPhotoUrl: driverCnhPhotoUrl || existingContact.cnhPhotoUrl,
             addressProofUrl: driverAddressProofUrl || existingContact.addressProofUrl,
-            activeVehiclePlate: plate.toUpperCase()
+            activeVehiclePlate: plate.trim().toUpperCase()
           });
         } else {
           onSaveContact({
             id: `cnt-${Date.now()}`,
-            name: driver,
-            phone: driverPhone || '',
-            email: tenantEmail || '',
+            name: driver.trim(),
+            phone: driverPhone.trim() || '',
+            email: tenantEmail.trim() || '',
+            cpfCnpj: tenantCpfCnpj.trim() || undefined,
+            rg: tenantRg.trim() || undefined,
+            cnh: tenantCnh.trim() || undefined,
+            address: tenantAddress.trim() || undefined,
             region: 'Locatário',
             cnhExpiration: driverCnhExpiration || '',
             cnhPhotoUrl: driverCnhPhotoUrl || '',
             addressProofUrl: driverAddressProofUrl || '',
-            activeVehiclePlate: plate.toUpperCase()
+            activeVehiclePlate: plate.trim().toUpperCase()
           });
         }
       }
@@ -1612,7 +1760,7 @@ export function LogForms({
                   <input 
                     type="text" 
                     value={brand} 
-                    onChange={e => setBrand(e.target.value ? e.target.value.charAt(0).toUpperCase() + e.target.value.slice(1) : '')}
+                    onChange={e => setBrand(e.target.value)}
                     placeholder="Ex: Chevrolet"
                     className="w-full h-10 text-xs bg-white/[0.03] border border-white/10 rounded-xl px-3 py-2 text-white placeholder-gray-500 focus:outline-hidden focus:border-blue-500/50 focus:bg-[#1a1a1a]"
                   />
@@ -1622,14 +1770,14 @@ export function LogForms({
                   <input 
                     type="text" 
                     value={model} 
-                    onChange={e => setModel(e.target.value ? e.target.value.charAt(0).toUpperCase() + e.target.value.slice(1) : '')}
+                    onChange={e => setModel(e.target.value)}
                     placeholder="Ex: Onix Hatch LT"
                     className="w-full h-10 text-xs bg-white/[0.03] border border-white/10 rounded-xl px-3 py-2 text-white placeholder-gray-500 focus:outline-hidden focus:border-blue-500/50 focus:bg-[#1a1a1a]"
                   />
                 </div>
               </div>
 
-              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+              <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
                 <div className="space-y-1">
                   <label className="font-semibold text-gray-400">Placa *</label>
                   <input 
@@ -1646,7 +1794,7 @@ export function LogForms({
                     type="number" 
                     inputMode="numeric"
                     value={yearFab} 
-                    onChange={e => setYearFab(e.target.value ? Number(e.target.value) : '')}
+                    onChange={e => setYearFab(e.target.value === '' ? '' : Number(e.target.value))}
                     placeholder="Ex: 2023"
                     className="w-full h-10 text-xs bg-white/[0.03] border border-white/10 rounded-xl px-3 py-2 text-white placeholder-gray-500 focus:outline-hidden focus:border-blue-500/50 focus:bg-[#1a1a1a] font-mono"
                   />
@@ -1657,7 +1805,7 @@ export function LogForms({
                     type="number" 
                     inputMode="numeric"
                     value={yearModel} 
-                    onChange={e => setYearModel(e.target.value ? Number(e.target.value) : '')}
+                    onChange={e => setYearModel(e.target.value === '' ? '' : Number(e.target.value))}
                     placeholder="Ex: 2024"
                     className="w-full h-10 text-xs bg-white/[0.03] border border-white/10 rounded-xl px-3 py-2 text-white placeholder-gray-500 focus:outline-hidden focus:border-blue-500/50 focus:bg-[#1a1a1a] font-mono"
                   />
@@ -1667,8 +1815,18 @@ export function LogForms({
                   <input 
                     type="text" 
                     value={color} 
-                    onChange={e => setColor(e.target.value ? e.target.value.charAt(0).toUpperCase() + e.target.value.slice(1) : '')}
+                    onChange={e => setColor(e.target.value)}
                     placeholder="Ex: Prata Metálico"
+                    className="w-full h-10 text-xs bg-white/[0.03] border border-white/10 rounded-xl px-3 py-2 text-white placeholder-gray-500 focus:outline-hidden focus:border-blue-500/50 focus:bg-[#1a1a1a]"
+                  />
+                </div>
+                <div className="space-y-1 col-span-2 sm:col-span-1">
+                  <label className="font-semibold text-gray-400">Empresa / Locadora</label>
+                  <input 
+                    type="text" 
+                    value={rentalCompany} 
+                    onChange={e => setRentalCompany(e.target.value)}
+                    placeholder="Ex: Frota Própria"
                     className="w-full h-10 text-xs bg-white/[0.03] border border-white/10 rounded-xl px-3 py-2 text-white placeholder-gray-500 focus:outline-hidden focus:border-blue-500/50 focus:bg-[#1a1a1a]"
                   />
                 </div>
@@ -1907,9 +2065,10 @@ export function LogForms({
                     <label className="text-[10px] font-bold text-gray-400 uppercase">Código FIPE Gravado</label>
                     <input
                       type="text"
-                      readOnly
-                      value={fipeCode || 'Não gerado'}
-                      className="w-full text-xs bg-black/20 border border-white/5 rounded-lg px-2.5 py-1.5 text-gray-300 font-mono font-bold focus:outline-hidden"
+                      value={fipeCode}
+                      onChange={e => setFipeCode(e.target.value)}
+                      placeholder="Ex: 001460-5"
+                      className="w-full text-xs bg-black/40 border border-white/10 rounded-lg px-2.5 py-1.5 text-white font-mono font-bold placeholder-gray-500 focus:outline-hidden focus:border-blue-500/50"
                     />
                   </div>
 
@@ -1947,14 +2106,14 @@ export function LogForms({
                 )}
               </div>
 
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
                 <div className="space-y-1">
                   <label className="font-semibold text-emerald-400">Odômetro Atual (KM)</label>
                   <input 
                     type="number" 
                     inputMode="numeric"
                     value={currentKm} 
-                    onChange={e => setCurrentKm(Number(e.target.value))}
+                    onChange={e => setCurrentKm(e.target.value === '' ? 0 : Number(e.target.value))}
                     placeholder="Ex: 45000"
                     className="w-full h-10 text-xs bg-emerald-500/5 border border-emerald-500/20 rounded-xl px-3 py-2 text-white placeholder-gray-500 focus:outline-hidden focus:border-emerald-500 font-mono"
                   />
@@ -1972,31 +2131,70 @@ export function LogForms({
                   />
                   <span className="text-[9px] text-gray-500 block">KM alvo para o próximo alerta de revisão.</span>
                 </div>
+                <div className="space-y-1">
+                  <label className="font-semibold text-gray-300">Intervalo Revisão (KM)</label>
+                  <input 
+                    type="number" 
+                    inputMode="numeric"
+                    value={preventiveMaintIntervalKm} 
+                    onChange={e => setPreventiveMaintIntervalKm(e.target.value === '' ? '' : Number(e.target.value))}
+                    placeholder="Ex: 10000"
+                    className="w-full h-10 text-xs bg-white/[0.03] border border-white/10 rounded-xl px-3 py-2 text-white placeholder-gray-500 focus:outline-hidden focus:border-blue-500/50 font-mono"
+                  />
+                  <span className="text-[9px] text-gray-500 block">Intervalo entre revisões.</span>
+                </div>
+                <div className="space-y-1">
+                  <label className="font-semibold text-gray-300">Nível Combustível (0 a 8/8)</label>
+                  <select
+                    value={fuelLevel === '' ? '' : String(fuelLevel)}
+                    onChange={e => setFuelLevel(e.target.value === '' ? '' : Number(e.target.value))}
+                    className="w-full h-10 text-xs bg-white/[0.03] border border-white/10 rounded-xl px-3 py-2 text-white focus:outline-hidden focus:border-blue-500/50 cursor-pointer"
+                  >
+                    <option value="" className="bg-neutral-900">Não informado</option>
+                    {[0, 1, 2, 3, 4, 5, 6, 7, 8].map((lvl) => (
+                      <option key={lvl} value={lvl} className="bg-neutral-900">
+                        {lvl}/8 {lvl === 0 ? '(Reserva/Vazio)' : lvl === 4 ? '(Meio Tanque)' : lvl === 8 ? '(Tanque Cheio)' : ''}
+                      </option>
+                    ))}
+                  </select>
+                </div>
               </div>
 
-              <div className="space-y-1 pt-1">
-                <label className="font-semibold text-gray-300">Dimensões dos Pneus (Opcional)</label>
-                <input 
-                  type="text" 
-                  value={tireSize} 
-                  onChange={e => setTireSize(e.target.value)}
-                  placeholder="Ex: 185/65 R15"
-                  className="w-full h-10 text-xs bg-white/[0.03] border border-white/10 rounded-xl px-3 py-2 text-white placeholder-gray-500 focus:outline-hidden focus:border-blue-500/50"
-                />
-                <span className="text-[9px] text-gray-500 block">Medida oficial dos pneus do veículo.</span>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-1">
+                <div className="space-y-1">
+                  <label className="font-semibold text-gray-300">Dimensões dos Pneus (Opcional)</label>
+                  <input 
+                    type="text" 
+                    value={tireSize} 
+                    onChange={e => setTireSize(e.target.value)}
+                    placeholder="Ex: 185/65 R15"
+                    className="w-full h-10 text-xs bg-white/[0.03] border border-white/10 rounded-xl px-3 py-2 text-white placeholder-gray-500 focus:outline-hidden focus:border-blue-500/50"
+                  />
+                  <span className="text-[9px] text-gray-500 block">Medida oficial dos pneus do veículo.</span>
+                </div>
+                <div className="space-y-1">
+                  <label className="font-semibold text-gray-300">Data da Última / Próxima Revisão</label>
+                  <input 
+                    type="date" 
+                    value={preventiveMaintDate} 
+                    onChange={e => setPreventiveMaintDate(e.target.value)}
+                    className="w-full h-10 text-xs bg-white/[0.03] border border-white/10 rounded-xl px-3 py-2 text-white focus:outline-hidden focus:border-blue-500/50 font-mono scheme-dark"
+                  />
+                  <span className="text-[9px] text-gray-500 block">Data vinculada à agenda de revisão.</span>
+                </div>
               </div>
 
               {/* Dados do Contrato */}
               <div className="bg-white/[0.02] border border-white/5 rounded-xl p-3 space-y-2">
                 <span className="text-[10px] font-bold text-blue-400 uppercase tracking-wider block">Dados do Contrato</span>
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                <div className="grid grid-cols-1 sm:grid-cols-4 gap-3">
                   <div className="space-y-1">
                     <label className="text-[11px] font-semibold text-gray-400">N° Contrato</label>
                     <input 
                       type="text" 
                       value={contractNumber} 
                       onChange={e => setContractNumber(e.target.value)}
-                      placeholder="Ex: CT-GKD-ABC2323-08-2026-01"
+                      placeholder="Ex: CT-001"
                       className="w-full h-10 text-xs bg-white/[0.03] border border-white/10 rounded-lg px-2.5 py-1.5 text-white placeholder-gray-500 focus:outline-hidden font-mono"
                     />
                   </div>
@@ -2026,6 +2224,41 @@ export function LogForms({
                         1º Venc.: <strong>{formatDateBR(getNextWeekDate(startDate))}</strong>
                       </span>
                     )}
+                  </div>
+                  <div className="space-y-1">
+                    <label className="text-[11px] font-semibold text-gray-400">Data Término (Opcional)</label>
+                    <input 
+                      type="date" 
+                      value={endDate} 
+                      onChange={e => setEndDate(e.target.value)}
+                      className="w-full h-10 text-xs bg-white/[0.03] border border-white/10 rounded-lg px-2.5 py-1.5 text-white focus:outline-hidden font-mono scheme-dark"
+                    />
+                  </div>
+                </div>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
+                  <div className="space-y-1">
+                    <label className="text-[11px] font-semibold text-gray-400">Multa por Atraso (%)</label>
+                    <input 
+                      type="number" 
+                      step="0.01"
+                      inputMode="decimal"
+                      value={fineRate} 
+                      onChange={e => setFineRate(e.target.value === '' ? '' : Number(e.target.value))}
+                      placeholder="Ex: 10"
+                      className="w-full h-9 text-xs bg-white/[0.03] border border-white/10 rounded-lg px-2.5 py-1.5 text-white placeholder-gray-500 focus:outline-hidden font-mono"
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <label className="text-[11px] font-semibold text-gray-400">Juros Diários por Atraso (%)</label>
+                    <input 
+                      type="number" 
+                      step="0.01"
+                      inputMode="decimal"
+                      value={dailyInterestRate} 
+                      onChange={e => setDailyInterestRate(e.target.value === '' ? '' : Number(e.target.value))}
+                      placeholder="Ex: 1"
+                      className="w-full h-9 text-xs bg-white/[0.03] border border-white/10 rounded-lg px-2.5 py-1.5 text-white placeholder-gray-500 focus:outline-hidden font-mono"
+                    />
                   </div>
                 </div>
               </div>
@@ -2107,6 +2340,46 @@ export function LogForms({
                     <Plus className="w-3.5 h-3.5" />
                     <span>Adicionar Despesa</span>
                   </button>
+                </div>
+
+                {/* Despesas Fixas Principais do Veículo (todas editáveis/zeráveis) */}
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 pb-2 border-b border-white/5">
+                  <div className="space-y-1">
+                    <label className="text-[10px] font-semibold text-gray-400">Financiamento (R$)</label>
+                    <CurrencyInput
+                      value={financiamento}
+                      onChange={setFinanciamento}
+                      placeholder="0,00"
+                      className="w-full h-9 text-xs bg-black/40 border border-white/10 rounded-xl px-2.5 py-1.5 text-white font-mono focus:outline-hidden focus:border-amber-500/50"
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <label className="text-[10px] font-semibold text-gray-400">Seguro Mensal (R$)</label>
+                    <CurrencyInput
+                      value={seguro}
+                      onChange={setSeguro}
+                      placeholder="0,00"
+                      className="w-full h-9 text-xs bg-black/40 border border-white/10 rounded-xl px-2.5 py-1.5 text-white font-mono focus:outline-hidden focus:border-amber-500/50"
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <label className="text-[10px] font-semibold text-gray-400">IPVA Mensal (R$)</label>
+                    <CurrencyInput
+                      value={ipva}
+                      onChange={setIpva}
+                      placeholder="0,00"
+                      className="w-full h-9 text-xs bg-black/40 border border-white/10 rounded-xl px-2.5 py-1.5 text-white font-mono focus:outline-hidden focus:border-amber-500/50"
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <label className="text-[10px] font-semibold text-gray-400">Manutenção Prev. (R$)</label>
+                    <CurrencyInput
+                      value={manutencaoPreventiva}
+                      onChange={setManutencaoPreventiva}
+                      placeholder="0,00"
+                      className="w-full h-9 text-xs bg-black/40 border border-white/10 rounded-xl px-2.5 py-1.5 text-white font-mono focus:outline-hidden focus:border-amber-500/50"
+                    />
+                  </div>
                 </div>
 
                 {extraExpenses.length === 0 ? (
@@ -2284,11 +2557,15 @@ export function LogForms({
                         if (!selectedId) return;
                         const c = contacts.find(item => item.id === selectedId);
                         if (c) {
-                          setDriver(c.name);
+                          setDriver(c.name || '');
                           let p = c.phone || '';
                           if (p.startsWith('55')) p = p.substring(2);
                           setDriverPhone(p);
                           if (c.email) setTenantEmail(c.email);
+                          if (c.cpfCnpj) setTenantCpfCnpj(c.cpfCnpj);
+                          if (c.rg) setTenantRg(c.rg);
+                          if (c.cnh) setTenantCnh(c.cnh);
+                          if (c.address) setTenantAddress(c.address);
                           if (c.cnhExpiration) setDriverCnhExpiration(c.cnhExpiration);
                           if (c.cnhPhotoUrl) {
                             setDriverCnhPhotoUrl(c.cnhPhotoUrl);
@@ -2368,7 +2645,7 @@ export function LogForms({
                     <input 
                       type="text" 
                       value={driver} 
-                      onChange={e => setDriver(toTitleCase(e.target.value))}
+                      onChange={e => setDriver(e.target.value)}
                       placeholder="Ex: Carlos Souza"
                       className="w-full h-10 text-xs bg-black/40 border border-white/10 rounded-xl px-3 py-2 text-white placeholder-gray-500 focus:outline-hidden focus:border-blue-500/50 focus:bg-[#1a1a1a]"
                       id="input-driver-name"
@@ -2403,6 +2680,53 @@ export function LogForms({
                       id="input-driver-email"
                     />
                   </div>
+                  <div className="space-y-1">
+                    <div className="flex items-center justify-between min-h-[20px]">
+                      <label className="font-semibold text-gray-400 text-xs">CPF / CNPJ do Locatário</label>
+                    </div>
+                    <input 
+                      type="text" 
+                      value={tenantCpfCnpj} 
+                      onChange={e => setTenantCpfCnpj(e.target.value)}
+                      placeholder="Ex: 000.000.000-00"
+                      className="w-full h-10 text-xs bg-black/40 border border-white/10 rounded-xl px-3 py-2 text-white placeholder-gray-500 focus:outline-hidden focus:border-blue-500/50 focus:bg-[#1a1a1a] font-mono"
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <div className="flex items-center justify-between min-h-[20px]">
+                      <label className="font-semibold text-gray-400 text-xs">RG do Locatário</label>
+                    </div>
+                    <input 
+                      type="text" 
+                      value={tenantRg} 
+                      onChange={e => setTenantRg(e.target.value)}
+                      placeholder="Ex: 00.000.000-0"
+                      className="w-full h-10 text-xs bg-black/40 border border-white/10 rounded-xl px-3 py-2 text-white placeholder-gray-500 focus:outline-hidden focus:border-blue-500/50 focus:bg-[#1a1a1a] font-mono"
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <div className="flex items-center justify-between min-h-[20px]">
+                      <label className="font-semibold text-gray-400 text-xs">Nº da CNH</label>
+                    </div>
+                    <input 
+                      type="text" 
+                      value={tenantCnh} 
+                      onChange={e => setTenantCnh(e.target.value)}
+                      placeholder="Ex: 00000000000"
+                      className="w-full h-10 text-xs bg-black/40 border border-white/10 rounded-xl px-3 py-2 text-white placeholder-gray-500 focus:outline-hidden focus:border-blue-500/50 focus:bg-[#1a1a1a] font-mono"
+                    />
+                  </div>
+                </div>
+
+                <div className="space-y-1">
+                  <label className="font-semibold text-gray-400 text-xs">Endereço Completo do Locatário</label>
+                  <input 
+                    type="text" 
+                    value={tenantAddress} 
+                    onChange={e => setTenantAddress(e.target.value)}
+                    placeholder="Ex: Rua Exemplo, 123 - Bairro, Cidade/UF"
+                    className="w-full h-10 text-xs bg-black/40 border border-white/10 rounded-xl px-3 py-2 text-white placeholder-gray-500 focus:outline-hidden focus:border-blue-500/50 focus:bg-[#1a1a1a]"
+                  />
                 </div>
 
                 <div className="space-y-3 pt-1">

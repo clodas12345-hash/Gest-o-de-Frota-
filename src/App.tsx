@@ -1721,7 +1721,7 @@ export default function App() {
       } else {
         const syncedVehicle = isVehicleRented(vehicle)
           ? syncVehiclePaymentsOnCadastroChange(vehicle, selectedMonth, selectedYear)
-          : { ...vehicle, autoMonthlyPayments: true };
+          : vehicle;
         nextVehicles = [...prev, syncedVehicle];
       }
       return nextVehicles;
@@ -4606,7 +4606,7 @@ export default function App() {
       {/* Interactive Log Entry Dialog Modal Form */}
       <LogForms 
         isOpen={isFormOpen}
-        onClose={() => { setIsFormOpen(false); setActiveFormType(null); setGlobalPrefilledData(null); }}
+        onClose={() => { setIsFormOpen(false); setActiveFormType(null); setVehicleToEdit(null); setGlobalPrefilledData(null); }}
         formType={activeFormType}
         vehicles={vehicles}
         selectedVehicleId={selectedVehicleId}

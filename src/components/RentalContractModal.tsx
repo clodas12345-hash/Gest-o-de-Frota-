@@ -1367,7 +1367,11 @@ O contrato oficial em PDF já foi gerado e está arquivado nos documentos do ve�
                       </p>
                     </div>
                     <div className="text-right">
-                      <span className="text-[10px] text-gray-400 block font-mono">Ano: {currentVehicle.year} | Cor: {currentVehicle.color}</span>
+                      <span className="text-[10px] text-gray-400 block font-mono">
+                        Ano: {currentVehicle.yearFab && currentVehicle.yearModel && currentVehicle.yearFab !== currentVehicle.yearModel
+                          ? `${currentVehicle.yearFab}/${currentVehicle.yearModel}`
+                          : (currentVehicle.yearModel || currentVehicle.yearFab || (currentVehicle.year > 0 ? currentVehicle.year : 'N/I'))} | Cor: {currentVehicle.color || 'N/I'}
+                      </span>
                     </div>
                   </div>
                 ) : null}

@@ -207,7 +207,7 @@ const InlineTextEdit = ({ value, label, onSave, placeholder }: InlineTextEditPro
         <input
           type="text"
           value={tempValue}
-          onChange={(e) => setTempValue(e.target.value ? e.target.value.charAt(0).toUpperCase() + e.target.value.slice(1) : '')}
+          onChange={(e) => setTempValue(e.target.value)}
           placeholder={placeholder}
           className="w-32 px-2 py-0.5 bg-neutral-800 border border-neutral-700 text-white rounded font-sans text-xs focus:outline-hidden focus:border-blue-500"
           autoFocus
@@ -237,9 +237,9 @@ const InlineTextEdit = ({ value, label, onSave, placeholder }: InlineTextEditPro
         setIsEditing(true);
       }}
       className="cursor-pointer hover:underline hover:text-white transition-colors border-b border-dashed border-white/20 text-gray-300 font-medium"
-      title={`Editar nome`}
+      title={label || 'Editar'}
     >
-      {value || placeholder || 'Outros custos'}
+      {value ? value : <span className="text-gray-500 italic font-normal text-[11px]">Não informado</span>}
     </span>
   );
 };
@@ -2539,7 +2539,16 @@ _Enviado via sistema de gestão de frota._`;
               <span className="text-xs font-semibold px-2 py-0.5 bg-zinc-800 text-zinc-200 rounded-md tracking-wider font-mono border border-zinc-700/60">
                 {vehicle.plate}
               </span>
-              <span className="text-xs text-zinc-400 font-medium">{vehicle.color}</span>
+              {(vehicle.yearFab || vehicle.yearModel || vehicle.year > 0) && (
+                <span className="text-xs font-mono font-medium px-2 py-0.5 bg-zinc-800/70 text-zinc-300 rounded-md border border-zinc-700/40">
+                  {vehicle.yearFab && vehicle.yearModel && vehicle.yearFab !== vehicle.yearModel
+                    ? `${vehicle.yearFab}/${vehicle.yearModel}`
+                    : (vehicle.yearModel || vehicle.yearFab || vehicle.year)}
+                </span>
+              )}
+              {vehicle.color && (
+                <span className="text-xs text-zinc-400 font-medium">{vehicle.color}</span>
+              )}
               {hasCompletedVistoria && (
                 <button
                   type="button"

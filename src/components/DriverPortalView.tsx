@@ -114,7 +114,13 @@ export const DriverPortalView: React.FC<DriverPortalViewProps> = ({
                 {vehicle.brand} {vehicle.model}
               </h2>
               <p className="text-xs text-gray-400">
-                Placa: <strong className="text-white font-mono">{vehicle.plate}</strong> • Cor: {vehicle.color || 'Prata'} • Ano: {vehicle.year || 2024}
+                Placa: <strong className="text-white font-mono">{vehicle.plate}</strong>
+                {vehicle.color ? ` • Cor: ${vehicle.color}` : ''}
+                {(vehicle.yearFab || vehicle.yearModel || vehicle.year > 0)
+                  ? ` • Ano: ${vehicle.yearFab && vehicle.yearModel && vehicle.yearFab !== vehicle.yearModel
+                      ? `${vehicle.yearFab}/${vehicle.yearModel}`
+                      : (vehicle.yearModel || vehicle.yearFab || vehicle.year)}`
+                  : ''}
               </p>
             </div>
 

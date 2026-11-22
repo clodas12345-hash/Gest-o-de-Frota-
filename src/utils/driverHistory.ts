@@ -29,6 +29,15 @@ export const getTodayIsoLocal = (): string => {
   return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
 };
 
+export function isVehicleRented(v: Vehicle): boolean {
+  const driver = (v.driver || '').trim();
+  const hasDriver = driver !== '' && driver.toLowerCase() !== 'não definido' && driver.toLowerCase() !== 'não informado';
+  const hasContract = Boolean(v.contractNumber && v.contractNumber.trim());
+  const hasStartDate = Boolean(v.startDate && v.startDate.trim());
+  const hasActivePayments = Boolean(v.weeklyPayments && v.weeklyPayments.length > 0);
+  return hasDriver || hasContract || hasStartDate || hasActivePayments;
+}
+
 export function normalizeToIsoDate(dateStr?: string | null): string {
   if (!dateStr) return '';
   const trimmed = String(dateStr).trim();
