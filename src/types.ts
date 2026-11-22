@@ -6,9 +6,22 @@ export interface WeeklyPayment {
   paidDate?: string;
   paidAt?: string;
   isManualAmount?: boolean;
+  paidInPreviousContract?: boolean;
+  scheduledDate?: string;
 }
 
-export function isWeeklyPaymentPaid(payment: Pick<WeeklyPayment, 'id' | 'isPaid'>): boolean {
+export function isWeeklyPaymentPreviousContract(
+  payment: Pick<WeeklyPayment, 'paidInPreviousContract'>
+): boolean {
+  return Boolean(payment.paidInPreviousContract);
+}
+
+export function isWeeklyPaymentPaid(
+  payment: Pick<WeeklyPayment, 'id' | 'isPaid' | 'paidInPreviousContract'>
+): boolean {
+  if (payment.paidInPreviousContract) {
+    return false;
+  }
   if (typeof payment.isPaid === 'boolean') {
     return payment.isPaid;
   }

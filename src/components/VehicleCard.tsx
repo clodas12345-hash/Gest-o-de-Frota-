@@ -3,7 +3,7 @@ import { Capacitor, registerPlugin } from '@capacitor/core';
 const Filesystem = registerPlugin<any>('Filesystem');
 const Share = registerPlugin<any>('Share');
 const Directory = { Cache: 'CACHE', Documents: 'DOCUMENTS', Data: 'DATA' };
-import { Vehicle, ExpenseLog, WeeklyPayment, Vistoria, VehicleDocument, MaintenanceLog, FuelLog, SinistroLog, PromisePayment, TireState, FinalizedContract, getFineAdminFee, getFineTotal, isWeeklyPaymentPaid } from '../types';
+import { Vehicle, ExpenseLog, WeeklyPayment, Vistoria, VehicleDocument, MaintenanceLog, FuelLog, SinistroLog, PromisePayment, TireState, FinalizedContract, getFineAdminFee, getFineTotal, isWeeklyPaymentPaid, isWeeklyPaymentPreviousContract } from '../types';
 import { generateVistoriaPDF, generatePaymentReceiptPDF } from '../utils/pdfGenerator';
 import { sendAppNotification, requestNotificationPermission } from '../utils/notifications';
 import { syncVehicleFipe, applyManualFipeOverride } from '../utils/fipeService';
@@ -626,11 +626,20 @@ export const VehicleCard: React.FC<VehicleCardProps> = ({
   const [paymentWhatsAppDueDate, setPaymentWhatsAppDueDate] = useState<string>(() => {
     const payments = vehicle.weeklyPayments || [];
     const todayIso = new Date().toISOString().split('T')[0];
-    const earliestPending = payments
-      .filter((p) => !isWeeklyPaymentPaid(p))
+    const pendingPayments = payments.filter(
+      (p) => !isWeeklyPaymentPaid(p) && !isWeeklyPaymentPreviousContract(p)
+    );
+    const latestPendingUpToToday = pendingPayments
+      .filter((p) => p.date <= todayIso)
+      .sort((a, b) => b.date.localeCompare(a.date))[0];
+    if (latestPendingUpToToday) {
+      return latestPendingUpToToday.date;
+    }
+    const nextFuturePending = pendingPayments
+      .filter((p) => p.date > todayIso)
       .sort((a, b) => a.date.localeCompare(b.date))[0];
-    if (earliestPending) {
-      return earliestPending.date;
+    if (nextFuturePending) {
+      return nextFuturePending.date;
     }
     const pastOrTodayPaid = payments
       .filter((p) => isWeeklyPaymentPaid(p) && p.date <= todayIso)
@@ -689,26 +698,44 @@ export const VehicleCard: React.FC<VehicleCardProps> = ({
       const existingList = vehicle.weeklyPayments || [];
       let targetPaymentId = paymentConfirmModal.paymentId;
 
+      const selDateObj = new Date(selectedDate + 'T12:00:00');
+      const selWeek = getWeekNumber(selDateObj);
+      const selYear = selDateObj.getFullYear();
+
       if (!targetPaymentId) {
-        // When triggered from header quick button, match pending installment for that week or earliest pending up to selectedDate
-        const selDateObj = new Date(selectedDate + 'T12:00:00');
-        const selWeek = getWeekNumber(selDateObj);
-        const selYear = selDateObj.getFullYear();
-        const pendingSameWeek = existingList.find((p) => {
-          if (isWeeklyPaymentPaid(p)) return false;
-          const d = new Date(p.date + 'T12:00:00');
-          return d.getFullYear() === selYear && getWeekNumber(d) === selWeek;
-        });
-        const earliestPending = existingList
-          .filter((p) => !isWeeklyPaymentPaid(p) && p.date <= selectedDate)
-          .sort((a, b) => a.date.localeCompare(b.date))[0];
-        targetPaymentId = pendingSameWeek?.id || earliestPending?.id;
+        // Sempre buscar o ÚLTIMO pagamento vigente (mais recente até a data selecionada) ou o da semana vigente
+        const latestPendingUpToDate = existingList
+          .filter((p) => !isWeeklyPaymentPaid(p) && !isWeeklyPaymentPreviousContract(p) && p.date <= selectedDate)
+          .sort((a, b) => b.date.localeCompare(a.date))[0];
+        const pendingSameWeek = existingList
+          .filter((p) => {
+            if (isWeeklyPaymentPaid(p) || isWeeklyPaymentPreviousContract(p)) return false;
+            const d = new Date(p.date + 'T12:00:00');
+            return d.getFullYear() === selYear && getWeekNumber(d) === selWeek;
+          })
+          .sort((a, b) => b.date.localeCompare(a.date))[0];
+        targetPaymentId = latestPendingUpToDate?.id || pendingSameWeek?.id;
       }
 
-      const updatedWeeklyPayments = targetPaymentId
+      const targetOrig = targetPaymentId ? existingList.find((p) => p.id === targetPaymentId) : undefined;
+      const targetAnchorDate = targetOrig ? (targetOrig.scheduledDate || targetOrig.date) : selectedDate;
+      const targetAnchorObj = new Date(targetAnchorDate + 'T12:00:00');
+      const targetAnchorWeek = !isNaN(targetAnchorObj.getTime()) ? getWeekNumber(targetAnchorObj) : selWeek;
+      const targetAnchorYear = !isNaN(targetAnchorObj.getTime()) ? targetAnchorObj.getFullYear() : selYear;
+
+      const rawUpdated = targetPaymentId
         ? existingList.map((p) =>
             p.id === targetPaymentId
-              ? { ...p, isPaid: true, date: selectedDate, paidDate: selectedDate, paidAt: paidAtStr, amount: quickAmt || p.amount }
+              ? {
+                  ...p,
+                  isPaid: true,
+                  paidInPreviousContract: undefined,
+                  scheduledDate: p.scheduledDate || p.date,
+                  date: selectedDate,
+                  paidDate: selectedDate,
+                  paidAt: paidAtStr,
+                  amount: quickAmt || p.amount,
+                }
               : p
           )
         : [
@@ -722,6 +749,29 @@ export const VehicleCard: React.FC<VehicleCardProps> = ({
               paidAt: paidAtStr,
             },
           ];
+
+      // Garantir que parcelas da mesma semana já cobertas hoje não fiquem duplicadas e retroativas virem "Pago (Contrato Anterior)"
+      const updatedWeeklyPayments = rawUpdated.reduce<WeeklyPayment[]>((acc, p) => {
+        if (p.id === targetPaymentId || isWeeklyPaymentPaid(p) || isWeeklyPaymentPreviousContract(p)) {
+          acc.push(p);
+          return acc;
+        }
+        const isAuto = Boolean(p.id?.startsWith('wp-auto-'));
+        const pDateObj = new Date(p.date + 'T12:00:00');
+        const sameWeekAsPaid =
+          !isNaN(pDateObj.getTime()) &&
+          ((pDateObj.getFullYear() === selYear && getWeekNumber(pDateObj) === selWeek) ||
+            (pDateObj.getFullYear() === targetAnchorYear && getWeekNumber(pDateObj) === targetAnchorWeek));
+        if (isAuto && sameWeekAsPaid) {
+          return acc;
+        }
+        if (isAuto && p.date < (targetAnchorDate < selectedDate ? targetAnchorDate : selectedDate)) {
+          acc.push({ ...p, isPaid: false, paidInPreviousContract: true });
+          return acc;
+        }
+        acc.push(p);
+        return acc;
+      }, []);
 
       onUpdateVehicle({
         ...vehicle,
@@ -939,21 +989,34 @@ export const VehicleCard: React.FC<VehicleCardProps> = ({
     }
     const payments = vehicle.weeklyPayments || [];
     const todayIso = new Date().toISOString().split('T')[0];
-    const earliestPending = payments
-      .filter((p) => !isWeeklyPaymentPaid(p))
-      .sort((a, b) => a.date.localeCompare(b.date))[0];
-    if (earliestPending) {
-      setPaymentWhatsAppDueDate(earliestPending.date);
-      setNewPaymentDate(earliestPending.date);
+    const pendingPayments = payments.filter(
+      (p) => !isWeeklyPaymentPaid(p) && !isWeeklyPaymentPreviousContract(p)
+    );
+    const latestPendingUpToToday = pendingPayments
+      .filter((p) => p.date <= todayIso)
+      .sort((a, b) => b.date.localeCompare(a.date))[0];
+    if (latestPendingUpToToday) {
+      setPaymentWhatsAppDueDate(latestPendingUpToToday.date);
+      setNewPaymentDate(latestPendingUpToToday.date);
       return;
     }
-    const pastOrToday = payments.filter((p) => p.date <= todayIso).sort((a, b) => b.date.localeCompare(a.date));
+    const nextFuturePending = pendingPayments
+      .filter((p) => p.date > todayIso)
+      .sort((a, b) => a.date.localeCompare(b.date))[0];
+    if (nextFuturePending) {
+      setPaymentWhatsAppDueDate(nextFuturePending.date);
+      setNewPaymentDate(nextFuturePending.date);
+      return;
+    }
+    const pastOrToday = payments
+      .filter((p) => isWeeklyPaymentPaid(p) && p.date <= todayIso)
+      .sort((a, b) => b.date.localeCompare(a.date));
     if (pastOrToday.length > 0) {
       const nextDue = getNextWeekDate(pastOrToday[0].date);
       setPaymentWhatsAppDueDate(nextDue);
       setNewPaymentDate(nextDue);
     } else if (payments.length > 0) {
-      const upcoming = [...payments].sort((a, b) => a.date.localeCompare(b.date));
+      const upcoming = [...payments].sort((a, b) => b.date.localeCompare(a.date));
       setPaymentWhatsAppDueDate(upcoming[0].date);
       setNewPaymentDate(upcoming[0].date);
     } else if (vehicle.startDate) {
@@ -5179,7 +5242,7 @@ _Enviado via sistema de gestão de frota._`;
                 const displayedPayments = paymentViewFilter === 'all' ? allPayments : currentMonthPayments;
 
                 const paidDisplayedPayments = displayedPayments.filter((p) => isWeeklyPaymentPaid(p));
-                const pendingDisplayedPayments = displayedPayments.filter((p) => !isWeeklyPaymentPaid(p));
+                const pendingDisplayedPayments = displayedPayments.filter((p) => !isWeeklyPaymentPaid(p) && !isWeeklyPaymentPreviousContract(p));
                 const totalDisplayed = paidDisplayedPayments.reduce((acc, p) => acc + (p.amount || 0), 0);
                 const totalPendingDisplayed = pendingDisplayedPayments.reduce((acc, p) => acc + (p.amount || 0), 0);
                 const totalAll = allPayments.filter((p) => isWeeklyPaymentPaid(p)).reduce((acc, p) => acc + (p.amount || 0), 0);
@@ -5245,17 +5308,20 @@ _Enviado via sistema de gestão de frota._`;
                       ) : (
                         displayedPayments.map((p) => {
                           const isPaid = isWeeklyPaymentPaid(p);
+                          const isPrevContract = isWeeklyPaymentPreviousContract(p);
                           const isRetro = !isCurrentMonth(p.date);
                           const dateObj = new Date(p.date + 'T12:00:00');
                           const monthYearStr = dateObj.toLocaleDateString('pt-BR', { month: 'short', year: 'numeric' });
-                          const isOverdue = !isPaid && p.date < todayLocalIso;
-                          const isDueToday = !isPaid && p.date === todayLocalIso;
+                          const isOverdue = !isPaid && !isPrevContract && p.date < todayLocalIso;
+                          const isDueToday = !isPaid && !isPrevContract && p.date === todayLocalIso;
 
                           return (
                             <div
                               key={p.id}
                               className={`flex justify-between items-center text-[11px] py-1.5 px-2 rounded-lg border transition-colors gap-2 ${
-                                !isPaid
+                                isPrevContract
+                                  ? 'bg-teal-950/15 border-teal-500/20 hover:bg-teal-950/25'
+                                  : !isPaid
                                   ? isOverdue
                                     ? 'bg-rose-950/20 border-rose-500/20 hover:bg-rose-950/30'
                                     : isDueToday
@@ -5274,7 +5340,11 @@ _Enviado via sistema de gestão de frota._`;
                                   className="bg-black/40 border border-white/10 rounded px-1.5 py-0.5 text-[10px] text-gray-200 font-mono focus:outline-hidden focus:border-blue-500 scheme-dark cursor-pointer"
                                   title="Editar data do pagamento"
                                 />
-                                {isPaid ? (
+                                {isPrevContract ? (
+                                  <span className="text-[9px] bg-teal-500/15 text-teal-300 border border-teal-500/25 px-1.5 py-0.2 rounded font-bold">
+                                    ✓ Pago (Contrato Anterior)
+                                  </span>
+                                ) : isPaid ? (
                                   <span className="text-[9px] bg-emerald-500/15 text-emerald-300 border border-emerald-500/25 px-1.5 py-0.2 rounded font-bold">
                                     ✓ Pago{p.paidDate && p.paidDate !== p.date ? ` em ${new Date(p.paidDate + 'T12:00:00').toLocaleDateString('pt-BR')}` : ''}
                                   </span>
@@ -5304,7 +5374,7 @@ _Enviado via sistema de gestão de frota._`;
                                   label="Pagamento Semanal"
                                   onSave={(val) => handleEditPayment(p.id, val)}
                                 />
-                                {!isPaid ? (
+                                {isPrevContract ? null : !isPaid ? (
                                   <button
                                     type="button"
                                     onClick={() => {

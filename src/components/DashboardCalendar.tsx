@@ -119,9 +119,14 @@ export function DashboardCalendar({
         seenCalPayIds.add(key);
         if (pay.date === dateStr) {
           const paid = isWeeklyPaymentPaid(pay);
+          const statusLabel = pay.paidInPreviousContract
+            ? 'Pago (Contr. Anterior)'
+            : paid
+            ? 'Pago'
+            : 'Previsto';
           events.push({
             type: 'payment',
-            title: `${paid ? 'Pago' : 'Previsto'} (${new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(pay.amount)})${driverName ? ` - ${driverName}` : ''}`,
+            title: `${statusLabel} (${new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(pay.amount)})${driverName ? ` - ${driverName}` : ''}`,
             vehiclePlate: vehicle.plate,
             vehicleModel: `${vehicle.brand} ${vehicle.model}`,
             id: pay.id
