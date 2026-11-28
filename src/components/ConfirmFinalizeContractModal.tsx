@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { Archive, CheckCircle2, X, ShieldCheck, Calculator, MessageCircle, FileText, AlertOctagon } from 'lucide-react';
 import { Vehicle, SinistroLog, ExpenseLog, MaintenanceLog, CaucaoSettlementData, getFineTotal, isWeeklyPaymentPaid } from '../types';
+import { doesFineBelongToDriver } from '../utils/driverHistory';
 import CurrencyInput from './CurrencyInput';
 
 export type { CaucaoSettlementData };
@@ -62,7 +63,10 @@ export function ConfirmFinalizeContractModal({
     const effectiveEnd = returnDate || todayIso;
 
     const pendingFines = (vehicle.fines || []).filter(
-      (f) => f.status !== 'Paga pelo Locatário' && f.status !== 'Paga pela Locadora'
+      (f) =>
+        f.status !== 'Paga pelo Locatário' &&
+        f.status !== 'Paga pela Locadora' &&
+        doesFineBelongToDriver(f, vehicle.driver)
     );
     const pendingFinesTotal = pendingFines.reduce((sum, f) => sum + getFineTotal(f), 0);
 

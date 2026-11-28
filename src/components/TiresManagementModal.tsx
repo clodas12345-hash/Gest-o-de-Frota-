@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Vehicle, TireState } from '../types';
 import { 
   X, 
@@ -90,6 +90,12 @@ export const TiresManagementModal: React.FC<TiresManagementModalProps> = ({
     return DEFAULT_TIRES(vehicle.currentKm || 0);
   });
 
+  useEffect(() => {
+    if (vehicle.tires && vehicle.tires.length > 0) {
+      setTires(vehicle.tires);
+    }
+  }, [isOpen, vehicle.tires]);
+
   const [selectedTire, setSelectedTire] = useState<TireState | null>(null);
   const [isEditing, setIsEditing] = useState(false);
   const [successMsg, setSuccessMsg] = useState<string | null>(null);
@@ -162,7 +168,10 @@ export const TiresManagementModal: React.FC<TiresManagementModalProps> = ({
     e.preventDefault();
     if (!selectedTire) return;
 
-    const updated = tires.map(t => t.position === selectedTire.position ? selectedTire : t);
+    const exists = tires.some(t => t.position === selectedTire.position);
+    const updated = exists
+      ? tires.map(t => t.position === selectedTire.position ? selectedTire : t)
+      : [...tires, selectedTire];
     handleSaveTires(updated);
     setIsEditing(false);
     setSelectedTire(null);

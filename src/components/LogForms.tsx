@@ -1415,7 +1415,7 @@ export function LogForms({
         driverCnhExpiration: driverCnhExpiration || '',
         driverCnhPhotoUrl: driverCnhPhotoUrl || '',
         driverAddressProofUrl: driverAddressProofUrl || '',
-        tires: tires || [],
+        tires: (tires && tires.length > 0) ? tires : (vehicleToEdit?.tires || []),
         extraExpenses,
         documents: (() => {
           const baseDocs = [...attachedDocs];

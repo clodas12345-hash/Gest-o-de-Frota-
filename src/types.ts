@@ -143,6 +143,7 @@ export interface DriverRentalPeriod {
   tenantEmail?: string;
   tenantAddress?: string;
   driverCnhExpiration?: string;
+  fines?: Fine[];
   source?: 'finalized' | 'replaced';
 }
 

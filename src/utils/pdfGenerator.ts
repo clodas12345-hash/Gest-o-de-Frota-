@@ -2,7 +2,7 @@ import { jsPDF } from 'jspdf';
 import * as pdfjsLib from 'pdfjs-dist';
 import { Vehicle, MaintenanceLog, ExpenseLog, Vistoria, FuelLog, SinistroLog, CaucaoSettlementData, LateContractDebit, FinalizedContract, getFineAdminFee, getFineTotal, isWeeklyPaymentPaid } from '../types';
 import { getSavedContractClauses, replaceClauseVariables, getFullContractTextTemplate, groupClausesByTopic } from './contractClauses';
-import { getVehicleRevenueForMonth } from './driverHistory';
+import { getVehicleRevenueForMonth, doesFineBelongToDriver } from './driverHistory';
 
 try {
   pdfjsLib.GlobalWorkerOptions.workerSrc = `https://unpkg.com/pdfjs-dist@${pdfjsLib.version || '4.0.379'}/build/pdf.worker.min.mjs`;
@@ -1060,7 +1060,7 @@ async function appendVehicleDossierSections(
   }
 
   // Section 5: Multas e Sinistros
-  const vehFines = vehicle.fines || [];
+  const vehFines = (vehicle.fines || []).filter((f) => doesFineBelongToDriver(f, vehicle.driver));
   if (vehFines.length > 0 || vehSinistros.length > 0) {
     if (y > 240) { doc.addPage(); y = 15; }
     doc.setFillColor(241, 245, 249);
@@ -1480,7 +1480,10 @@ export async function generateTermoEncerramentoPDF(
 
   // Pending fines listed on vehicle if any
   const pendingFines = (vehicle.fines || []).filter(
-    (f) => f.status !== 'Paga pelo Locatário' && f.status !== 'Paga pela Locadora'
+    (f) =>
+      f.status !== 'Paga pelo Locatário' &&
+      f.status !== 'Paga pela Locadora' &&
+      doesFineBelongToDriver(f, vehicle.driver)
   );
   if (pendingFines.length > 0) {
     if (y > 240) { doc.addPage(); y = 15; }

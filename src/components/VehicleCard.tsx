@@ -928,16 +928,6 @@ export const VehicleCard: React.FC<VehicleCardProps> = ({
     setEditingTireModal(null);
   };
 
-  const handleRemoveTireModal = () => {
-    if (!editingTireModal) return;
-    const nextTires = (vehicle.tires || []).filter(t => t.position !== editingTireModal.position);
-    onUpdateVehicle({
-      ...vehicle,
-      tires: nextTires
-    });
-    setEditingTireModal(null);
-  };
-
   // Maintenance WhatsApp Reminder State & Templates
   const [showMaintenanceWhatsApp, setShowMaintenanceWhatsApp] = useState(false);
   const [maintenanceWhatsAppType, setMaintenanceWhatsAppType] = useState<'proxima' | 'vencida' | 'agendada'>('proxima');
@@ -8548,16 +8538,7 @@ _Enviado via sistema de gestão de frota._`;
               </div>
 
               {/* Actions */}
-              <div className="flex items-center justify-between gap-2 pt-3 border-t border-white/10">
-                <button
-                  type="button"
-                  onClick={handleRemoveTireModal}
-                  className="px-3 py-2 bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 border border-rose-500/20 rounded-xl text-xs font-semibold flex items-center gap-1.5 transition-colors cursor-pointer"
-                  title="Remover registro deste pneu"
-                >
-                  <Trash2 className="w-3.5 h-3.5" />
-                  <span>Limpar Registro</span>
-                </button>
+              <div className="flex items-center justify-end gap-2 pt-3 border-t border-white/10">
                 <div className="flex items-center gap-2">
                   <button
                     type="button"

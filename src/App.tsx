@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
-import { Vehicle, FuelLog, MaintenanceLog, ExpenseLog, AgendaContact, Vistoria, VehicleDocument, FinalizedContract, SinistroLog, LateContractDebit, CustomReminder, isWeeklyPaymentPaid } from './types';
+import { Vehicle, FuelLog, MaintenanceLog, ExpenseLog, AgendaContact, Vistoria, VehicleDocument, FinalizedContract, SinistroLog, LateContractDebit, CustomReminder, TireState, isWeeklyPaymentPaid } from './types';
 import { decodeVistoriaParams } from './utils/vistoriaUrl';
 import { 
   INITIAL_VEHICLES, 
@@ -50,7 +50,7 @@ import { generateVehiclePDF, generateVistoriaPDF, generateExecutiveMonthlyPDF, g
 import { getSavedContractClauses, saveContractClauses, getFullContractTextTemplate, saveFullContractTextTemplate } from './utils/contractClauses';
 import { sendAppNotification, requestNotificationPermission, scheduleVistoriaReminders, cancelVistoriaReminders, VISTORIA_REMINDER_SLOTS, isNotificationEventEnabled, schedule30DayQuitationReminder, cancel30DayQuitationReminder, scheduleCustomReminderNotification, cancelCustomReminderNotification } from './utils/notifications';
 import { generateMonthlyPaymentsForVehicle, resolveVehiclePaymentDayOfWeek, syncVehiclePaymentsOnCadastroChange } from './utils/paymentSchedule';
-import { archivePreviousDriverIfChanged, createDriverHistorySnapshot, getTodayIsoLocal } from './utils/driverHistory';
+import { archivePreviousDriverIfChanged, createDriverHistorySnapshot, getTodayIsoLocal, sanitizeVehicleFinesFromPreviousContracts, doesFineBelongToDriver } from './utils/driverHistory';
 import { buildContactFromVehicle, isActiveContractVehicle, syncDriverToDevicePhonebook, upsertContactInList } from './utils/agendaSync';
 import logoImg from './assets/logo.png';
 
@@ -485,6 +485,7 @@ export default function App() {
     }
   }, [selectedMonth, selectedYear, vehicles]);
 
+
   React.useEffect(() => {
     requestNotificationPermission().then((granted) => {
       if (!granted) return;
@@ -705,6 +706,21 @@ export default function App() {
     const saved = localStorage.getItem('fleet_finalized_contracts');
     return saved ? JSON.parse(saved) : [];
   });
+
+  // Clean up any leftover fines belonging to already-finalized or archived previous drivers
+  useEffect(() => {
+    const res = sanitizeVehicleFinesFromPreviousContracts(vehicles, finalizedContracts);
+    if (res.changed) {
+      const nowTs = Date.now();
+      res.vehicles.forEach((nextV, idx) => {
+        const prevV = vehicles[idx];
+        if (prevV && (prevV.fines?.length || 0) !== (nextV.fines?.length || 0)) {
+          lastUpdateTimestampRef.current[nextV.id] = nowTs;
+        }
+      });
+      setVehicles(res.vehicles);
+    }
+  }, [vehicles, finalizedContracts]);
 
   const due30DayContracts = useMemo(() => {
     const todayIso = getTodayIsoLocal();
@@ -1183,6 +1199,10 @@ export default function App() {
             setFinalizedContracts(d.finalizedContracts);
             lastSyncedJsonRef.current['finalizedContracts'] = JSON.stringify(d.finalizedContracts);
           }
+          if (d.sinistroLogs && Array.isArray(d.sinistroLogs)) {
+            setSinistroLogs(d.sinistroLogs);
+            lastSyncedJsonRef.current['sinistroLogs'] = JSON.stringify(d.sinistroLogs);
+          }
           if (d.customReminders && Array.isArray(d.customReminders)) {
             setCustomReminders(d.customReminders);
             lastSyncedJsonRef.current['customReminders'] = JSON.stringify(d.customReminders);
@@ -1288,6 +1308,10 @@ export default function App() {
           if (d.finalizedContracts && Array.isArray(d.finalizedContracts)) {
             lastSyncedJsonRef.current['finalizedContracts'] = JSON.stringify(d.finalizedContracts);
             setFinalizedContracts(d.finalizedContracts);
+          }
+          if (d.sinistroLogs && Array.isArray(d.sinistroLogs)) {
+            lastSyncedJsonRef.current['sinistroLogs'] = JSON.stringify(d.sinistroLogs);
+            setSinistroLogs(d.sinistroLogs);
           }
           if (d.customReminders && Array.isArray(d.customReminders)) {
             lastSyncedJsonRef.current['customReminders'] = JSON.stringify(d.customReminders);
@@ -1706,6 +1730,43 @@ export default function App() {
     setIsFormOpen(true);
   };
 
+  // Campo pneu nunca deve zerar: preserva posições já registradas e só atualiza quando um pneu for trocado/editado
+  const preserveVehicleTires = (
+    prevVehicle: Vehicle | undefined,
+    nextVehicle: Vehicle,
+    allowClearTireSize = false
+  ): Vehicle => {
+    if (!prevVehicle) return nextVehicle;
+    const prevTires = prevVehicle.tires || [];
+    const incomingTires = nextVehicle.tires || [];
+
+    let mergedTires: TireState[];
+    if (prevTires.length === 0) {
+      mergedTires = incomingTires;
+    } else if (incomingTires.length === 0) {
+      mergedTires = prevTires;
+    } else {
+      const mergedByPos: Partial<Record<TireState['position'], TireState>> = {};
+      for (const pt of prevTires) {
+        mergedByPos[pt.position] = pt;
+      }
+      for (const nt of incomingTires) {
+        mergedByPos[nt.position] = nt;
+      }
+      mergedTires = Object.values(mergedByPos).filter((t): t is TireState => Boolean(t));
+    }
+
+    const resolvedTireSize = allowClearTireSize
+      ? nextVehicle.tireSize
+      : (nextVehicle.tireSize?.trim() ? nextVehicle.tireSize : prevVehicle.tireSize);
+
+    return {
+      ...nextVehicle,
+      tires: mergedTires,
+      tireSize: resolvedTireSize,
+    };
+  };
+
   // Actions: Save / Edit Vehicle
   const handleSaveVehicle = (vehicle: Vehicle) => {
     lastUpdateTimestampRef.current[vehicle.id] = Date.now();
@@ -1713,7 +1774,8 @@ export default function App() {
       const existingPrev = prev.find((v) => v.id === vehicle.id);
       let nextVehicles;
       if (existingPrev) {
-        const archivedVehicle = archivePreviousDriverIfChanged(existingPrev, vehicle);
+        const preservedVehicle = preserveVehicleTires(existingPrev, vehicle, true);
+        const archivedVehicle = archivePreviousDriverIfChanged(existingPrev, preservedVehicle);
         const syncedVehicle = isVehicleRented(archivedVehicle)
           ? syncVehiclePaymentsOnCadastroChange(archivedVehicle, selectedMonth, selectedYear)
           : archivedVehicle;
@@ -1789,7 +1851,8 @@ export default function App() {
         });
       }
     }
-    const archivedVehicle = prevVehicle ? archivePreviousDriverIfChanged(prevVehicle, vehicle) : vehicle;
+    const preservedVehicle = preserveVehicleTires(prevVehicle, vehicle, false);
+    const archivedVehicle = prevVehicle ? archivePreviousDriverIfChanged(prevVehicle, preservedVehicle) : preservedVehicle;
     const cadastroScheduleChanged = Boolean(
       prevVehicle && (
         prevVehicle.valorSemanal !== archivedVehicle.valorSemanal ||
@@ -1860,6 +1923,7 @@ export default function App() {
     if (log.date) autoSwitchMonthToDate(log.date);
 
     // Automate: Update odometer of the vehicle & fuel level
+    lastUpdateTimestampRef.current[log.vehicleId] = Date.now();
     setVehicles((prevVehicles) =>
       prevVehicles.map((v) => {
         if (v.id === log.vehicleId) {
@@ -1882,6 +1946,7 @@ export default function App() {
     if (log.date) autoSwitchMonthToDate(log.date);
 
     if ((log.currentKm && log.currentKm > 0) || log.tireSize) {
+      lastUpdateTimestampRef.current[log.vehicleId] = Date.now();
       setVehicles((prev) =>
         prev.map((v) => {
           if (v.id === log.vehicleId) {
@@ -1892,7 +1957,7 @@ export default function App() {
               currentKm: newKm,
               preventiveMaintCurrentKm: newKm,
               preventiveMaintNextKm: log.currentKm && log.currentKm > 0 ? (log.nextKm ? log.nextKm : (newKm + interval)) : v.preventiveMaintNextKm,
-              ...(log.tireSize ? { tireSize: log.tireSize } : {})
+              ...(log.tireSize?.trim() ? { tireSize: log.tireSize.trim() } : {})
             };
           }
           return v;
@@ -2533,7 +2598,7 @@ export default function App() {
         caucaoData: targetVehicle.caucaoData,
         caucaoObservacoes: targetVehicle.caucaoObservacoes,
         promisePayments: targetVehicle.promisePayments,
-        fines: targetVehicle.fines,
+        fines: (targetVehicle.fines || []).filter((f) => doesFineBelongToDriver(f, targetVehicle.driver)),
         documents: targetVehicle.documents,
         currentKm: targetVehicle.currentKm,
         initialKm: targetVehicle.initialKm,
@@ -2696,6 +2761,7 @@ export default function App() {
 
       const targetForSnapshot: Vehicle = {
         ...targetVehicle,
+        fines: (targetVehicle.fines || []).filter((f) => doesFineBelongToDriver(f, targetVehicle.driver)),
         weeklyPayments: paidContractPayments,
         valorRecebido: targetVehicle.valorRecebido || 0,
         caucaoObservacoes: settlementNote || targetVehicle.caucaoObservacoes,
@@ -2718,6 +2784,8 @@ export default function App() {
       // Libera o veículo para novo motorista: zera multas e valores de avarias, preservando histórico, CRLV, manutenção e pneus
       const updatedVehicle: Vehicle = {
         ...targetVehicle,
+        tires: targetVehicle.tires ? [...targetVehicle.tires] : [],
+        tireSize: targetVehicle.tireSize,
         fines: [],
         driver: '',
         driverPhone: '',
@@ -2745,6 +2813,7 @@ export default function App() {
         driverHistory: updatedDriverHistory,
       };
 
+      lastUpdateTimestampRef.current[id] = Date.now();
       setVehicles((prev) => prev.map((v) => (v.id === id ? updatedVehicle : v)));
 
       // Zera registros/valores de avarias (sinistros) e lançamentos de multas/avarias do veículo ao finalizar contrato;
@@ -3015,6 +3084,7 @@ export default function App() {
       });
     }
 
+    lastUpdateTimestampRef.current[enrichedVistoria.vehicleId] = Date.now();
     setVehicles((prev) =>
       prev.map((v) => {
         if (v.id === enrichedVistoria.vehicleId) {
